@@ -191,7 +191,15 @@
         const i = Math.floor(l);
         return Math.round(b[i].time + (l - i) * (b[i + 1].time - b[i].time));
     }
-    const dX = (c, t) => { const l = tLogical(c, t); return l == null ? null : c.chart.timeScale().logicalToCoordinate(l); };
+    // A (fractional) candle position on screen. The library places whole positions only (between two candles it
+    // answers 0, the left edge), so a position between candles is placed between its two neighbours.
+    function lx(ts, l) {
+        const i = Math.floor(l), a = ts.logicalToCoordinate(i);
+        if (a == null || l === i) return a;
+        const b = ts.logicalToCoordinate(i + 1);
+        return b == null ? a : a + (l - i) * (b - a);
+    }
+    const dX = (c, t) => { const l = tLogical(c, t); return l == null ? null : lx(c.chart.timeScale(), l); };
     const dY = (c, p) => c.series.priceToCoordinate(p);
     function pointAt(c, e) {
         const r = c.body.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
