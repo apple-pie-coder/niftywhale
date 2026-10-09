@@ -6,8 +6,7 @@
 <!-- iPhone: no phone-number links on prices, IDs and counts; the colours of the status bar; added to the Home Screen it
      opens as its own app (standalone), with its own icon and name. -->
 <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111d27" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" data-light="#ffffff" data-dark="#111d27">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -16,50 +15,16 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <title>NiftyWhale</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<!-- The theme engine first (it sets <html data-theme> before anything paints), then the palette. -->
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/theme.css">
 <style>
+    /* Colours: static/theme.css (both palettes, picked by static/theme.js). Sizes and type here. */
     :root {
-        color-scheme: light;
-        --plane: #f4f6f8;
-        --surface: #ffffff;
-        --sunk: #eef1f4;
-        --line: #dde3e9;
-        --line-strong: #c5ced8;
-        --ink: #0f1d2b;
-        --ink-2: #3a4a5a;
-        --ink-3: #6b7b8c;
-        --accent: #0b6e8a;          /* deep sea teal: interactive chrome only */
-        --accent-ink: #ffffff;
-        --accent-soft: #e2f1f5;
-        --good: #1a7f4b;  --good-soft: #e3f4ea;
-        --warn: #a86a00;  --warn-soft: #fbf0d9;
-        --bad: #b42318;   --bad-soft: #fbe4e2;
-        --ob: rgba(11, 110, 138, 0.20);  --ob-line: rgba(11, 110, 138, 0.7);
-        --fvg: rgba(214, 158, 46, 0.22); --fvg-line: rgba(176, 120, 20, 0.7);
-        --up: #1a7f4b; --down: #c0392b;
-        --vwap: #7c3aed; --bb: #64748b; --bb-fill: rgba(100, 116, 139, 0.08); --orb: rgba(37, 99, 235, 0.07); --orb-line: #2563eb;
         --r-sm: 6px; --r-md: 9px; --r-lg: 13px; --r-pill: 999px;
-        --shadow: 0 1px 2px rgba(15, 29, 43, 0.06), 0 1px 1px rgba(15, 29, 43, 0.04);
         --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
         --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
-    @media (prefers-color-scheme: dark) {
-        :root:not([data-theme="light"]) {
-            color-scheme: dark;
-            --plane: #0b141c; --surface: #111d27; --sunk: #0e1922;
-            --line: #213140; --line-strong: #2d4152;
-            --ink: #e6edf3; --ink-2: #b6c3cf; --ink-3: #7d8e9e;
-            --accent: #3fb5d4; --accent-ink: #04202a; --accent-soft: #11313d;
-            --good: #4cc38a; --good-soft: #10301f;
-            --warn: #e0a83a; --warn-soft: #33270c;
-            --bad: #f0857a;  --bad-soft: #3a1714;
-            --ob: rgba(63, 181, 212, 0.20); --ob-line: rgba(63, 181, 212, 0.75);
-            --fvg: rgba(224, 168, 58, 0.20); --fvg-line: rgba(224, 168, 58, 0.75);
-            --up: #4cc38a; --down: #f0857a;
-            --vwap: #b794f6; --bb: #94a3b8; --bb-fill: rgba(148, 163, 184, 0.09); --orb: rgba(96, 165, 250, 0.09); --orb-line: #60a5fa;
-            --shadow: none;
-        }
-    }
-    :root[data-theme="dark"] { color-scheme: dark; }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     /* iPhone Safari "auto-sizes" text in wide blocks (tables that scroll sideways,
@@ -577,6 +542,18 @@
     .top-right .nb-btn { position: relative; width: 34px; height: 34px; padding: 0; justify-content: center; border-radius: 50%; color: var(--ink); }
     .nb-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
     .nb-panel[hidden], .nb-count[hidden] { display: none; }
+    /* The theme menu under the top bar's theme button. */
+    .tm-menu { position: fixed; top: 64px; right: 12px; z-index: 72; width: 200px; padding: 8px; background: var(--surface);
+               border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18); }
+    .tm-menu[hidden] { display: none; }
+    .tm-head { font: 600 10.5px/1 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 4px 6px 8px; }
+    .tm-menu .theme-seg { background: none; border: 0; padding: 0; }
+    .tm-menu .theme-seg button { font-size: 13.5px; }
+    #tm-btn [data-theme-icon] { display: inline-grid; place-items: center; }
+    #tm-btn svg { width: 16px; height: 16px; }
+    #tm-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    .sb-theme { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+    .sb-theme .theme-seg { flex: 1; }
     .nb-count { position: absolute; top: -6px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
         background: var(--bad); color: #fff; font: 600 10.5px/17px var(--font); text-align: center; box-shadow: 0 0 0 2px var(--surface); }
     .nb-btn[data-warn="1"] svg { color: var(--warn); }
@@ -598,10 +575,12 @@
     .nb-tools .seg { flex: 1; }
     .nb-list { overflow-y: auto; padding: 4px 0 8px; overscroll-behavior: contain; }
     .nb-day { font: 600 10.5px/1 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 12px 14px 6px; }
-    .nb-item { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; width: 100%; text-align: left; padding: 9px 14px;
+    .nb-row { position: relative; }
+    .nb-item { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding-right: 52px !important; width: 100%; text-align: left; padding: 9px 14px;
         background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
     .nb-item:hover, .nb-item:focus-visible { background: var(--sunk); outline: none; }
-    .nb-item[data-read="0"] .nb-title { font-weight: 600; }
+    .nb-row[data-read="0"] .nb-title { font-weight: 600; }
+    .nb-row:hover .nb-item { background: var(--sunk); }
     .nb-ico { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
     .nb-ico[data-l="good"] { background: var(--good-soft); color: var(--good); }
     .nb-ico[data-l="bad"] { background: var(--bad-soft); color: var(--bad); }
@@ -609,8 +588,18 @@
     .nb-title { font-size: 13px; line-height: 1.35; }
     .nb-body { font-size: 12px; color: var(--ink-2); line-height: 1.4; margin-top: 2px; overflow-wrap: anywhere; }
     .nb-meta { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
-    .nb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 5px; }
-    .nb-item[data-read="1"] .nb-dot { visibility: hidden; }
+    /* Unread: a dot that is also "mark as read" (it turns into a tick under the pointer; on touch, the tick shows). */
+    .nb-mark { position: absolute; top: 6px; right: 10px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid transparent;
+               background: none; display: grid; place-items: center; cursor: pointer; color: var(--accent); padding: 0; }
+    .nb-mark svg { display: none; }
+    .nb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    .nb-row:hover .nb-mark svg, .nb-mark:focus-visible svg { display: block; }
+    .nb-row:hover .nb-dot, .nb-mark:focus-visible .nb-dot { display: none; }
+    .nb-mark:hover, .nb-mark:focus-visible { background: var(--accent-soft); border-color: var(--accent); outline: none; }
+    @media (hover: none) {
+        .nb-mark { border-color: var(--line-strong); width: 34px; height: 34px; top: 8px; }
+        .nb-mark svg { display: block; } .nb-dot { display: none; }
+    }
     .nb-empty { padding: 28px 18px; text-align: center; color: var(--ink-3); font-size: 13px; }
     .ntoasts { position: fixed; top: 66px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 85;
         width: min(380px, calc(100vw - 24px)); pointer-events: none; }
@@ -1424,6 +1413,8 @@
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M2 3.5C3.5 2.6 5.5 2.5 8 3.6c2.5-1.1 4.5-1 6-.1v9.6c-1.5-.9-3.5-1-6 .1-2.5-1.1-4.5-1-6-.1z"/>
                 <path d="M8 3.6v9.6"/></svg><span class="lbl">Guide</span></a>
+        <button class="guide-link" id="tm-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="tm-menu"
+                aria-label="Theme" title="Theme: light, dark or this device's setting"><span data-theme-icon aria-hidden="true"></span></button>
         <button class="guide-link nb-btn" id="nb-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="nb-panel"
                 aria-label="Notifications" title="Notifications: entries, results, square-offs and anything that needs a look">
             <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"
@@ -1605,6 +1596,7 @@
                 <a class="more" href="/docs">Guide</a> ·
                 <button class="btn-link" type="button" data-account="">Account &amp; security</button> ·
                 <button class="btn-link" type="button" data-signout>Sign out</button></div>
+            <div class="sb-theme" id="sb-theme"></div>
         </section>
     </aside>
 
@@ -2128,6 +2120,7 @@
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <div class="ntoasts" id="ntoasts" aria-live="polite"></div>
+<div class="tm-menu" id="tm-menu" hidden><div class="tm-head">Theme</div></div>
 <div class="nb-panel" id="nb-panel" role="dialog" aria-label="Notifications" hidden>
     <div class="nb-head"><h2>Notifications</h2>
         <button class="nb-ib" type="button" id="nb-sound" aria-pressed="false"></button>
@@ -2650,10 +2643,7 @@ const MOOD = { m: null, _on: undefined,                  // the switch is read w
 const moodSigned = (v, d = 2) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d);
 const moodWhy = (m) => `${m.label} (Nifty ${moodSigned(m.nifty)}%, ${m.up} of ${m.count} indices up`
     + (m.vix != null ? `, VIX ${(+m.vix).toFixed(1)} ${moodSigned(m.vix_chg, 1)}%` : '') + (m.live ? '' : ', last session') + ')';
-function moodDark() {
-    const t = document.documentElement.dataset.theme;
-    return t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-}
+const moodDark = () => document.documentElement.dataset.theme === 'dark';
 function applyMood(m) {
     if (m !== undefined) MOOD.m = m && m.label ? m : null;
     const root = document.documentElement.style;
@@ -2675,8 +2665,7 @@ function applyMood(m) {
 }
 WS.listen('mood', (m) => { applyMood(m); if (S) renderStatus(); });
 WS.listen('up', () => WS.sub('mood'));
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyMood());
-new MutationObserver(() => applyMood()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+window.addEventListener('themechange', () => applyMood());
 function openStatus() {
     if (!S) return;
     const md = mdState();
@@ -5317,10 +5306,14 @@ function nbShown() {
                         warnings: (n) => n.level === 'warn' || n.level === 'bad' }[NB.filter] || (() => true));
 }
 
+const NB_TICK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>';
 function nbItem(n) {
-    return `<button type="button" class="nb-item" data-nb="${n.id}" data-read="${n.read ? 1 : 0}">${nbIcon(n)}
+    const mark = n.read ? '' : `<button type="button" class="nb-mark" data-nb-read="${n.id}" aria-label="Mark as read: ${esc(n.title)}"
+        title="Mark as read"><i class="nb-dot" aria-hidden="true"></i>${NB_TICK}</button>`;
+    return `<div class="nb-row" data-read="${n.read ? 1 : 0}"><button type="button" class="nb-item" data-nb="${n.id}"
+        aria-label="${esc(n.title)}${n.read ? '' : ' (unread)'}">${nbIcon(n)}
         <div><div class="nb-title">${esc(n.title)}</div>${n.body ? `<div class="nb-body">${esc(n.body)}</div>` : ''}
-        <div class="nb-meta">${esc(NB_KIND[n.kind] || n.kind)} · ${nbAgo(n.ts)}</div></div><span class="nb-dot" aria-label="${n.read ? '' : 'unread'}"></span></button>`;
+        <div class="nb-meta">${esc(NB_KIND[n.kind] || n.kind)} · ${nbAgo(n.ts)}</div></div></button>${mark}</div>`;
 }
 
 function nbRender() {
@@ -5351,7 +5344,7 @@ function nbToggle(open) {
     NB.open = open == null ? !NB.open : open;
     $('nb-panel').hidden = !NB.open;
     $('nb-btn').setAttribute('aria-expanded', String(NB.open));
-    if (NB.open) nbRender();
+    if (NB.open) { nbRender(); if (!$('tm-menu').hidden) tmToggle(false); }
 }
 
 async function nbRead(ids) {
@@ -5417,6 +5410,20 @@ $('nb-panel').addEventListener('click', (e) => {
     e.stopPropagation();
     const f = e.target.closest('[data-nbf]');
     if (f) { NB.filter = f.dataset.nbf; store.set('nw.nb.filter', NB.filter); nbRender(); return; }
+    const mk = e.target.closest('[data-nb-read]');
+    if (mk) {                                               // mark one as read, without opening it
+        // The list is drawn again: a keyboard user carries on from the next row.
+        const kb = document.activeElement === mk, row = mk.closest('.nb-row');
+        let nx = row.nextElementSibling;
+        while (nx && !nx.classList.contains('nb-row')) nx = nx.nextElementSibling;
+        const nextId = nx && nx.querySelector('[data-nb]').dataset.nb;
+        nbRead([+mk.dataset.nbRead]).then(() => {
+            if (!kb || !nextId) return;
+            const f = $('nb-list').querySelector(`[data-nb-read="${nextId}"]`) || $('nb-list').querySelector(`[data-nb="${nextId}"]`);
+            if (f) f.focus();
+        });
+        return;
+    }
     const it = e.target.closest('[data-nb]');
     if (it) { const n = NB.items.get(+it.dataset.nb); if (n) { nbToggle(false); nbFollow(n); } }
 });
@@ -5435,6 +5442,33 @@ $('nb-sound').addEventListener('click', () => { NB.sound = !NB.sound; store.set(
 document.addEventListener('click', (e) => { if (NB.open && !e.target.closest('#nb-panel, #nb-btn, #ask, #ask-scrim')) nbToggle(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && NB.open) { nbToggle(false); $('nb-btn').focus(); } });
 setInterval(() => { if (NB.open) nbRender(); }, 60000);      // "5 min ago" keeps up
+
+/* ------------------------------------------------------------- theme */
+// The engine is static/theme.js (loaded first in <head>); here, its two switches: the top bar's button with a
+// Light / System / Dark menu (every screen size), and the same three in the sidebar's App section.
+$('tm-menu').appendChild(NWTheme.control({ vertical: true }));
+$('sb-theme').appendChild(NWTheme.control({}));
+document.querySelectorAll('[data-theme-icon]').forEach((el) => { el.innerHTML = NWTheme.ICON[NWTheme.pref]; });
+function tmToggle(open) {
+    open = open == null ? $('tm-menu').hidden : open;
+    $('tm-menu').hidden = !open;
+    $('tm-btn').setAttribute('aria-expanded', String(open));
+    if (open) {
+        // Under its button, kept on screen.
+        const r = $('tm-btn').getBoundingClientRect(), w = $('tm-menu').offsetWidth;
+        $('tm-menu').style.top = Math.round(r.bottom + 8) + 'px';
+        $('tm-menu').style.right = 'auto';
+        $('tm-menu').style.left = Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.right - w))) + 'px';
+        if (NB.open) nbToggle(false);
+        const cur = $('tm-menu').querySelector('[aria-checked="true"]');
+        if (cur) cur.focus();
+    }
+}
+$('tm-btn').addEventListener('click', (e) => { e.stopPropagation(); tmToggle(); });
+$('tm-menu').addEventListener('click', (e) => { e.stopPropagation(); if (e.target.closest('[data-theme-set]')) setTimeout(() => tmToggle(false), 120); });
+document.addEventListener('click', () => { if (!$('tm-menu').hidden) tmToggle(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('tm-menu').hidden) { tmToggle(false); $('tm-btn').focus(); } });
+window.addEventListener('resize', () => { if (!$('tm-menu').hidden) tmToggle(false); });
 
 // The index ticker: each index's last price, change and place in the day's range.
 LIVE.hooks.push({
@@ -7591,6 +7625,8 @@ const CK_ACTIONS = [
     ['Legend: every abbreviation', 'glossary symbols help', CK_IC.doc, () => openLegend(), ''],
     ['Guide: how NiftyWhale works', 'docs readme help manual', CK_IC.doc, () => { window.open('/docs', '_blank'); }, ''],
     ['Toggle the sidebar', 'controls collapse expand', CK_IC.tab, () => $('sb-toggle').click(), ''],
+    ...NWTheme.MODES.map((m) => [`Theme: ${NWTheme.LABEL[m]}`, `theme appearance colour color mode ${m} ${m === 'system' ? 'auto device' : m === 'dark' ? 'night' : 'day'}`,
+        NWTheme.ICON[m], () => NWTheme.set(m), '']),
 ];
 
 async function ckIndex() {

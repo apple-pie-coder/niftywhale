@@ -1,0 +1,59 @@
+/* NiftyWhale's palette, light and dark: the one place colours are defined. static/theme.js sets
+   <html data-theme> before the page paints (Light, Dark, or System: the device's setting), and every
+   page builds on these tokens. Sizes, radii and fonts stay with each page. */
+:root {
+    color-scheme: light;
+    --plane: #f4f6f8;
+    --surface: #ffffff;
+    --sunk: #eef1f4;
+    --line: #dde3e9;
+    --line-strong: #c5ced8;
+    --ink: #0f1d2b;
+    --ink-2: #3a4a5a;
+    --ink-3: #6b7b8c;
+    --accent: #0b6e8a;          /* deep sea teal: interactive chrome only */
+    --accent-ink: #ffffff;
+    --accent-soft: #e2f1f5;
+    --good: #1a7f4b;  --good-soft: #e3f4ea;
+    --warn: #a86a00;  --warn-soft: #fbf0d9;
+    --bad: #b42318;   --bad-soft: #fbe4e2;
+    --ob: rgba(11, 110, 138, 0.20);  --ob-line: rgba(11, 110, 138, 0.7);
+    --fvg: rgba(214, 158, 46, 0.22); --fvg-line: rgba(176, 120, 20, 0.7);
+    --up: #1a7f4b; --down: #c0392b;
+    --vwap: #7c3aed; --bb: #64748b; --bb-fill: rgba(100, 116, 139, 0.08); --orb: rgba(37, 99, 235, 0.07); --orb-line: #2563eb;
+    --shadow: 0 1px 2px rgba(15, 29, 43, 0.06), 0 1px 1px rgba(15, 29, 43, 0.04);
+}
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0b141c; --surface: #111d27; --sunk: #0e1922;
+    --line: #213140; --line-strong: #2d4152;
+    --ink: #e6edf3; --ink-2: #b6c3cf; --ink-3: #7d8e9e;
+    --accent: #3fb5d4; --accent-ink: #04202a; --accent-soft: #11313d;
+    --good: #4cc38a; --good-soft: #10301f;
+    --warn: #e0a83a; --warn-soft: #33270c;
+    --bad: #f0857a;  --bad-soft: #3a1714;
+    --ob: rgba(63, 181, 212, 0.20); --ob-line: rgba(63, 181, 212, 0.75);
+    --fvg: rgba(224, 168, 58, 0.20); --fvg-line: rgba(224, 168, 58, 0.75);
+    --up: #4cc38a; --down: #f0857a;
+    --vwap: #b794f6; --bb: #94a3b8; --bb-fill: rgba(148, 163, 184, 0.09); --orb: rgba(96, 165, 250, 0.09); --orb-line: #60a5fa;
+    --shadow: none;
+}
+
+/* The switch (NWTheme.control): three buttons in a pill, the chosen one raised. */
+.theme-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--line); }
+.theme-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: none;
+    color: var(--ink-3); font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+    min-height: 30px; flex: 1; white-space: nowrap; }
+.theme-seg button:hover { color: var(--ink); }
+.theme-seg button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+:root[data-theme="dark"] .theme-seg button[aria-checked="true"] { box-shadow: 0 0 0 1px var(--line-strong); }
+.theme-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.theme-seg.compact button { padding: 5px 8px; }
+.theme-seg.vertical { flex-direction: column; border-radius: 12px; width: 100%; }
+.theme-seg.vertical button { justify-content: flex-start; border-radius: 9px; padding: 8px 10px; }
+@media (pointer: coarse) { .theme-seg button { min-height: 36px; } }
+
+/* A switch of theme eases the colours for a moment (theme.js adds the class for ~0.3 s). */
+:root.theme-fading, :root.theme-fading *, :root.theme-fading *::before, :root.theme-fading *::after {
+    transition: background-color .25s ease, color .25s ease, border-color .25s ease, fill .25s ease, stroke .25s ease, box-shadow .25s ease !important;
+}
