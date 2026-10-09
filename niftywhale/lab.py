@@ -849,6 +849,93 @@ def next_runs(now: Optional[datetime] = None) -> List[Dict[str, Any]]:
                     bool(store.get_json('lab:bootstrapped')))
 
 
+# ---------------------------------------------------------------- Telegram: the lab's jobs
+# A heads-up HEADS_UP_MIN before a scheduled run, then when a job starts (with when it should end, from how long the
+# last ones of its kind took) and when it ends (how long it took and what it found, or why it failed). The weekly
+# report is its own message, so it gets none. Off with the `lab_alerts` setting (Lab settings).
+HEADS_UP_MIN = 15
+ALERT_KINDS = ('bootstrap', 'nightly', 'backtest', 'tune')
+
+
+def alerts_on() -> bool:
+    return store.settings().get('lab_alerts', '1') == '1'
+
+
+def typical_secs(kind: str, but: Optional[int] = None) -> Optional[int]:
+    """How long this kind of job took lately: the median of the last three that finished (not job `but`)."""
+    done = [j for j in store.jobs(60) if j['kind'] == kind and j['status'] == 'done' and j['id'] != but]
+    secs = sorted(x for x in (_secs(j.get('started'), j.get('finished')) for j in done[:3]) if x)
+    if not secs:
+        return None
+    k = len(secs) // 2
+    return secs[k] if len(secs) % 2 else (secs[k - 1] + secs[k]) // 2
+
+
+def dur_text(secs: Optional[float]) -> str:
+    if secs is None:
+        return '?'
+    m = round(secs / 60)
+    if m < 1:
+        return 'under a minute'
+    h, m = divmod(m, 60)
+    return f'{h}h {m:02d}m' if h else f'{m}m'
+
+
+def _clock(at: datetime, now: datetime) -> str:
+    return at.strftime('%H:%M') if at.date() == now.date() else at.strftime('%a %d %b, %H:%M')
+
+
+def heads_up(now: Optional[datetime] = None) -> List[str]:
+    """Tell Telegram about each scheduled run that starts within HEADS_UP_MIN (once per run). Returns what was sent."""
+    now = now or data.now_ist()
+    if not alerts_on():
+        return []
+    marks = store.get_json('lab:headsup', {}) or {}
+    sent = []
+    for r in next_runs(now):
+        if r['queued'] or not r.get('at') or r['kind'] not in ALERT_KINDS:
+            continue
+        at = datetime.fromisoformat(r['at'])
+        key = f"{r['kind']}:{r['at']}"
+        if key in marks or not 0 <= (at - now).total_seconds() <= HEADS_UP_MIN * 60:
+            continue
+        typ = typical_secs(r['kind'])
+        lines = [f"<b>Lab</b> · {esc(r['label'])} starts at {_clock(at, now)}"]
+        lines.append(f"Usually about {dur_text(typ)}, so done around {_clock(at + timedelta(seconds=typ), now)}." if typ
+                     else 'No estimate yet: it has not run before.')
+        lines += [esc(n[0].upper() + n[1:]) + '.' for n in r.get('notes') or []]
+        tg('\n'.join(lines))
+        marks[key] = now.isoformat(timespec='seconds')
+        sent.append(key)
+    if sent:
+        store.set_json('lab:headsup', dict(sorted(marks.items(), key=lambda kv: kv[1])[-30:]))
+    return sent
+
+
+def job_alert(job: Dict[str, Any], phase: str, msg: str = '', secs: Optional[float] = None) -> Optional[str]:
+    """The Telegram line for a job starting ('start'), finishing ('done') or failing ('error'); sent, and returned."""
+    if job.get('kind') not in ALERT_KINDS or not alerts_on():
+        return None
+    now, label = data.now_ist(), KIND_LABEL.get(job['kind'], job['kind'])
+    if phase == 'start':
+        typ = typical_secs(job['kind'], but=job['id'])
+        begin = now
+        lines = [f'<b>Lab</b> · {esc(label)} started']
+        if job['kind'] != 'tune' and busy_market(now):
+            begin = now.replace(hour=15, minute=45, second=0, microsecond=0)
+            lines.append('Its heavy work waits for the market to close (15:45).')
+        lines.append(f'Estimated {dur_text(typ)}: done around {_clock(begin + timedelta(seconds=typ), now)}.' if typ
+                     else 'No estimate yet: this is its first run.')
+    elif phase == 'done':
+        lines = [f'<b>Lab</b> · {esc(label)} finished in {dur_text(secs)}']
+        lines += ['· ' + esc(x) for x in (msg or '').split(' · ') if x.strip()]
+    else:
+        lines = [f'<b>Lab</b> · {esc(label)} failed after {dur_text(secs)}', esc((msg or 'unknown error')[:300])]
+    text = '\n'.join(lines)
+    tg(text)
+    return text
+
+
 def schedule(now: datetime) -> None:
     """Queue the regular jobs when their time comes (once each)."""
     marks = store.get_json('lab:schedule', {}) or {}
@@ -886,6 +973,15 @@ def main() -> None:
             time.sleep(30)
     import threading
     threading.Thread(target=heartbeat, daemon=True, name='heartbeat').start()
+
+    def alerts():                                 # heads-ups, on their own beat: a job can hold the main loop for hours
+        while not STOP['flag']:
+            try:
+                heads_up()
+            except Exception:
+                logger.exception('lab heads-up failed')
+            time.sleep(30)
+    threading.Thread(target=alerts, daemon=True, name='lab-alerts').start()
     logger.info('Lab started')
     while not STOP['flag']:
         try:
@@ -893,14 +989,18 @@ def main() -> None:
             job = store.next_job()
             if job:
                 store.update_job(job['id'], progress='starting')
+                began = time.time()
+                job_alert(job, 'start')
                 try:
                     msg = run_job(job)
                     store.update_job(job['id'], status='done', finished=datetime.now().isoformat(timespec='seconds'),
                                      message=msg, progress='')
+                    job_alert(job, 'done', msg, time.time() - began)
                 except Exception as e:
                     logger.error(f"job {job['kind']} failed: {traceback.format_exc()}")
                     store.update_job(job['id'], status='error', finished=datetime.now().isoformat(timespec='seconds'),
                                      message=dhan._redact(e)[:500], progress='')
+                    job_alert(job, 'error', dhan._redact(e), time.time() - began)
                 continue
         except Exception:
             logger.exception('lab tick failed')

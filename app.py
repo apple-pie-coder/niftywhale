@@ -3684,7 +3684,7 @@ def api_lab():
         'jobs': [lab.job_view(j) for j in store.jobs(12)], 'coverage': _COVERAGE['value'], 'modes': modes, 'log': store.autopilot_log(40),
         'policy': lab.policy(), 'last_report': store.get_json('lab:last_report'),
         'settings': {**{k: st[k] for k in ('lab_swing_universe', 'lab_intraday_universe', 'lab_years_swing',
-                                           'lab_years_intraday', 'weekly_report')},
+                                           'lab_years_intraday', 'weekly_report', 'lab_alerts')},
                      'swing_universe': lab.universe_key('swing'), 'intraday_universe': lab.universe_key('intraday')},
         'candidates': store.count_candidates(), 'upcoming': lab.next_runs(),
     }))

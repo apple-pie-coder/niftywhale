@@ -39,6 +39,7 @@ SETTING_DEFAULTS = {
     'paused_intraday': '0',
     'paused_options': '0',
     'weekly_report': '1',       # Telegram performance report, Saturday morning
+    'lab_alerts': '1',          # Telegram: a heads-up before each scheduled lab run, and when a job starts and ends
     'news': '1',                # news desk: NSE filings and media headlines for the board's stocks
     'news_alerts': '1',         # Telegram when an NSE filing lands on an open trade or a tapped zone
     'indicators': '{}',         # JSON: chart indicator settings (indicators.SETTINGS); {} = the defaults

@@ -7339,6 +7339,7 @@ function labSettingsModal() {
         <p class="hint" id="labs-est"></p>
         <h3 class="label">Report</h3>
         <label class="ind-row"><span><b>Weekly report</b><small>Telegram, Saturday 09:00</small></span><input type="checkbox" data-labs="weekly_report"${st.weekly_report === '1' ? ' checked' : ''}></label>
+        <label class="ind-row"><span><b>Job alerts</b><small>Telegram: 15 minutes before each scheduled run, then when a job starts (with when it should end) and ends</small></span><input type="checkbox" data-labs="lab_alerts"${st.lab_alerts !== '0' ? ' checked' : ''}></label>
         <p class="hint">Options are tuned on the candidates the live scanner records, so they have no universe or history to set.
             A different universe or more history is downloaded on the next run (nightly 20:30, or Run backtest now). Tuning on a universe
             other than the one a mode trades live means its rules are judged on stocks it does not trade.</p>
