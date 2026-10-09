@@ -2467,9 +2467,13 @@ document.addEventListener('input', (e) => {
     tfTimer = setTimeout(() => tfChanged(i.dataset.tfq), 150);
 });
 
+// With a filter on, a table shows every row it leaves (up to TF_ALL_MAX, then it pages), so the table
+// takes the size of the selection; with none, the chosen page size.
+const TF_ALL_MAX = 200;
+const tfActive = (key) => { const st = TFS()[key] || {}; return !!TF_DEFS[key] && (Object.keys(st).some((g) => g !== 'q' && st[g] && st[g] !== 'all') || !!(st.q || '').trim()); };
 function paged(key, items) {
     items = tfFilter(key, items);
-    const size = pageSize(key), total = items.length;
+    const size = tfActive(key) ? Math.max(pageSize(key), TF_ALL_MAX) : pageSize(key), total = items.length;
     const last = Math.max(1, Math.ceil(total / size));
     const p = Math.min(Math.max(1, pageNo[key] || 1), last);
     pageNo[key] = p;
