@@ -727,6 +727,8 @@
     .tf-q:focus { outline: none; border-color: var(--accent); }
     .tf-none { font-size: 12.5px; color: var(--ink-3); width: 100%; }
     .fchip:disabled { opacity: .45; cursor: default; }
+    /* A table filter with no rows right now stays clickable (the table then says nothing matches), just dimmer. */
+    .tf-chips .fchip[data-empty="1"]:not([aria-pressed="true"]) { opacity: .55; }
     .fchip { border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r-pill);
              padding: 3px 11px; font-size: 12px; font-weight: 600; color: var(--ink-3); cursor: pointer; }
     .fchip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -2420,7 +2422,8 @@ function tfBar(key, def, items, pass, shown) {
             if (!b) return;
             const n = items.filter((r) => pass(r, g.id) && (!o[2] || o[2](r))).length;
             b.setAttribute('aria-pressed', String(cur === o[0]));
-            b.disabled = !n && cur !== o[0];
+            b.dataset.empty = n ? '0' : '1';
+            if (!n) b.title = 'No rows right now'; else b.removeAttribute('title');
             const fn = b.querySelector('.fn');
             if (fn.textContent !== String(n)) fn.textContent = n;
         });
@@ -2439,7 +2442,7 @@ function tfChanged(key) {
 }
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-tfk]');
-    if (b && !b.disabled) { (TFS()[b.dataset.tfk] = TFS()[b.dataset.tfk] || {})[b.dataset.tfg] = b.dataset.tfv; tfChanged(b.dataset.tfk); return; }
+    if (b) { (TFS()[b.dataset.tfk] = TFS()[b.dataset.tfk] || {})[b.dataset.tfg] = b.dataset.tfv; tfChanged(b.dataset.tfk); return; }
     const c = e.target.closest('[data-tfclear]');
     if (c) { TFS()[c.dataset.tfclear] = {}; tfChanged(c.dataset.tfclear); }
 });
