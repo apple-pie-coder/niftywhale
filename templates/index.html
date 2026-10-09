@@ -717,23 +717,12 @@
     .apps-more p { margin: 8px 0 0; line-height: 1.5; }
     .apps-actions { margin-top: 18px; display: flex; justify-content: flex-end; }
     @media (max-width: 520px) { .apps-f input, .apps-f select { font-size: 16px; max-width: none; } .apps-actions .btn { width: 100%; } }
-    .tfbar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 0 8px; }
-    .tfbar[hidden] { display: none; }
-    .tf-chips { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; min-width: 0; }
-    .tf-group { display: flex; gap: 4px; padding-right: 10px; border-right: 1px solid var(--line); }
-    .tf-group:last-child { border-right: 0; padding-right: 0; }
-    .tf-q { margin-left: auto; width: 190px; font: inherit; font-size: 12.5px; padding: 6px 12px; border: 1px solid var(--line-strong);
-        border-radius: var(--r-pill); background: var(--surface); color: var(--ink); }
-    .tf-q:focus { outline: none; border-color: var(--accent); }
-    .tf-none { font-size: 12.5px; color: var(--ink-3); width: 100%; }
-    .tf-sum { font-size: 12.5px; color: var(--ink-2); width: 100%; }
-    .tf-sum b { color: var(--ink); font-variant-numeric: tabular-nums; }
-    .tf-flash { animation: tf-flash .7s ease-out; }
-    @keyframes tf-flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 2px transparent; } }
-    @media (prefers-reduced-motion: reduce) { .tf-flash { animation: none; } }
+    .tf-pills[hidden], .tf-none[hidden] { display: none; }
+    .panel-head .tf-pills { margin-right: auto; }        /* right after the title, as in Setups */
+    .tf-none { font-size: 12.5px; color: var(--ink-3); margin: 0 0 8px; }
     .fchip:disabled { opacity: .45; cursor: default; }
     /* A table filter with no rows right now stays clickable (the table then says nothing matches), just dimmer. */
-    .tf-chips .fchip[data-empty="1"]:not([aria-pressed="true"]) { opacity: .55; }
+    .fchip[data-empty="1"]:not([aria-pressed="true"]) { opacity: .55; }
     .fchip { border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r-pill);
              padding: 3px 11px; font-size: 12px; font-weight: 600; color: var(--ink-3); cursor: pointer; }
     .fchip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -1017,12 +1006,6 @@
         .modes { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
         .modes::-webkit-scrollbar { display: none; }
         .fchips { flex-wrap: wrap; }
-        /* A phone: the chips scroll sideways in one row, the search box takes the full width. */
-        .tf-chips { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; scrollbar-width: none;
-            -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
-        .tf-chips::-webkit-scrollbar { display: none; }
-        .tf-group, .tf-chips .fchip { flex: none; }
-        .tf-q { width: 100%; margin-left: 0; font-size: 16px; padding: 8px 12px; }
         .fchip { padding: 5px 10px; font-size: 11.5px; }
 
         .board { grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -2342,8 +2325,10 @@ const TFS = () => TF_ || (TF_ = store.get('nw.tf', {}) || {});
 const tfDay = (iso) => (iso || '').slice(0, 10);
 const tfAge = (iso) => iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity;
 const tfIs = (id, ...opts) => ({ id, opts: [['all', 'All'], ...opts] });
-const tfSide = (get = (r) => r.side) => ({ id: 'side', opts: [['all', 'Both sides'], ['long', 'Long', (r) => (get(r) || 'long') === 'long'],
-                                                                ['short', 'Short', (r) => get(r) === 'short']] });
+// The same triangles as Setups' Long / Short pills.
+const TF_UP = '<svg class="ic tri" width="9" height="9" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><path d="M5 1.5l4 6.5H1z"/></svg>', TF_DOWN = '<svg class="ic tri" width="9" height="9" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><path d="M5 8.5L1 2h8z"/></svg>';
+const tfSide = (get = (r) => r.side) => ({ id: 'side', opts: [['all', 'Both sides'], ['long', TF_UP + ' Long', (r) => (get(r) || 'long') === 'long'],
+                                                                ['short', TF_DOWN + ' Short', (r) => get(r) === 'short']] });
 const tfWhen = (get) => ({ id: 'when', opts: [['all', 'Any time'], ['today', 'Today', (r) => tfDay(get(r)) === todayIST()],
                                               ['week', 'Last 7 days', (r) => tfAge(get(r)) <= 7]] });
 const tfMode = { id: 'mode', opts: [['all', 'All modes'], ['swing', 'Swing', (r) => r.mode === 'swing'],
@@ -2385,92 +2370,74 @@ const TF_DEFS = {
                 text: (w) => w.symbol },
 };
 
+// Each filtered table works like Swing > Setups: one row of pills beside the panel's title, one choice
+// at a time, each pill counting its rows in the whole table. The pills are the TF_DEFS groups' choices
+// in a row (a status, then a side, then a time). The choice is remembered per table.
+const tfOpts = (key) => [['all', 'All'], ...TF_DEFS[key].groups.flatMap((g) => g.opts.filter((o) => o[0] !== 'all')
+    .map((o) => [`${g.id}:${o[0]}`, o[1], o[2]]))];
+const tfCur = (key) => { const v = TFS()[key]; return typeof v === 'string' && tfOpts(key).some((o) => o[0] === v) ? v : 'all'; };
+
 function tfFilter(key, items) {
-    const def = TF_DEFS[key];
-    if (!def) return items;
-    const st = TFS()[key] || {}, q = (st.q || '').trim().toUpperCase();
-    const pass = (r, skip) => def.groups.every((g) => {
-        if (g.id === skip) return true;
-        const o = g.opts.find((x) => x[0] === (st[g.id] || 'all'));
-        return !o || !o[2] || o[2](r);
-    }) && (!q || def.text(r).toUpperCase().includes(q));
-    const out = items.filter((r) => pass(r));
-    tfBar(key, def, items, pass, out.length);
+    if (!TF_DEFS[key]) return items;
+    const o = tfOpts(key).find((x) => x[0] === tfCur(key));
+    const out = o && o[2] ? items.filter(o[2]) : items;
+    tfBar(key, items, out.length);
     return out;
 }
 
-function tfBar(key, def, items, pass, shown) {
+function tfBar(key, items, shown) {
     const pg = $('pg-' + key), wrap = pg && pg.previousElementSibling;
     if (!wrap) return;
-    let bar = $('tf-' + key);
-    if (!bar) {
-        bar = document.createElement('div');
-        bar.className = 'tfbar'; bar.id = 'tf-' + key;
-        bar.innerHTML = `<div class="tf-chips"></div><input type="search" class="tf-q" data-tfq="${key}" placeholder="Filter rows…"
-            aria-label="Filter rows" autocomplete="off" spellcheck="false"><div class="tf-sum" aria-live="polite" hidden></div><div class="tf-none" hidden></div>`;
-        wrap.parentNode.insertBefore(bar, wrap);
+    let pills = $('tf-' + key);
+    if (!pills) {
+        // Beside the panel's title, as in Setups (or above the table where there is no title row).
+        let head = wrap.previousElementSibling;
+        while (head && !head.classList.contains('panel-head')) head = head.previousElementSibling;
+        pills = document.createElement('div');
+        pills.className = 'fchips tf-pills'; pills.id = 'tf-' + key;
+        pills.setAttribute('role', 'group'); pills.setAttribute('aria-label', 'Show');
+        const title = head && head.querySelector('.panel-title');
+        if (title) title.after(pills); else wrap.parentNode.insertBefore(pills, wrap);
+        const none = document.createElement('div');
+        none.className = 'tf-none'; none.id = 'tf-none-' + key; none.hidden = true;
+        none.innerHTML = `None right now. <button type="button" class="btn-link" data-tfclear="${key}">Show all</button>`;
+        wrap.parentNode.insertBefore(none, wrap);
     }
-    const st = TFS()[key] || {}, active = def.groups.some((g) => (st[g.id] || 'all') !== 'all') || !!st.q;
-    bar.hidden = !items.length && !active;
-    // The buttons are made once and then only updated in place: a table refreshing itself (every
-    // 2-3 s during a scan or a chain pass) must never replace a chip between a press and its release,
-    // or the click is lost.
-    const chips = bar.querySelector('.tf-chips');
-    if (!chips.childElementCount) {
-        chips.innerHTML = def.groups.map((g) => `<div class="tf-group" role="group">${g.opts.map((o) =>
-            `<button type="button" class="fchip" data-tfk="${key}" data-tfg="${g.id}" data-tfv="${o[0]}">${o[1]}<span class="fn"></span></button>`).join('')}</div>`).join('');
+    const cur = tfCur(key), opts = tfOpts(key);
+    // Made once, then updated in place: a table refreshing itself (every couple of seconds in a scan) must
+    // never replace a pill between a press and its release.
+    if (!pills.childElementCount) {
+        pills.innerHTML = opts.map((o) => `<button type="button" class="fchip" data-tfk="${key}" data-tfv="${o[0]}">${o[1]}<span class="fn"></span></button>`).join('');
     }
-    def.groups.forEach((g) => {
-        const cur = st[g.id] || 'all';
-        g.opts.forEach((o) => {
-            const b = chips.querySelector(`[data-tfg="${g.id}"][data-tfv="${o[0]}"]`);
-            if (!b) return;
-            const n = items.filter((r) => pass(r, g.id) && (!o[2] || o[2](r))).length;
-            b.setAttribute('aria-pressed', String(cur === o[0]));
-            b.dataset.empty = n ? '0' : '1';
-            if (!n) b.title = 'No rows right now'; else b.removeAttribute('title');
-            const fn = b.querySelector('.fn');
-            if (fn.textContent !== String(n)) fn.textContent = n;
-        });
+    opts.forEach((o) => {
+        const b = pills.querySelector(`[data-tfv="${o[0]}"]`);
+        if (!b) return;
+        const n = o[2] ? items.filter(o[2]).length : items.length;
+        b.setAttribute('aria-pressed', String(cur === o[0]));
+        b.dataset.empty = n ? '0' : '1';
+        const fn = b.querySelector('.fn');
+        if (fn.textContent !== String(n)) fn.textContent = n;
     });
-    // While a filter is on, how many rows it leaves (the table pages, so its first page alone can look the same).
-    const sum = bar.querySelector('.tf-sum');
-    sum.hidden = !active || shown === 0;
-    if (active && shown) sum.innerHTML = `Showing <b>${shown}</b> of ${items.length} · <button type="button" class="btn-link" data-tfclear="${key}">Clear filters</button>`;
-    const none = bar.querySelector('.tf-none');
-    none.hidden = !(shown === 0 && items.length);
-    if (!none.childElementCount) none.innerHTML = `Nothing matches these filters. <button type="button" class="btn-link" data-tfclear="${key}">Clear filters</button>`;
-    const inp = bar.querySelector('.tf-q');
-    if (document.activeElement !== inp) inp.value = st.q || '';
+    pills.hidden = !items.length;
+    $('tf-none-' + key).hidden = !(items.length && !shown);
 }
 
 function tfChanged(key) {
     store.set('nw.tf', TFS());
     pageNo[key] = 1;
     if (PAGED[key]) PAGED[key]();
-    // A short highlight on the table it changed.
-    const pg = $('pg-' + key), wrap = pg && pg.previousElementSibling;
-    if (wrap) { wrap.classList.remove('tf-flash'); void wrap.offsetWidth; wrap.classList.add('tf-flash'); }
 }
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-tfk]');
-    if (b) { (TFS()[b.dataset.tfk] = TFS()[b.dataset.tfk] || {})[b.dataset.tfg] = b.dataset.tfv; tfChanged(b.dataset.tfk); return; }
+    if (b) { TFS()[b.dataset.tfk] = b.dataset.tfv; tfChanged(b.dataset.tfk); return; }
     const c = e.target.closest('[data-tfclear]');
-    if (c) { TFS()[c.dataset.tfclear] = {}; tfChanged(c.dataset.tfclear); }
-});
-let tfTimer = null;
-document.addEventListener('input', (e) => {
-    const i = e.target.closest('[data-tfq]');
-    if (!i) return;
-    (TFS()[i.dataset.tfq] = TFS()[i.dataset.tfq] || {}).q = i.value;
-    clearTimeout(tfTimer);
-    tfTimer = setTimeout(() => tfChanged(i.dataset.tfq), 150);
+    if (c) { TFS()[c.dataset.tfclear] = 'all'; tfChanged(c.dataset.tfclear); }
 });
 
 // With a filter on, a table shows every row it leaves (up to TF_ALL_MAX, then it pages), so the table
 // takes the size of the selection; with none, the chosen page size.
 const TF_ALL_MAX = 200;
-const tfActive = (key) => { const st = TFS()[key] || {}; return !!TF_DEFS[key] && (Object.keys(st).some((g) => g !== 'q' && st[g] && st[g] !== 'all') || !!(st.q || '').trim()); };
+const tfActive = (key) => key === 'setups' ? setupFilter !== 'all' : !!TF_DEFS[key] && tfCur(key) !== 'all';
 function paged(key, items) {
     items = tfFilter(key, items);
     const size = tfActive(key) ? Math.max(pageSize(key), TF_ALL_MAX) : pageSize(key), total = items.length;
