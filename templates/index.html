@@ -726,6 +726,11 @@
         border-radius: var(--r-pill); background: var(--surface); color: var(--ink); }
     .tf-q:focus { outline: none; border-color: var(--accent); }
     .tf-none { font-size: 12.5px; color: var(--ink-3); width: 100%; }
+    .tf-sum { font-size: 12.5px; color: var(--ink-2); width: 100%; }
+    .tf-sum b { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .tf-flash { animation: tf-flash .7s ease-out; }
+    @keyframes tf-flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 2px transparent; } }
+    @media (prefers-reduced-motion: reduce) { .tf-flash { animation: none; } }
     .fchip:disabled { opacity: .45; cursor: default; }
     /* A table filter with no rows right now stays clickable (the table then says nothing matches), just dimmer. */
     .tf-chips .fchip[data-empty="1"]:not([aria-pressed="true"]) { opacity: .55; }
@@ -2402,7 +2407,7 @@ function tfBar(key, def, items, pass, shown) {
         bar = document.createElement('div');
         bar.className = 'tfbar'; bar.id = 'tf-' + key;
         bar.innerHTML = `<div class="tf-chips"></div><input type="search" class="tf-q" data-tfq="${key}" placeholder="Filter rows…"
-            aria-label="Filter rows" autocomplete="off" spellcheck="false"><div class="tf-none" hidden></div>`;
+            aria-label="Filter rows" autocomplete="off" spellcheck="false"><div class="tf-sum" aria-live="polite" hidden></div><div class="tf-none" hidden></div>`;
         wrap.parentNode.insertBefore(bar, wrap);
     }
     const st = TFS()[key] || {}, active = def.groups.some((g) => (st[g.id] || 'all') !== 'all') || !!st.q;
@@ -2428,6 +2433,10 @@ function tfBar(key, def, items, pass, shown) {
             if (fn.textContent !== String(n)) fn.textContent = n;
         });
     });
+    // While a filter is on, how many rows it leaves (the table pages, so its first page alone can look the same).
+    const sum = bar.querySelector('.tf-sum');
+    sum.hidden = !active || shown === 0;
+    if (active && shown) sum.innerHTML = `Showing <b>${shown}</b> of ${items.length} · <button type="button" class="btn-link" data-tfclear="${key}">Clear filters</button>`;
     const none = bar.querySelector('.tf-none');
     none.hidden = !(shown === 0 && items.length);
     if (!none.childElementCount) none.innerHTML = `Nothing matches these filters. <button type="button" class="btn-link" data-tfclear="${key}">Clear filters</button>`;
@@ -2439,6 +2448,9 @@ function tfChanged(key) {
     store.set('nw.tf', TFS());
     pageNo[key] = 1;
     if (PAGED[key]) PAGED[key]();
+    // A short highlight on the table it changed.
+    const pg = $('pg-' + key), wrap = pg && pg.previousElementSibling;
+    if (wrap) { wrap.classList.remove('tf-flash'); void wrap.offsetWidth; wrap.classList.add('tf-flash'); }
 }
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-tfk]');
