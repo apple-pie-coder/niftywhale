@@ -585,6 +585,15 @@
         border-radius: var(--r-lg); box-shadow: var(--shadow); z-index: 70; }
     .nb-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; }
     .nb-head h2 { font-size: 14px; margin: 0; flex: 1; }
+    /* The header's actions: icons only, round, on every screen. */
+    .nb-head { gap: 4px; }
+    .nb-ib { width: 32px; height: 32px; border-radius: 50%; border: 1px solid transparent; background: none; color: var(--ink-2);
+             display: inline-grid; place-items: center; cursor: pointer; flex: none; padding: 0; }
+    .nb-ib:hover { background: var(--sunk); color: var(--ink); }
+    .nb-ib:disabled { opacity: .35; cursor: default; background: none; }
+    .nb-ib[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+    #nb-clear:not(:disabled):hover { color: var(--bad); background: var(--bad-soft); }
+    @media (pointer: coarse) { .nb-ib { width: 38px; height: 38px; } }
     .nb-tools { display: flex; align-items: center; gap: 6px; padding: 0 14px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
     .nb-tools .seg { flex: 1; }
     .nb-list { overflow-y: auto; padding: 4px 0 8px; overscroll-behavior: contain; }
@@ -2103,8 +2112,9 @@
 <div class="ntoasts" id="ntoasts" aria-live="polite"></div>
 <div class="nb-panel" id="nb-panel" role="dialog" aria-label="Notifications" hidden>
     <div class="nb-head"><h2>Notifications</h2>
-        <button class="btn-link" type="button" id="nb-sound" aria-pressed="false" title="A short sound with each new notification"></button>
-        <button class="btn-link" type="button" id="nb-readall">Mark all read</button></div>
+        <button class="nb-ib" type="button" id="nb-sound" aria-pressed="false"></button>
+        <button class="nb-ib" type="button" id="nb-readall" aria-label="Mark all read" title="Mark all read"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8.6l2.8 2.8L10 5.2"/><path d="M7.4 11.1l.3.3L14.5 4.6"/></svg></button>
+        <button class="nb-ib" type="button" id="nb-clear" aria-label="Clear all" title="Clear all notifications"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.2h11M6.2 4.2V2.8h3.6v1.4M3.9 4.2l.7 9h6.8l.7-9"/><path d="M6.7 6.7v4M9.3 6.7v4"/></svg></button></div>
     <div class="nb-tools"><div class="seg small" role="group" aria-label="Show" id="nb-filter"></div></div>
     <div class="nb-list" id="nb-list"></div>
 </div>
@@ -5244,6 +5254,8 @@ const NB_ICON = {
     warn: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5l6 10.5H2z"/><path d="M8 6.5v3M8 11.6v.1"/></svg>',
     info: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2a4 4 0 0 0-4 4v2.4l-1.4 2.2h10.8L12 8.6V6.2a4 4 0 0 0-4-4z"/><path d="M6.6 13a1.5 1.5 0 0 0 2.8 0"/></svg>',
 };
+const NB_SOUND_ON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6h2.2L8 3.2v9.6L4.7 10H2.5z"/><path d="M10.6 5.6a3.4 3.4 0 0 1 0 4.8M12.4 3.9a5.8 5.8 0 0 1 0 8.2"/></svg>';
+const NB_SOUND_OFF = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6h2.2L8 3.2v9.6L4.7 10H2.5z"/><path d="M10.5 6l3.5 4M14 6l-3.5 4"/></svg>';
 const nbIcon = (n) => `<span class="nb-ico" data-l="${esc(n.level)}">${NB_ICON[n.level] || NB_ICON.info}</span>`;
 const nbAgo = (iso) => { const s = (Date.now() - new Date(iso).getTime()) / 1000;
     return !isFinite(s) ? '' : s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago'
@@ -5259,7 +5271,11 @@ async function nbLoad(initial) {
     try {
         const d = await api('/api/notices?after=' + (initial ? 0 : NB.seq));
         const fresh = [];
-        d.items.forEach((n) => { if (!NB.items.has(n.id) && !initial && !n.read) fresh.push(n); NB.items.set(n.id, n); });
+        d.items.forEach((n) => {
+            if (n.cleared) { NB.items.delete(n.id); return; }               // cleared (here or on another device)
+            if (!NB.items.has(n.id) && !initial && !n.read) fresh.push(n);
+            NB.items.set(n.id, n);
+        });
         NB.seq = Math.max(NB.seq, d.seq); NB.unread = d.unread;
         nbBadge();
         if (NB.open) nbRender();
@@ -5291,9 +5307,13 @@ function nbItem(n) {
 
 function nbRender() {
     $('nb-filter').innerHTML = NB_FILTERS.map(([k, l]) => `<button type="button" data-nbf="${k}" aria-pressed="${NB.filter === k}">${l}</button>`).join('');
-    $('nb-sound').textContent = NB.sound ? 'Sound on' : 'Sound off';
-    $('nb-sound').setAttribute('aria-pressed', String(NB.sound));
+    const snd = $('nb-sound');
+    snd.innerHTML = NB.sound ? NB_SOUND_ON : NB_SOUND_OFF;
+    snd.setAttribute('aria-pressed', String(NB.sound));
+    snd.setAttribute('aria-label', NB.sound ? 'Sound on' : 'Sound off');
+    snd.title = NB.sound ? 'Sound on: a short sound with each new notification (click to mute)' : 'Sound off (click for a short sound with each new notification)';
     $('nb-readall').disabled = !NB.unread;
+    $('nb-clear').disabled = !NB.items.size;
     const list = nbShown(), today = todayIST();
     if (!list.length) {
         $('nb-list').innerHTML = `<div class="nb-empty">${NB.items.size ? 'Nothing here with this filter.'
@@ -5383,6 +5403,16 @@ $('nb-panel').addEventListener('click', (e) => {
     if (it) { const n = NB.items.get(+it.dataset.nb); if (n) { nbToggle(false); nbFollow(n); } }
 });
 $('nb-readall').addEventListener('click', () => nbRead(null));
+$('nb-clear').addEventListener('click', async () => {
+    if (!NB.items.size || !confirm('Clear all notifications? They are removed on every device.')) return;
+    try {
+        const c = await api('/api/notices/clear', {});
+        NB.items.clear(); NB.unread = c.unread; NB.seq = Math.max(NB.seq, c.seq);
+        $('ntoasts').innerHTML = '';
+        toast(c.cleared ? `Cleared ${c.cleared} notification${c.cleared > 1 ? 's' : ''}` : 'Nothing to clear');
+    } catch (e) { toast('Could not clear: ' + e.message); }
+    nbBadge(); nbRender();
+});
 $('nb-sound').addEventListener('click', () => { NB.sound = !NB.sound; store.set('nw.nb.sound', NB.sound); nbRender(); if (NB.sound) nbBeep('info'); });
 document.addEventListener('click', (e) => { if (NB.open && !e.target.closest('#nb-panel, #nb-btn')) nbToggle(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && NB.open) { nbToggle(false); $('nb-btn').focus(); } });

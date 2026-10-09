@@ -192,3 +192,28 @@ class Routes(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ClearAll(unittest.TestCase):
+    """The bell's Clear all: hidden for good on every device, never raised again by the same event."""
+    def setUp(self):
+        clear()
+
+    def test_clear_hides_and_the_same_event_stays_quiet(self):
+        store.add_notice('risk:1', 'risk', 'warn', 'Near the stop')
+        store.add_notice('entry:2', 'entry', 'info', 'Entry')
+        seq_before = store.notice_counts()['seq']
+        r = app.app.test_client().post('/api/notices/clear', json={})
+        self.assertEqual(r.get_json()['cleared'], 2)
+        self.assertEqual(r.get_json()['unread'], 0)
+        self.assertEqual(store.notices(0), [])                          # a fresh page shows nothing
+        changed = store.notices(seq_before)                             # an open page learns they went
+        self.assertEqual(sorted(n['cleared'] for n in changed), [1, 1])
+        self.assertIsNone(store.add_notice('risk:1', 'risk', 'warn', 'Near the stop'))   # not raised again
+        self.assertEqual(store.notices(0), [])
+        store.add_notice('entry:3', 'entry', 'info', 'A new one')                       # new events still come
+        self.assertEqual([n['key'] for n in store.notices(0)], ['entry:3'])
+        self.assertEqual(store.notice_counts()['unread'], 1)
+
+    def test_nothing_to_clear(self):
+        self.assertEqual(app.app.test_client().post('/api/notices/clear', json={}).get_json()['cleared'], 0)

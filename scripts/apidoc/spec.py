@@ -110,6 +110,9 @@ E = [
      '(`info`, `good`, `bad`, `warn`) and a `link` (a stock, a chain, a tab, or a trade `ref`).'),
     ('trades', 'POST', '/api/notices/read', '/api/notices/read', {'ids': [1]}, '`ids` (omit to mark all read)',
      'Marks notifications read; returns the new counts.'),
+    ('trades', 'POST', '/api/notices/clear', '/api/notices/clear', {}, '',
+     'Clears every notification from the bell, on every device; returns how many and the new counts. They stay cleared: '
+     'the same event (a trade near its stop, say) is not raised again.'),
 
     ('demo', 'GET', '/api/demo', '/api/demo', None, '',
      'The demo account: `account` (deposits, withdrawals, balance, blocked, free, unreal, equity, realised, charges, return), `by_mode`, '

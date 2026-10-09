@@ -211,6 +211,9 @@ def init() -> None:
         for col, typ in (('ctx', 'TEXT'),):
             if col not in {r[1] for r in c.execute('PRAGMA table_info(zones)')}:
                 c.execute(f'ALTER TABLE zones ADD COLUMN {col} {typ}')
+        # Notices cleared from the bell stay as rows (their key keeps the same event from being raised again).
+        if 'cleared' not in {r[1] for r in c.execute('PRAGMA table_info(notices)')}:
+            c.execute('ALTER TABLE notices ADD COLUMN cleared INTEGER DEFAULT 0')
         if 'features' not in {r[1] for r in c.execute('PRAGMA table_info(oc_ideas)')}:
             c.execute('ALTER TABLE oc_ideas ADD COLUMN features TEXT')
         # Lab jobs: each step's start, end and counts (lab.JobLog), for the job detail view.
@@ -1027,9 +1030,11 @@ def notice(key: str) -> Optional[Dict[str, Any]]:
 
 
 def notices(after_seq: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
-    """Notices changed since `after_seq` (newest first), or the latest `limit` with after_seq 0."""
+    """Notices changed since `after_seq` (newest first), or the latest `limit` with after_seq 0. Cleared ones
+    come only as changes (cleared = 1), so a page that had them drops them."""
     with connect() as c:
-        rows = _rows(c.execute('SELECT * FROM notices WHERE seq > ? ORDER BY id DESC LIMIT ?', (after_seq, limit)))
+        rows = _rows(c.execute('SELECT * FROM notices WHERE seq > ? AND (? > 0 OR COALESCE(cleared, 0) = 0) '
+                               'ORDER BY id DESC LIMIT ?', (after_seq, after_seq, limit if not after_seq else max(limit, 1000))))
     for r in rows:
         r['link'] = json.loads(r['link']) if r.get('link') else None
     return rows
@@ -1037,7 +1042,8 @@ def notices(after_seq: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
 
 def notice_counts() -> Dict[str, int]:
     with connect() as c:
-        seq, unread = c.execute('SELECT COALESCE(MAX(seq), 0), COALESCE(SUM(read = 0), 0) FROM notices').fetchone()
+        seq, unread = c.execute('SELECT COALESCE(MAX(seq), 0), COALESCE(SUM(read = 0 AND COALESCE(cleared, 0) = 0), 0) '
+                                'FROM notices').fetchone()
     return {'seq': seq, 'unread': unread}
 
 
@@ -1050,6 +1056,14 @@ def read_notices(ids: List[int] = None) -> None:
                       [seq, *[int(i) for i in ids]])
         else:
             c.execute('UPDATE notices SET read = 1, seq = ? WHERE read = 0', (seq,))
+
+
+def clear_notices() -> int:
+    """Clear the bell: every notice is hidden for good (and read). The rows stay, so the same event is not
+    raised again; each gets a new seq so other open pages drop them too."""
+    with connect() as c:
+        seq = c.execute('SELECT COALESCE(MAX(seq), 0) + 1 FROM notices').fetchone()[0]
+        return c.execute('UPDATE notices SET cleared = 1, read = 1, seq = ? WHERE COALESCE(cleared, 0) = 0', (seq,)).rowcount
 
 
 def prune_notices() -> None:
