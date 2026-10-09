@@ -2657,7 +2657,8 @@ def ticker_state() -> dict:
         TICKER['loading_prev'] = True
         threading.Thread(target=_load_prev_closes, args=(session,), daemon=True, name='ticker-prev').start()
     if live and charts.streaming() and _ticker_stream(session):
-        return {'rows': TICKER['rows'], 'live': True, 'source': 'dhan', 'stream': True, 'session': session.isoformat(),
+        return {'rows': TICKER['rows'], 'mood': ticker.mood(TICKER['rows']), 'live': True, 'source': 'dhan', 'stream': True,
+                'session': session.isoformat(),
                 'updated': datetime.fromtimestamp(TICKER['at'], data.IST).isoformat(timespec='seconds'),
                 'refresh_s': 1, 'error': None}
     ttl = TICKER_TTL_LIVE if live else TICKER_TTL_CLOSED
@@ -2682,7 +2683,7 @@ def ticker_state() -> dict:
             r.get('prev_close') is None and TICKER['prev'].get(r['id']) is not None for r in TICKER['rows']):
         # The previous closes arrived after the last quote: fill them in without another call.
         TICKER['rows'] = ticker.build({r['id']: r for r in TICKER['rows']}, TICKER['prev'])
-    return {'rows': TICKER['rows'], 'live': live, 'source': 'dhan', 'session': session.isoformat(),
+    return {'rows': TICKER['rows'], 'mood': ticker.mood(TICKER['rows']), 'live': live, 'source': 'dhan', 'session': session.isoformat(),
             'updated': datetime.fromtimestamp(TICKER['at'], data.IST).isoformat(timespec='seconds') if TICKER['at'] else None,
             'refresh_s': ttl, 'error': TICKER['error']}
 
@@ -2766,6 +2767,7 @@ def api_state():
     return jsonify(safe({
         'now': data.now_ist().isoformat(timespec='seconds'),
         'market_open': data.market_open(),
+        'mood': market_mood(),
         'scan_state': STATE['scan'],
         'watch_state': {k: v for k, v in STATE['watch'].items() if not k.startswith('_')},
         'settings': store.settings(),
@@ -4050,12 +4052,28 @@ def ws_ticker(p: dict, mem: dict):
     return ticker_state()
 
 
+def market_mood():
+    """The market's mood for the page's background (ticker.mood): from the strip's latest rows, read
+    again through ticker_state() (its cache) when Dhan is on; the last session's after the close."""
+    try:
+        rows = ticker_state().get('rows') if dhan.available() else None
+    except Exception:
+        rows = None
+    m = ticker.mood(rows or TICKER['rows'] or [])
+    return {**m, 'live': data.market_open(), 'session': TICKER['session'].isoformat() if TICKER['session'] else None} if m else None
+
+
+def ws_mood(p: dict, mem: dict):
+    return market_mood() or {'label': None}
+
+
 HUB.channel('px', ws_px, every=0.2, dedupe=False)
 HUB.channel('ticks', ws_ticks, every=0.25, dedupe=False)
 HUB.channel('notices', lambda p, mem: notice_counts_now(), every=1.0, background=True)
 HUB.channel('demo', ws_demo, every=1.0)
 HUB.channel('chain', ws_chain, every=1.0)
 HUB.channel('ticker', ws_ticker, every=1.0)
+HUB.channel('mood', ws_mood, every=2.0)
 # In-memory state whose change means a panel should load again (the tables are seen by db_changes).
 _public = lambda d: {k: v for k, v in d.items() if not k.startswith('_')}
 HUB.probe('run', lambda: {k: _public(v) for k, v in STATE.items()})
