@@ -154,15 +154,21 @@ def folds(first: date, last: date, months: int) -> List[Tuple[date, date]]:
 
 
 def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], current: Dict[str, float],
-                 specs: Dict[str, Dict[str, Any]], pol: Dict[str, Any], mode: str, first: date, last: date) -> Dict[str, Any]:
+                 specs: Dict[str, Dict[str, Any]], pol: Dict[str, Any], mode: str, first: date, last: date,
+                 on_step: Optional[Callable[[int, int, str], None]] = None) -> Dict[str, Any]:
     """Out-of-sample comparison of 'tune on the past, trade the next fold' against
-    the current rules, and the proposal if the tuning earns it."""
+    the current rules, and the proposal if the tuning earns it. on_step(n, total, what) is told as each
+    fold starts (and the last step, the tuning on all history), for a progress bar."""
     months = 1 if mode == 'options' else pol['fold_months']     # options history is months, not years
     fs = folds(date(first.year, first.month, 1), last, months)
     oos_tuned, oos_current, rows = [], [], []
-    for k in range(pol['min_train_folds'], len(fs)):
+    test_folds = list(range(pol['min_train_folds'], len(fs)))
+    total = len(test_folds) + 1                                  # every fold, then the tuning on all history
+    for i, k in enumerate(test_folds, 1):
         train = (fs[0][0].isoformat(), fs[k][0].isoformat())
         test = (fs[k][0].isoformat(), fs[k][1].isoformat())
+        if on_step:
+            on_step(i, total, f'testing {test[0][:7]} to {test[1][:7]}')
         params, score = tune(evaluate, current, specs, pol, mode, train)
         inside = lambda ts: [t for t in ts if test[0] <= t['entry_time'][:10] < test[1]]
         a, b = inside(evaluate(params)), inside(evaluate(current))
@@ -171,12 +177,24 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
         rows.append({'train': train, 'test': test, 'params': params, 'train_score': None if math.isinf(score) else round(score, 3),
                      'tuned': perf.summary(a), 'current': perf.summary(b)})
     st, sc = perf.summary(oos_tuned), perf.summary(oos_current)
+    gain = (st.get('avg_r') or 0) - (sc.get('avg_r') or 0)
+    # Every test with its value and its bar, passed or not (reasons below are the ones that failed).
+    checks = [
+        {'key': 'folds', 'label': 'Folds to test on', 'value': len(rows), 'need': 1, 'ok': bool(rows)},
+        {'key': 'trades', 'label': 'Out-of-sample trades', 'value': st.get('trades', 0), 'need': pol['min_oos_trades'][mode],
+         'ok': st.get('trades', 0) >= pol['min_oos_trades'][mode]},
+        {'key': 'gain', 'label': 'R a trade added out of sample', 'value': round(gain, 3), 'need': pol['min_gain_r'],
+         'ok': bool(st.get('trades')) and gain >= pol['min_gain_r']},
+        {'key': 'total', 'label': 'Total R against the current rules', 'value': st.get('total_r'), 'need': sc.get('total_r'),
+         'ok': bool(st.get('trades')) and (st.get('total_r') or 0) > (sc.get('total_r') or 0)},
+        {'key': 'drawdown', 'label': 'Drawdown no deeper', 'value': st.get('max_drawdown'), 'need': sc.get('max_drawdown'),
+         'ok': not st.get('trades') or not ((st.get('max_drawdown') or 0) < 1.25 * (sc.get('max_drawdown') or 0) - 2)},
+    ]
     reasons = []
     if not rows:
         reasons.append(f'not enough history for walk-forward ({len(fs)} folds of {months} month(s))')
     if st.get('trades', 0) < pol['min_oos_trades'][mode]:
         reasons.append(f"only {st.get('trades', 0)} out-of-sample trades (need {pol['min_oos_trades'][mode]})")
-    gain = (st.get('avg_r') or 0) - (sc.get('avg_r') or 0)
     if st.get('trades') and gain < pol['min_gain_r']:
         reasons.append(f'tuning added {gain:+.3f}R per trade out of sample (need +{pol["min_gain_r"]})')
     if st.get('trades') and (st.get('total_r') or 0) <= (sc.get('total_r') or 0):
@@ -185,12 +203,14 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
         reasons.append('deeper drawdown than the current rules')
     proposal = None
     if not reasons:
+        if on_step:
+            on_step(total, total, 'tuning on all history')
         whole, _ = tune(evaluate, current, specs, pol, mode, (fs[0][0].isoformat(), None))
         proposal = clamp_steps(whole, current, specs, pol['max_steps'])
         if all(abs(proposal[k] - current[k]) < 1e-9 for k in current):
             proposal, reasons = None, ['tuning on all history lands on the current rules']
     return {'folds': rows, 'oos_tuned': st, 'oos_current': sc, 'gain_r': round(gain, 3),
-            'proposal': proposal, 'reasons': reasons}
+            'proposal': proposal, 'reasons': reasons, 'checks': checks}
 
 
 # ---------------------------------------------------------------- shadow, rollback, pause

@@ -118,6 +118,22 @@ class Autopilot(unittest.TestCase):
         self.assertIsNone(wf['proposal'])
         self.assertTrue(wf['reasons'])
 
+    def test_walk_forward_reports_each_fold_and_its_checks(self):
+        evaluate = self._market(edge=True)
+        seen = []
+        wf = autopilot.walk_forward(evaluate, {'min_rr': 1.5}, {'min_rr': SPEC['min_rr']}, self.pol, 'swing',
+                                    date(2024, 1, 1), date(2025, 12, 31), on_step=lambda n, total, what: seen.append((n, total, what)))
+        total = seen[0][1]
+        self.assertEqual([n for n, _, _ in seen], list(range(1, total + 1)))   # every fold, then all history
+        self.assertEqual(seen[0][2][:8], 'testing ')
+        self.assertEqual(seen[-1][2], 'tuning on all history')
+        self.assertEqual(len(wf['folds']), total - 1)
+        self.assertTrue(all(c['ok'] for c in wf['checks']))                  # no reasons: every check passed
+        refused = autopilot.walk_forward(self._market(edge=False, seed=7), {'min_rr': 1.5}, {'min_rr': SPEC['min_rr']}, self.pol,
+                                         'swing', date(2024, 1, 1), date(2025, 12, 31))
+        self.assertTrue(any(not c['ok'] for c in refused['checks']))
+        self.assertEqual({c['key'] for c in refused['checks']}, {'folds', 'trades', 'gain', 'total', 'drawdown'})
+
     def test_walk_forward_needs_history(self):
         wf = autopilot.walk_forward(lambda thr: [], {'min_rr': 3.0}, {'min_rr': SPEC['min_rr']}, self.pol, 'swing',
                                     date(2025, 10, 1), date(2025, 12, 31))
@@ -441,6 +457,7 @@ class LabAndApi(unittest.TestCase):
         self.assertEqual(lab.step_of('15m candles 240/250 (VOGL)'), ('m15', 240, 250))
         self.assertEqual(lab.step_of('intraday records 30/250'), ('intraday_records', 30, 250))
         self.assertEqual(lab.step_of('options: walk-forward tuning over a – b')[0], 'tune_options')
+        self.assertEqual(lab.step_of('swing: walk-forward 3/11 (testing 2024-07 to 2024-10)'), ('tune_swing', 3, 11))
         self.assertEqual(lab.step_of('options: outcomes for 4 candidates')[0], 'options')
         self.assertEqual(lab.step_of('waiting for the market to close'), (None, None, None))
         self.assertEqual(lab.plan('backtest', {'download': False})[0], 'swing_records')
@@ -467,6 +484,20 @@ class LabAndApi(unittest.TestCase):
         v = lab.job_view(store.jobs(1)[0])
         self.assertEqual([s['state'] for s in v['steps'][:4]], ['done', 'done', 'done', 'skipped'])
         self.assertIsNotNone(v['steps'][0]['secs'])
+        # A tuning keeps its outcome as data with its step, for the job's detail.
+        tid = store.add_job('tune', {'modes': ['swing']})
+        tjob = store.next_job()
+        tlog = lab.JobLog(tjob)
+        tlog('swing: walk-forward tuning over a – b')
+        tlog('swing: walk-forward 2/5 (testing 2025-01 to 2025-04)')
+        running = [x for x in store.jobs(5) if x['id'] == tid][0]
+        rv = lab.job_view(running)
+        self.assertEqual((rv['steps'][0]['n'], rv['steps'][0]['total']), (2, 5))
+        tlog.result('tune_swing', {'proposal': False, 'checks': [{'key': 'trades', 'ok': False}]})
+        tlog.close()
+        store.update_job(tid, status='done', finished=store._now())
+        tv = lab.job_view([x for x in store.jobs(5) if x['id'] == tid][0])
+        self.assertEqual(tv['steps'][0]['result']['checks'][0]['key'], 'trades')
         # A tuning run that passed over a mode says why.
         t = store.add_job('tune')
         tl = lab.JobLog(store.next_job())
