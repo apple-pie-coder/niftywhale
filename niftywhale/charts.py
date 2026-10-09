@@ -11,8 +11,9 @@ live price behind them (livefeed.py).
 
 Instruments are the universe's stocks (by symbol) and the ticker's indices ('IDX:<Dhan id>'). Times go
 to the browser as UTC seconds shifted to IST (the chart library draws UTC), daily and weekly candles as
-their date. Live prices are polled once a second from Dhan's LTP API (its limit: one quote request a
-second, shared with the board), only while a chart is open and the market is.
+their date. Live prices come from Dhan's WebSocket feed (dhanws.py), pushed as they trade, only while
+something on screen wants them and the market is open. While that connection is down they are polled
+once a second from Dhan's LTP API (its limit: one quote request a second, shared with the board).
 """
 import logging
 import threading
@@ -21,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import data, dhan, livefeed, ticker, universe
+from niftywhale import data, dhan, dhanws, livefeed, ticker, universe
 
 logger = logging.getLogger(__name__)
 
@@ -124,13 +125,117 @@ def interval() -> float:
     return 1.05 if dhan.available() else 5.0
 
 
-FEED = livefeed.Feed(fetch_prices, interval, active=lambda: data.market_open(), name='chart-feed')
+def feed_key(sym: str) -> Optional[tuple]:
+    """A feed symbol's Dhan instrument: (segment, security id)."""
+    if sym.startswith('OPT:'):
+        parts = sym.split(':')
+        return (parts[1], int(parts[2])) if len(parts) == 3 and parts[2].isdigit() else None
+    i = _index_id(sym)
+    if i is not None:
+        return ('IDX_I', i)
+    sid = dhan.security_id(sym)
+    return ('NSE_EQ', int(sid)) if sid else None
+
+
+def ws_url() -> Optional[str]:
+    if not dhan.available():
+        return None
+    return dhanws.URL.format(token=dhan.token(), client=dhan.client_id())
+
+
+class DhanSource:
+    """The live feed's stream: feed symbols to Dhan instruments and back, and the latest packet of
+    each (open / high / low, OI, best bid and ask) for what wants more than the price."""
+    QUOTE_KEEP_S = 600
+
+    def __init__(self, feed_fn):
+        self._feed = feed_fn                    # -> the Feed the prices go to
+        self._lock = threading.Lock()
+        self._sym: Dict[tuple, str] = {}
+        self._quotes: Dict[tuple, dict] = {}
+        self.stream = dhanws.Stream(ws_url, self._packet, name='dhan-feed')
+
+    def cover(self, want: Dict[str, str]) -> set:
+        if not want or not dhan.available():
+            self.stream.want({})
+            return set()
+        keys, syms = {}, {}
+        for s, m in want.items():
+            k = feed_key(s)
+            if k:
+                keys[k], syms[k] = m, s
+        with self._lock:
+            self._sym = syms
+        self.stream.want(keys)
+        have = self.stream.subscribed()
+        return {s for k, s in syms.items() if k in have}
+
+    def _packet(self, p: dict) -> None:
+        k, now = (p['seg'], p['sid']), time.time()
+        with self._lock:
+            q = self._quotes.get(k)
+            if q is None:
+                q = self._quotes[k] = {}
+            q.update({a: b for a, b in p.items() if a not in ('code', 'seg', 'sid')})
+            q['at'] = now
+            sym = self._sym.get(k)
+        ltp = p.get('ltp')
+        if sym and ltp and ltp > 0:
+            self._feed().add({sym: float(ltp)}, now)
+
+    def quote(self, sym: str, fresh_s: float = 15) -> Optional[dict]:
+        """The latest packet's fields for a feed symbol, if one came in the last `fresh_s` seconds."""
+        k = feed_key(sym)
+        with self._lock:
+            q = self._quotes.get(k) if k else None
+            return dict(q) if q and time.time() - q['at'] <= fresh_s else None
+
+    def carried(self, syms) -> Dict[str, dict]:
+        """The latest packet of each symbol the open connection carries and has priced since it
+        opened. An instrument that has not traded since is still current: the stream sends a
+        packet on subscribing and on every change."""
+        have, since = self.stream.subscribed(), self.stream.since or 0
+        out = {}
+        with self._lock:
+            for s in syms:
+                k = feed_key(s)
+                q = self._quotes.get(k) if k in have else None
+                if q and q['at'] >= since:
+                    out[s] = dict(q)
+        return out
+
+    def quotes(self, syms, fresh_s: float = 15) -> Dict[str, dict]:
+        out = {}
+        for s in syms:
+            q = self.quote(s, fresh_s)
+            if q:
+                out[s] = q
+        return out
+
+    def prune(self) -> None:
+        cut = time.time() - self.QUOTE_KEEP_S
+        with self._lock:
+            for k in [k for k, q in self._quotes.items() if q['at'] < cut]:
+                del self._quotes[k]
+
+    def status(self) -> dict:
+        return self.stream.status()
+
+
+SOURCE = DhanSource(lambda: FEED)
+FEED = livefeed.Feed(fetch_prices, interval, active=lambda: data.market_open(), name='chart-feed', stream=SOURCE)
+
+
+def streaming() -> bool:
+    return dhan.available() and SOURCE.stream.connected()
 
 
 def live() -> Dict[str, Any]:
     on = dhan.available()
-    return {'source': 'dhan' if on else 'yfinance', 'realtime': on, 'poll_ms': 1000 if on else 5000,
-            'note': 'Dhan prices, every second' if on else 'yfinance prices, every 15 s. Connect Dhan for real-time.'}
+    ws = on and SOURCE.stream.connected()
+    return {'source': 'dhan' if on else 'yfinance', 'realtime': on, 'stream': ws, 'poll_ms': 1000 if on else 5000,
+            'note': 'Dhan live feed, every trade' if ws else 'Dhan prices, every second' if on
+            else 'yfinance prices, every 15 s. Connect Dhan for real-time.'}
 
 
 # ---------------------------------------------------------------- candles

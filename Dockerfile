@@ -30,9 +30,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 
 # One worker: the scheduler and the scan run as threads in this process and
-# share its locks; a second worker would run a second scheduler.
+# share its locks; a second worker would run a second scheduler. Each open page's
+# WebSocket holds a thread (at most hub.MAX_CLIENTS = 12), so there are 24.
 CMD ["gunicorn", "--bind", "0.0.0.0:5058", \
-     "--workers", "1", "--threads", "8", \
+     "--workers", "1", "--threads", "24", \
      "--timeout", "120", "--graceful-timeout", "30", \
      "--access-logfile", "-", "--error-logfile", "-", \
      "app:app"]

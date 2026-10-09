@@ -6,3 +6,6 @@ gunicorn>=21.2
 markdown>=3.5
 webauthn==3.0.1
 qrcode==8.2
+flask-sock==0.7.0
+simple-websocket==1.1.0
+websockets>=13.0,<18

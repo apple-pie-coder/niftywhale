@@ -12,6 +12,8 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from niftywhale import hub
+
 DB_PATH = os.getenv('DB_PATH', 'var/niftywhale.db')
 
 SETTING_DEFAULTS = {
@@ -238,6 +240,9 @@ def init() -> None:
                          ('react_basis', 'TEXT'), ('react_done', 'INTEGER DEFAULT 0')):
             if col not in have:
                 c.execute(f'ALTER TABLE news ADD COLUMN {col} {typ}')
+        # Change counters for the page's WebSocket (hub.py): a trigger per shown table, so a write from
+        # any process (the lab's container too) tells open pages which panel to load again.
+        hub.install_triggers(c)
 
 
 def _now() -> str:

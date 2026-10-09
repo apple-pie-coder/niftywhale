@@ -244,6 +244,9 @@ stop (3.7).
 | `niftywhale/data.py` | Daily candles from yfinance, 5m/15m candles from Dhan (yfinance as fallback), the in-memory caches, the IST market clock. |
 | `niftywhale/universe.py` | Downloads the Nifty 100, F&O and 27 other index lists from NSE; `INDICES` is the registry. |
 | `niftywhale/store.py` | SQLite: scans, per-stock verdicts, setups, zones, alerts, settings, and options mode's chain snapshots, daily IV history and ideas. Scans, zones and alerts carry a `mode` (`swing` / `intraday`) that keeps the two modes apart. |
+| `niftywhale/dhanws.py` | Dhan's live market feed over a WebSocket: the binary packets, subscriptions (ticker / quote / full), reconnects. `charts.DhanSource` maps it to the feed's symbols. |
+| `niftywhale/livefeed.py` | The live feed: who wants which instrument priced, ticks for the Charts tab, the stream with a REST poll for whatever it does not carry. |
+| `niftywhale/hub.py` | The page's WebSocket (`/ws`): channels, "this changed" from the database's change triggers and the app's state. |
 | `niftywhale/dhan.py` | Dhan real-time data: tokens (paste, TOTP login, renewal), symbol IDs, option lot sizes, quotes (stocks and indices), index daily candles, 5m and 15m candles (one shared 5-requests-a-second limit), option chains and expiries (their own one-every-3-seconds limit). |
 | `niftywhale/indicators.py` | Chart indicators as pure functions: estimated delta (close-location split, from 1-minute candles where available), cumulative delta, session VWAP, the opening range and its breakout, Bollinger Bands. |
 | `niftywhale/notify.py` | Telegram. |
@@ -665,6 +668,7 @@ data:
 | | yfinance (default) | Dhan connected |
 |---|---|---|
 | Live board price | Last 15m candle's close, a few minutes old | Real-time quote, refreshed every **10 s** |
+| Live prices on the page (open trades, demo, ticker, charts, chain) | none | **Every trade**, pushed over Dhan's live market feed (WebSocket); every second over REST while the feed is down |
 | Watcher checks | 90 s after each 15m candle closes | **10 s** after each 15m candle closes |
 | 15m candles (watcher, charts) | yfinance | Dhan |
 | Evening scan (daily candles) | yfinance | yfinance (completed candles; the delay doesn't matter) |
@@ -709,6 +713,39 @@ In every case except "Dhan · real-time", NiftyWhale falls back to yfinance on i
 also falls back per stock if a Dhan request fails.
 
 Set `NIFTYWHALE_DATA=yfinance` in `.env` to ignore Dhan entirely.
+
+#### Live updates (WebSockets)
+
+Two WebSockets carry everything that moves, so nothing on the page waits for a timer:
+
+1. **Dhan → NiftyWhale.** One connection to Dhan's live market feed (`wss://api-feed.dhan.co`,
+   `niftywhale/dhanws.py`) carries every instrument something wants priced: the open positions,
+   whatever is on screen, the Charts tab's symbols, the ticker's indices (with the day's open, high
+   and low) and, while an option chain is open, its contracts with OI and the best bid and ask.
+   Prices arrive as they trade instead of once a second. With nothing wanted, or the market closed,
+   the connection is closed after a minute. If it drops, it reconnects with a growing pause; Dhan's
+   own reasons for closing it (too many connections on the account, an expired token, no Data API)
+   are shown and wait 5 minutes. While it is down, the feed polls Dhan's REST quote once a second as
+   before, so nothing stops.
+2. **The page → NiftyWhale** (`/ws`, `niftywhale/hub.py`). Each open page keeps one connection, over
+   which the server pushes:
+   - the live prices of what the page shows, each as it changes;
+   - the Charts tab's ticks;
+   - the bell's count;
+   - the Demo tab's positions and totals, the open option chain and the ticker strip, while shown;
+   - **"this changed"**: a database trigger counts every write to the tables the page shows (by
+     the app or by the lab's container), and the app's own state (a scan's progress, the market
+     opening) is watched too, so the panel that shows it loads again within a second or two. The
+     panels' own timers stay only as a safety net (about two minutes).
+
+   A page in the background gets only the bell and "this changed" until it is shown again. The
+   connection signs in like the page (the cookie, from the app's own address only, or an API
+   token), is checked again every minute and closes when the sign-in ends. At most 12 pages are
+   connected at once; a page turned away, or one whose connection fails, polls over HTTP as before
+   and tries the socket again later.
+
+`GET /api/live/status` shows both: whether Dhan's feed is connected, how many instruments it
+carries, how many the feed is still polling, and how many pages are connected.
 
 ### 4.11 Order flow and indicators
 
@@ -1889,7 +1926,7 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/ticker
 
 #### `GET /api/live`
 
-The once-a-second live prices behind every moving number on the page. Asking puts the symbols on the feed for 30 s; each price comes with the time it was read. Also carries the notification count (`notices`: `seq`, `unread`).
+The live prices behind every moving number on the page, for a page without its WebSocket (`/ws` pushes the same as they trade) and for scripts. Asking puts the symbols on the feed for 30 s; each price comes with the time it was read. Also carries the notification count (`notices`: `seq`, `unread`).
 
 **Query:** `?s=` comma-separated feed symbols: a stock, `IDX:<id>` for an index, `OPT:<segment>:<id>` for an option contract (up to 250)
 
@@ -1918,6 +1955,66 @@ curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/live?s=PAYT
     ]
   }
 }
+```
+
+#### `GET /api/live/status`
+
+The live plumbing: Dhan's market feed WebSocket (connected, since, instruments carried, packets, the last error), the feed (symbols streamed and still polled) and how many pages have their WebSocket open.
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/live/status
+```
+
+```json
+{
+  "feed": {
+    "error": null,
+    "last_poll": 1791560431.0,
+    "polled": 0,
+    "streamed": 26
+  },
+  "note": "Dhan live feed, every trade",
+  "on": true,
+  "pages": 2,
+  "poll_ms": 1000,
+  "realtime": true,
+  "source": "dhan",
+  "stream": {
+    "connected": true,
+    "error": null,
+    "instruments": 61,
+    "last_packet": 1791561620.4,
+    "packets": 48211,
+    "since": 1791560432.1
+  }
+}
+```
+
+#### `GET /ws`
+
+The page's live connection. Send `{"t": "sub", "ch": "px", "p": {"s": ["IDX:13"]}}` to subscribe (channels: `px` prices, `ticks` chart ticks `{s, since}`, `notices`, `demo`, `ticker`, `chain` `{symbol, expiry}`), `{"t": "unsub", "ch": …}`, `{"t": "vis", "hidden": true}`, `{"t": "ping"}`. The server sends `hello` first, then `{"t": <channel>, "d": …}` as things change and `{"t": "topics", "d": {…}}` when a table (`db:<table>`) or the app's state (`run`, `market`, `news_run`, `smart_run`) changed. Signs in like a page (the cookie from the app's own origin) or with an API token; closes with 4401 when the sign-in ends, 1013 when 12 pages are connected already.
+
+**Parameters:** a WebSocket upgrade (`wss://` through Caddy); messages are JSON
+
+```sh
+python3 - <<'PY'
+import asyncio, json, os, websockets
+async def main():
+    url, auth = 'ws://127.0.0.1:5058/ws', {'Authorization': 'Bearer ' + os.environ['NW_TOKEN']}
+    async with websockets.connect(url, additional_headers=auth) as ws:
+        await ws.send(json.dumps({'t': 'sub', 'ch': 'px', 'p': {'s': ['IDX:13', 'PAYTM']}}))
+        async for msg in ws:
+            print(msg)
+asyncio.run(main())
+PY
+```
+
+Messages, as they come:
+
+```json
+{"t": "hello", "on": true, "live": {"source": "dhan", "stream": true, "note": "Dhan live feed, every trade"}, "notices": {"seq": 20, "unread": 3}, "topics": {"db:zones": 412, "db:notices": 57, "run": "9f3a0c1b2d4e"}, "channels": ["chain", "demo", "notices", "px", "ticker", "ticks"]}
+{"t": "px", "d": {"on": true, "stream": true, "px": {"IDX:13": [22525.15, 1791533853.72]}}}
+{"t": "topics", "d": {"db:zones": 413}}
 ```
 
 #### `GET /api/glossary`

@@ -75,6 +75,16 @@ out = ['## 12. API reference', '',
        '(with `--cacert caddy-root-ca.crt` unless the device trusts the Pi\'s certificate). Without a token or session: `401`.', '',
        'The answers shown are real ones from this app, shortened: long lists keep their first item or two, deep objects show `{…}`,',
        'long text ends in `…`, and personal values (account and chat numbers) are replaced.', '']
+WS_EXAMPLE = """python3 - <<'PY'
+import asyncio, json, os, websockets
+async def main():
+    url, auth = 'ws://127.0.0.1:5058/ws', {'Authorization': 'Bearer ' + os.environ['NW_TOKEN']}
+    async with websockets.connect(url, additional_headers=auth) as ws:
+        await ws.send(json.dumps({'t': 'sub', 'ch': 'px', 'p': {'s': ['IDX:13', 'PAYTM']}}))
+        async for msg in ws:
+            print(msg)
+asyncio.run(main())
+PY"""
 for n, (gk, gname) in enumerate(GROUPS, 1):
     out += [f'### 12.{n} {gname}', '']
     for g, m, path, ex, body, params, desc in E:
@@ -90,6 +100,10 @@ for n, (gk, gname) in enumerate(GROUPS, 1):
         out += [f'#### `{m} {path}`', '', desc, '']
         if params:
             out += [f'**{"Query" if m == "GET" and "?" in params else "Body" if m == "POST" else "Parameters"}:** {params}', '']
+        if path == '/ws':
+            out += ['```sh', WS_EXAMPLE, '```', '', 'Messages, as they come:', '', '```json',
+                    '\n'.join(json.dumps(x, ensure_ascii=False) for x in STATIC['/ws'][1]), '```', '']
+            continue
         out += ['```sh', curl(m, url, body), '```', '']
         status, raw = cap.get('status'), cap.get('raw', '')
         if path == '/api/universe/refresh':
