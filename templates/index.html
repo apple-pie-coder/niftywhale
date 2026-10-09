@@ -645,6 +645,10 @@
                   border-radius: var(--r-pill); padding: 4px 11px; font-size: 12.5px; font-weight: 600; }
     .guide-link:hover { background: var(--sunk); }
     button.guide-link { font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    /* The top bar's buttons are icons only, round like the bell, everywhere; their names are tooltips and labels. */
+    .top-right .guide-link { width: 34px; height: 34px; padding: 0; justify-content: center; border-radius: 50%; color: var(--ink); flex: none; }
+    .top-right .guide-link svg { width: 16px; height: 16px; }
+    .top-right .lbl { display: none; }
 
     /* ------------------------------------------------------------ legend */
     .gl-search { width: 100%; font: inherit; font-size: 14px; padding: 8px 12px; border: 1px solid var(--line-strong);
@@ -980,8 +984,6 @@
     @media (max-width: 640px) {
         /* Results first: the controls fold away behind the top bar's Controls button. */
         .top-right { gap: 6px; }
-        .top-right .guide-link { padding: 7px 9px; }
-        .top-right .lbl { display: none; }
         .search { margin: 0 6px; }
         .search input { padding: 7px 10px 7px 30px; }
 
@@ -1381,21 +1383,21 @@
         <kbd class="q-kbd" id="q-kbd" aria-hidden="true">Ctrl K</kbd>
     </div>
     <div class="top-right">
-        <button class="guide-link sb-toggle" id="sb-toggle" type="button" aria-controls="sidebar" aria-expanded="false"
-                title="Scan, watcher, intraday, data, Telegram and rules">
+        <button class="guide-link sb-toggle" id="sb-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Controls"
+                title="Controls: scan, watcher, intraday, data, Telegram and rules">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"
                  stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12"/>
                 <circle cx="5" cy="4" r="1.4" fill="currentColor"/><circle cx="11" cy="8" r="1.4" fill="currentColor"/>
                 <circle cx="7" cy="12" r="1.4" fill="currentColor"/></svg><span class="lbl">Controls</span></button>
-        <button class="guide-link" id="tk-show" type="button" hidden title="Show the index ticker">
+        <button class="guide-link" id="tk-show" type="button" hidden aria-label="Show the ticker" title="Show the index ticker">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12l3.5-4 3 2.5L14 4"/>
                 <path d="M10.5 4H14v3.5"/></svg><span class="lbl">Ticker</span></button>
-        <button class="guide-link" id="legend-btn" type="button" title="Every abbreviation and symbol in the app (?)">
+        <button class="guide-link" id="legend-btn" type="button" aria-label="Legend" title="Legend: every abbreviation and symbol in the app (?)">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M5 6h6M5 8.5h6M5 11h3.5"/></svg><span class="lbl">Legend</span></button>
-        <a class="guide-link" href="/docs" title="How NiftyWhale works and how to use it">
+        <a class="guide-link" href="/docs" aria-label="Guide" title="Guide: how NiftyWhale works and how to use it">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M2 3.5C3.5 2.6 5.5 2.5 8 3.6c2.5-1.1 4.5-1 6-.1v9.6c-1.5-.9-3.5-1-6 .1-2.5-1.1-4.5-1-6-.1z"/>
