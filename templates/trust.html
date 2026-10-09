@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="robots" content="noindex">
+<title>Trust this Pi · NiftyWhale</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<style>
+    :root { color-scheme: light; --plane: #f4f6f8; --surface: #fff; --sunk: #eef1f4; --line: #dde3e9; --ink: #0f1d2b; --ink-2: #3c4b5a;
+            --ink-3: #6b7a89; --accent: #0b6e8a; --accent-ink: #fff; --accent-soft: #e2f1f5; --warn: #9a5b00; --warn-soft: #fff1d6;
+            --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+            --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    @media (prefers-color-scheme: dark) {
+        :root { color-scheme: dark; --plane: #0b141c; --surface: #111d27; --sunk: #0e1922; --line: #20303d; --ink: #e6edf3; --ink-2: #b6c3cf;
+                --ink-3: #8193a3; --accent: #2aa7c9; --accent-ink: #04202a; --accent-soft: #0f2f3a; --warn: #e8b04b; --warn-soft: #2e2309; }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { font-family: var(--font); background: var(--plane); color: var(--ink); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+           padding: calc(28px + env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px)) calc(40px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px)); }
+    main { max-width: 680px; margin: 0 auto; }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; margin-bottom: 22px; }
+    .logo span { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; }
+    h1 { font-size: 26px; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 8px; }
+    .lead { color: var(--ink-2); margin-bottom: 20px; }
+    .dl { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border-radius: 12px; background: var(--accent);
+          color: var(--accent-ink); font-weight: 650; text-decoration: none; margin-bottom: 24px; }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tabs button { font: inherit; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
+                   background: var(--surface); color: var(--ink-2); cursor: pointer; min-height: 38px; }
+    .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    section { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; }
+    ol { padding-left: 22px; display: grid; gap: 12px; }
+    li::marker { font-weight: 700; color: var(--accent); }
+    b { color: var(--ink); }
+    .path { font-weight: 600; color: var(--ink); }
+    code, .mono { font-family: var(--mono); font-size: 13px; background: var(--sunk); padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+    pre { font-family: var(--mono); font-size: 12.5px; background: var(--sunk); padding: 10px 12px; border-radius: 10px; overflow-x: auto; margin-top: 8px; }
+    .note { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); font-size: 14px; }
+    .ok { margin-top: 22px; color: var(--ink-2); font-size: 14px; }
+    a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+    <div class="logo"><span><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path fill-rule="evenodd" transform="translate(.4 .7) scale(.92)" d="M2.5 14C2.5 10.4 6.3 8.5 10.5 8.5c3.7 0 6.1 1.7 7.1 3.9.9-1.2 1.5-2.6 1.6-4.1L16.9 6.4c.6-.9 2.2-.8 3 .3.6-1 1.9-1.6 2.9-1.2l-1.9 2.9c-.2 3.2-.6 5.6-2 7.5-1.8 2.4-4.6 3.6-8.4 3.6-4.7 0-8-2-8-5.5z M8.1 12.6a1.1 1.1 0 1 0-2.2 0 1.1 1.1 0 1 0 2.2 0z"/></svg></span>NiftyWhale</div>
+    <h1>Trust this Pi's certificate</h1>
+    <p class="lead">The connection to NiftyWhale is encrypted with a certificate from your own Pi, not from a public company, so each
+        device has to trust the Pi once. Until it does, the address bar shows red and Face ID can't be used. It takes a minute.</p>
+    <a class="dl" href="/niftywhale-root-ca.crt" download="niftywhale-root-ca.crt">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+        Download the certificate</a>
+
+    <div class="tabs" role="group" aria-label="Your device">
+        <button type="button" data-os="ios">iPhone / iPad</button><button type="button" data-os="mac">Mac</button>
+        <button type="button" data-os="android">Android</button><button type="button" data-os="win">Windows</button>
+    </div>
+
+    <section data-for="ios"><ol>
+        <li>Open this page <b>in Safari</b> (other browsers on iPhone can't install certificates) and tap <b>Download the certificate</b>, then <b>Allow</b>. You'll see "Profile Downloaded".</li>
+        <li>Open <span class="path">Settings → General → VPN &amp; Device Management</span>, tap <b>Caddy Local Authority – 2026 ECC Root</b>, then <b>Install</b> (enter your passcode), <b>Install</b> again, <b>Done</b>.</li>
+        <li><b>The step most people miss:</b> open <span class="path">Settings → General → About → Certificate Trust Settings</span> and turn on
+            <b>Caddy Local Authority – 2026 ECC Root</b>, then <b>Continue</b>.</li>
+        <li>Close the NiftyWhale tab in Safari (swipe it away) and open <a href="https://pandorasbox.local:5443">https://pandorasbox.local:5443</a> again.</li>
+    </ol>
+    <p class="note">Installed but still red? Step 3 is still off. And open the app by its name, <code>pandorasbox.local</code>: by IP address the lock shows too, but Face ID only works with the name.</p></section>
+
+    <section data-for="mac" hidden><ol>
+        <li>Click <b>Download the certificate</b> and open the downloaded file. <b>Keychain Access</b> opens and adds it to the <b>login</b> keychain.</li>
+        <li>In Keychain Access, find <b>Caddy Local Authority – 2026 ECC Root</b> (search for "Caddy") and double-click it.</li>
+        <li><b>The step most people miss:</b> open <b>Trust</b>, set <b>When using this certificate</b> to <b>Always Trust</b>, close the window and enter your Mac password.</li>
+        <li>Quit the browser completely (<b>⌘Q</b>) and open <a href="https://pandorasbox.local:5443">https://pandorasbox.local:5443</a> again.</li>
+    </ol>
+    <p class="note">Firefox keeps its own list: <span class="path">Settings → Privacy &amp; Security → Certificates → View Certificates → Authorities → Import</span>, choose the file and tick <b>Trust this CA to identify websites</b>.</p>
+    <p class="ok">Or in Terminal, in one go:</p>
+    <pre>sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/niftywhale-root-ca.crt</pre></section>
+
+    <section data-for="android" hidden><ol>
+        <li>Download the certificate.</li>
+        <li><span class="path">Settings → Security &amp; privacy → More security settings → Encryption &amp; credentials → Install a certificate → CA certificate</span>, then <b>Install anyway</b> and pick the file.</li>
+        <li>Reopen <a href="https://pandorasbox.local:5443">https://pandorasbox.local:5443</a>. If <code>.local</code> names don't open on your Android, use <code>https://192.168.1.50:5443</code>.</li>
+    </ol></section>
+
+    <section data-for="win" hidden><ol>
+        <li>Download the certificate and double-click it, then <b>Install Certificate…</b>.</li>
+        <li>Choose <b>Local Machine</b>, then <b>Place all certificates in the following store → Trusted Root Certification Authorities</b>, <b>Next</b>, <b>Finish</b>.</li>
+        <li>Restart the browser and open <a href="https://pandorasbox.local:5443">https://pandorasbox.local:5443</a>.</li>
+    </ol></section>
+
+    <p class="ok">Done when the address bar shows a lock with no warning. Then <a href="/login">sign in</a>.</p>
+</main>
+<script>
+(function () {
+    const ua = navigator.userAgent, touchMac = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+    const os = /iPhone|iPad|iPod/.test(ua) || touchMac ? 'ios' : /Macintosh/.test(ua) ? 'mac' : /Android/.test(ua) ? 'android' : /Windows/.test(ua) ? 'win' : 'ios';
+    const show = (k) => {
+        document.querySelectorAll('[data-os]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.os === k)));
+        document.querySelectorAll('[data-for]').forEach((s) => { s.hidden = s.dataset.for !== k; });
+    };
+    document.querySelectorAll('[data-os]').forEach((b) => b.addEventListener('click', () => show(b.dataset.os)));
+    show(os);
+})();
+</script>
+</body>
+</html>

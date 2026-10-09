@@ -1,0 +1,20 @@
+# Secrets and data: never in git.
+.env
+.env.*
+!.env.example
+var/
+*.db
+*.db-shm
+*.db-wal
+scripts/apidoc/private_subs.json
+
+# The FinBERT model for the news-tone container (~107 MB): downloaded, not versioned (README).
+nlp/model/
+
+# Python, editors, archives.
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+*.tgz
+*.tar.gz

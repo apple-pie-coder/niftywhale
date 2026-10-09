@@ -1,0 +1,5 @@
+# Tests only (not in the image): a software authenticator for the passkey tests.
+# Install without its pinned dependencies, which would downgrade cryptography below what webauthn needs:
+#   pip install fido2 && pip install --no-deps soft-webauthn==0.1.4
+fido2
+soft-webauthn==0.1.4
