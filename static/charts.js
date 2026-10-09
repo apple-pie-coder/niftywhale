@@ -6,9 +6,10 @@
  *   GET  candles?symbol=&tf=          [[t, o, h, l, c, v]] (t: seconds, already in IST) + levels
  *   GET  live?symbols=a,b&since=      ticks [[epoch, price]] since `since`, for every symbol
  *   POST layout                       [{symbol, tf, levels}]
- *   POST drawings                     {symbol, drawings: [{id, type: trend|hline|rect, p1: {t, p}, p2}]}
+ *   POST drawings                     {symbol, drawings: [{id, type: trend|hline|rect, p1: {t, p}, p2, color}]}
  *                                     (config carries them all as `drawings`; without the route they stay in this browser)
  *
+ * A magnet (toolbar) snaps the crosshair and drawings to the candle's open, high, low or close.
  * One poll for all charts brings the new ticks; each chart folds them into its last candle or
  * starts the next one, so a 1-second chart moves every second and a weekly one updates its week.
  * When the page has a live socket (window.LiveSocket: up, sub(channel, params), unsub(channel),
@@ -67,6 +68,16 @@
 .ch-tools button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .ch-tools button:disabled{opacity:.35;cursor:default}
 .ch-tools .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.ch-tools .sw{width:14px;height:14px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line-strong)}
+.ch-toolwrap{position:relative;display:inline-flex}
+.ch-pal{position:absolute;z-index:20;top:calc(100% + 6px);left:0;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.18);padding:10px;display:grid;grid-template-columns:repeat(4,26px);gap:8px;width:max-content}
+.ch-pal[hidden]{display:none}
+.ch-pal .sw-b{width:26px;height:26px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line-strong);cursor:pointer;padding:0}
+.ch-pal .sw-b[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.ch-pal .pal-row{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink-2)}
+.ch-pal input[type=color]{width:34px;height:26px;border:1px solid var(--line-strong);border-radius:6px;padding:0;background:none;cursor:pointer}
+.ch-pal .pal-def{border:0;background:none;color:var(--accent);font:inherit;font-size:12px;cursor:pointer;padding:0}
 .ch-body[data-draw="1"]{cursor:crosshair;touch-action:none}
 .ch-body[data-grab="1"]{cursor:move}
 @media (pointer:coarse){.ch-tools button{width:36px;height:34px}}
@@ -82,6 +93,7 @@
         trend: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 13L13 3"/><circle cx="3" cy="13" r="1.6" fill="currentColor"/><circle cx="13" cy="3" r="1.6" fill="currentColor"/></svg>',
         hline: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M1.5 8h13"/><path d="M4 4.5h8M4 11.5h8" stroke-width="1" opacity=".45"/></svg>',
         rect: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="4" width="11" height="8" rx="1"/></svg>',
+        magnet: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3.5 2.5v5.5a4.5 4.5 0 0 0 9 0V2.5"/><path d="M3.5 5.5h3M9.5 5.5h3"/></svg>',
         trash: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.2h11M6.2 4.2V2.8h3.6v1.4M3.9 4.2l.7 9h6.8l.7-9"/></svg>',
     };
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -142,6 +154,22 @@
     // or in this browser where the app has no drawings route.
     const DRAW_COLOR = { trend: 'accent', hline: 'warn', rect: 'accent' };
     let drawings = {}, tool = '', sel = null, placing = null, dragging = null, drawLocal = false;
+    // A drawing's colour: its own (chosen with the colour button while it is selected), else the theme's for its type.
+    // With nothing selected the button sets the colour of the next drawings (remembered in this browser).
+    const PALETTE = ['#2962ff', '#0b9ea0', '#22a06b', '#e5a50a', '#f97316', '#e5484d', '#9b5de5', '#787b86'];
+    let drawColor = (() => { try { const v = localStorage.getItem('lc.drawColor'); return /^#[0-9a-f]{6}$/i.test(v || '') ? v : null; } catch (e) { return null; } })();
+    const colorOf = (d, T) => d.color || T[DRAW_COLOR[d.type]] || T.accent;
+    // The magnet (toolbar, remembered in this browser): the crosshair snaps to the hovered candle's open, high, low or
+    // close, wicks included, and a drawing's point snaps to the nearest of them within MAGNET_PX.
+    let magnet = (() => { try { return localStorage.getItem('lc.magnet') !== '0'; } catch (e) { return true; } })();
+    const MAGNET_PX = 24;
+    // The candle under logical position l, and its price nearest to y (in pixels): [price, distance].
+    function nearestOHLC(c, l, y) {
+        const b = c.bars[Math.max(0, Math.min(c.bars.length - 1, Math.round(l)))];
+        if (!b) return null;
+        return [b.open, b.high, b.low, b.close].map((v) => [v, Math.abs((c.series.priceToCoordinate(v) ?? Infinity) - y)])
+            .reduce((a, x) => (x[1] < a[1] ? x : a));
+    }
     const drawSaveT = {};
 
     // A time as a (fractional) candle position on chart c, and back: between candles by interpolation, before the
@@ -167,8 +195,14 @@
     const dY = (c, p) => c.series.priceToCoordinate(p);
     function pointAt(c, e) {
         const r = c.body.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-        const l = c.chart.timeScale().coordinateToLogical(x), p = c.series.coordinateToPrice(y);
-        return l == null || p == null ? null : { t: lTime(c, l), l, p, x, y };
+        const l = c.chart.timeScale().coordinateToLogical(x);
+        let p = c.series.coordinateToPrice(y);
+        if (l == null || p == null) return null;
+        if (magnet && l >= -0.5 && l <= c.bars.length - 0.5) {
+            const near = nearestOHLC(c, l, y);
+            if (near && near[1] <= MAGNET_PX) p = near[0];
+        }
+        return { t: lTime(c, l), l, p, x, y };
     }
     const segDist = (x, y, x1, y1, x2, y2) => {
         const dx = x2 - x1, dy = y2 - y1, len = dx * dx + dy * dy;
@@ -218,7 +252,7 @@
             target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
                 const W = mediaSize.width;
                 list.forEach((d) => {
-                    const col = T[DRAW_COLOR[d.type]] || T.accent, on = isSel(c, d);
+                    const col = colorOf(d, T), on = isSel(c, d);
                     ctx.save();
                     ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = on ? 2 : 1.5;
                     if (d.preview) ctx.globalAlpha = 0.75;
@@ -271,6 +305,13 @@
         root.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === tool)));
         const del = root.querySelector('[data-tool-del]');
         if (del) del.disabled = !sel;
+        // The colour button shows the selected drawing's colour, or the next drawings'.
+        const d = selected(), cur = d ? d.color || null : drawColor;
+        const sw = root.querySelector('[data-draw-color] .sw');
+        if (sw) sw.style.background = cur || 'conic-gradient(#2962ff, #22a06b, #e5a50a, #e5484d, #9b5de5, #2962ff)';
+        const btn = root.querySelector('[data-draw-color]');
+        if (btn) btn.title = d ? 'Colour of the selected drawing' : 'Colour of the next drawings';
+        root.querySelectorAll('.ch-pal [data-sw]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sw === cur)));
     }
     function saveDrawings(sym) {
         clearTimeout(drawSaveT[sym]);
@@ -290,12 +331,29 @@
     }
     function addDrawing(c, d) {
         d.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        if (drawColor) d.color = drawColor;
         (drawings[c.symbol] = drawings[c.symbol] || []).push(d);
         sel = { symbol: c.symbol, id: d.id };
         setTool('');
         sel = { symbol: c.symbol, id: d.id };
         toolState(); redrawSym(c.symbol);
         saveDrawings(c.symbol);
+    }
+    function selected() {
+        if (!sel) return null;
+        return (drawings[sel.symbol] || []).find((d) => d.id === sel.id) || null;
+    }
+    // A colour from the palette or the picker (null: back to the theme's): the selected drawing's, or the next drawings'.
+    function setColor(color) {
+        const d = selected();
+        if (d) {
+            if (color) d.color = color; else delete d.color;
+            redrawSym(sel.symbol); saveDrawings(sel.symbol);
+        } else {
+            drawColor = color;
+            try { if (color) localStorage.setItem('lc.drawColor', color); else localStorage.removeItem('lc.drawColor'); } catch (e) { /* private mode */ }
+        }
+        toolState();
     }
     function deleteSelected() {
         if (!sel) return;
@@ -428,7 +486,17 @@
             priceLineVisible: true, lastValueVisible: true });
         c.vol = c.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
         c.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
-        c.chart.subscribeCrosshairMove((p) => legend(c, p && p.time != null ? p.seriesData.get(c.series) : null));
+        c.chart.subscribeCrosshairMove((p) => {
+            const d = p && p.time != null ? p.seriesData.get(c.series) : null;
+            legend(c, d);
+            // The magnet: the crosshair onto the nearest of the candle's open, high, low or close (set quietly; it raises
+            // no move of its own, and the next pointer move moves it again).
+            if (magnet && d && p.point && p.sourceEvent && d.open != null) {
+                const near = [d.open, d.high, d.low, d.close].reduce((a, v) =>
+                    (Math.abs((c.series.priceToCoordinate(v) ?? Infinity) - p.point.y) < Math.abs((c.series.priceToCoordinate(a) ?? Infinity) - p.point.y) ? v : a));
+                c.chart.setCrosshairPosition(near, p.time, c.series);
+            }
+        });
         c.body = body;
         c.draw = new DrawLayer(c);
         c.series.attachPrimitive(c.draw);
@@ -720,6 +788,10 @@
                     <button type="button" data-tool="hline" aria-pressed="false" title="Horizontal line: click a price" aria-label="Horizontal line">${IC.hline}</button>
                     <button type="button" data-tool="rect" aria-pressed="false" title="Rectangle: click one corner, then the opposite one" aria-label="Rectangle">${IC.rect}</button>
                     <span class="sep" aria-hidden="true"></span>
+                    <button type="button" data-magnet-lc aria-pressed="${magnet}" title="Magnet: the crosshair and drawings snap to the candle's open, high, low or close" aria-label="Magnet">${IC.magnet}</button>
+                    <span class="ch-toolwrap"><button type="button" data-draw-color aria-haspopup="true" aria-expanded="false" title="Colour of the next drawings" aria-label="Colour"><i class="sw"></i></button>
+                        <div class="ch-pal" role="dialog" aria-label="Drawing colour" hidden>${PALETTE.map((h) => `<button type="button" class="sw-b" data-sw="${h}" style="background:${h}" aria-label="${h}" aria-pressed="false"></button>`).join('')}
+                            <div class="pal-row"><label>Custom <input type="color" data-sw-custom value="#2962ff"></label><button type="button" class="pal-def" data-sw-def>Default</button></div></div></span>
                     <button type="button" data-tool-del disabled title="Delete the selected drawing (Delete)" aria-label="Delete the selected drawing">${IC.trash}</button></div>
                 <span class="ch-count"></span>
                 <span class="ch-feed"><i></i><span>${esc(cfg.note || '')}</span></span></div>
@@ -733,10 +805,27 @@
             drawLocal = true;
             try { drawings = JSON.parse(localStorage.getItem('lc.drawings') || '{}') || {}; } catch (e) { drawings = {}; }
         }
+        setTimeout(toolState, 0);
+        const pal = root.querySelector('.ch-pal'), palBtn = root.querySelector('[data-draw-color]');
+        const palOpen = (on) => { pal.hidden = !on; palBtn.setAttribute('aria-expanded', String(on)); };
+        // A pointer down on the palette must not count as a click on a chart (which would let go of the selection).
+        pal.addEventListener('pointerdown', (e) => e.stopPropagation());
+        pal.querySelector('[data-sw-custom]').addEventListener('input', (e) => setColor(e.target.value.toLowerCase()));
+        document.addEventListener('pointerdown', (e) => { if (!pal.hidden && !e.target.closest('.ch-toolwrap')) palOpen(false); });
         root.querySelector('.ch-tools').addEventListener('click', (e) => {
+            if (e.target.closest('[data-draw-color]')) { palOpen(pal.hidden); return; }
+            const sw = e.target.closest('[data-sw]');
+            if (sw) { setColor(sw.dataset.sw); palOpen(false); return; }
+            if (e.target.closest('[data-sw-def]')) { setColor(null); palOpen(false); return; }
             const t = e.target.closest('[data-tool]');
             if (t) { setTool(t.dataset.tool === tool ? '' : t.dataset.tool); return; }
             if (e.target.closest('[data-tool-del]')) deleteSelected();
+            const mg = e.target.closest('[data-magnet-lc]');
+            if (mg) {
+                magnet = !magnet;
+                mg.setAttribute('aria-pressed', String(magnet));
+                try { localStorage.setItem('lc.magnet', magnet ? '1' : '0'); } catch (er) { /* private mode */ }
+            }
         });
         const form = root.querySelector('.ch-add');
         form.addEventListener('submit', (e) => {

@@ -478,7 +478,7 @@ Opens from any table row, funnel list, tuner result or search result. From top t
     further away is marked at the chart's top or bottom edge with its price and distance, rather than left off.
   - Watch zone (dashed box)
 - **Magnet** (or press **M**): snaps the crosshair to the hovered candle's open, high, low or
-  close, whichever is nearest the pointer. The price tag then shows that exact level with its
+  close (the wicks' ends included), whichever is nearest the pointer. The price tag then shows that exact level with its
   letter (e.g. **H 337.40**), and the tooltip underlines it. Turn it off for a free crosshair
   that reads any price. On by default.
 - **Indicators** (gear): the indicator settings (4.11).
@@ -682,7 +682,11 @@ the pointer between the two clicks; the tool goes back to the pointer when the d
   corners) to reshape it. **Delete** (or the bin) removes it; **Esc** lets go of it, or of a tool.
 - Drawings belong to the instrument and sit at their time and price, so they show on every timeframe of it and on every
   chart of it at once.
-- They are saved with the app (`POST /api/charts/drawings`), so every device shows them.
+- **Colour:** the colour button (beside the magnet) opens eight colours, a custom one and **Default** (the theme's). With a
+  drawing selected it recolours that drawing; with none, it sets the colour of the next drawings.
+- **Magnet** (the toolbar's magnet, on by default): the crosshair snaps to the hovered candle's open, high, low or close,
+  wicks included, and a drawing's point snaps to the nearest of them when you click within a few pixels of it.
+- They are saved with the app (`POST /api/charts/drawings`), so every device shows them, colours included.
 
 ### 4.10 Real-time data with Dhan
 
@@ -3468,7 +3472,7 @@ Replaces one instrument's drawings on the Charts tab (an empty list removes them
 seconds (IST clock time) and a price; a horizontal line has no `p2`. Up to 60 an instrument; `GET /api/charts/config` carries
 them all as `drawings`.
 
-**Body:** `symbol`, `drawings`: a list of `{id, type: "trend" | "hline" | "rect", p1, p2}`
+**Body:** `symbol`, `drawings`: a list of `{id, type: "trend" | "hline" | "rect", p1, p2, color}` (`color` optional, `#rrggbb`)
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \

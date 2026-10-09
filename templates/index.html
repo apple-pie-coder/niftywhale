@@ -3075,7 +3075,6 @@ function closeFull() {
 }
 function toggleMagnet() {
     magnet = !magnet; store.set('nw.magnet', magnet);
-    Object.values(LWC).forEach((c) => c.chart.applyOptions({ crosshair: { mode: magnet ? 1 : 0 } }));
     refreshChartBtns();
     toast(magnet ? 'Magnet on: the crosshair snaps to open, high, low and close' : 'Magnet off: the crosshair follows the pointer');
 }
@@ -3387,7 +3386,9 @@ function lwcOptions(T, full) {
         grid: { vertLines: { color: T.line }, horzLines: { color: T.line } },
         rightPriceScale: { borderColor: T.strong },
         timeScale: { borderColor: T.strong, timeVisible: true, secondsVisible: false, rightOffset: 3, tickMarkFormatter: lwcTick },
-        crosshair: { mode: magnet ? 1 : 0 },
+        // Normal: the magnet is ours (lwcTip), snapping to the candle's open, high, low or close, wicks included
+        // (the library's own magnet knows only the close).
+        crosshair: { mode: 0 },
         // The wheel zooms (over the chart; elsewhere the drawer scrolls as usual); dragging pans.
         handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: full },
         handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
@@ -3603,8 +3604,12 @@ function lwcTip(c, p) {
     if (k < 0 || k >= bars.length) { tip.hidden = true; return; }
     const b = bars[k], prev = k > 0 ? bars[k - 1].c : null, chg = prev ? (b.c - prev) / prev * 100 : null;
     let snap = null;
-    if (magnet) snap = [['O', b.o], ['H', b.h], ['L', b.l], ['C', b.c]]
-        .reduce((best, x) => (Math.abs((c.candle.priceToCoordinate(x[1]) ?? 0) - p.point.y) < Math.abs((c.candle.priceToCoordinate(best[1]) ?? 0) - p.point.y) ? x : best));
+    if (magnet) {
+        snap = [['O', b.o], ['H', b.h], ['L', b.l], ['C', b.c]]
+            .reduce((best, x) => (Math.abs((c.candle.priceToCoordinate(x[1]) ?? 0) - p.point.y) < Math.abs((c.candle.priceToCoordinate(best[1]) ?? 0) - p.point.y) ? x : best));
+        // The crosshair onto that price (set quietly: it raises no move of its own); the next pointer move moves it again.
+        if (p.sourceEvent) c.chart.setCrosshairPosition(snap[1], p.time, c.candle);
+    }
     const v = (key, val) => (snap && snap[0] === key ? `<u>${key} ${val.toFixed(2)}</u>` : `${key} ${val.toFixed(2)}`);
     const on = (key) => overlays[key] && Array.isArray(I[key === 'bb' ? 'bb_mid' : key]) && I[key === 'bb' ? 'bb_mid' : key].length === bars.length;
     const pats = spec.marks.filter((m) => m.k === k).map((m) => (m.p.side === 'short' ? '▼ ' : '▲ ') + m.p.label + (m.p.at_zone ? ' (in zone)' : ''));
