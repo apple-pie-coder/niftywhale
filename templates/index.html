@@ -3323,8 +3323,8 @@ function chartBtns() {
 //                                 they start, day lines; a level off the chart gets an arrow at the edge
 // A chart is made once for its place (the drawer, the expanded view) and given the spec again on every change.
 // It keeps its zoom while the same chart shows (stock, timeframe, range) and fits everything when that changes.
-// The library zooms and pans: drag, pinch, the wheel (in the drawer only with Ctrl or a trackpad pinch, so the
-// drawer still scrolls), dragging either scale; a double click fits everything again.
+// The library zooms and pans: the wheel over the chart, pinch, drag, dragging either scale; a double click fits
+// everything again.
 const LWC = {};                                    // wrap id -> one chart
 const zoomKey = () => current ? `${current.symbol}|${current.intra ? 'i' + itf : tf}|${range}` : '';
 
@@ -3388,8 +3388,9 @@ function lwcOptions(T, full) {
         rightPriceScale: { borderColor: T.strong },
         timeScale: { borderColor: T.strong, timeVisible: true, secondsVisible: false, rightOffset: 3, tickMarkFormatter: lwcTick },
         crosshair: { mode: magnet ? 1 : 0 },
-        handleScroll: { mouseWheel: full, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: full },
-        handleScale: { mouseWheel: full, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
+        // The wheel zooms (over the chart; elsewhere the drawer scrolls as usual); dragging pans.
+        handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: full },
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
     };
 }
 
@@ -3510,13 +3511,6 @@ function lwcMake(wrap) {
     c.layer = new LwcLayer();
     c.candle.attachPrimitive(c.layer);
     c.chart.subscribeCrosshairMove((p) => lwcTip(c, p));
-    // In the drawer the wheel scrolls the drawer; Ctrl (or a trackpad pinch, which arrives as Ctrl + wheel) zooms.
-    el.addEventListener('wheel', (e) => {
-        if (full || !(e.ctrlKey || e.metaKey) || !e.deltaY) return;
-        e.preventDefault();
-        const r = el.getBoundingClientRect();
-        lwcZoom(c, e.deltaY < 0 ? 0.8 : 1.25, Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
-    }, { passive: false });
     el.addEventListener('dblclick', () => lwcFit(c));
     return c;
 }
@@ -3682,7 +3676,9 @@ function lwlOptions(c, T) {
                      tickMarkFormatter: (t, type) => name(t) ?? lwcTick(t, type) },
         localization: { timeFormatter: (t) => name(t) ?? lwcWhen(t) },
         crosshair: { mode: 0, vertLine: { labelVisible: true }, horzLine: { labelVisible: true } },
-        handleScroll: false, handleScale: false,
+        // The wheel zooms and a drag pans (a double click shows it all again); a finger's up-down still scrolls the page.
+        handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: false, axisDoubleClickReset: false },
     };
 }
 function lwlChart(name, height) {
@@ -3692,6 +3688,7 @@ function lwlChart(name, height) {
         host.className = 'lwl';
         c = LWL[name] = { name, host, labels: [], series: {} };
         c.chart = LightweightCharts.createChart(host, lwlOptions(c, lwcTheme(document.body)));
+        host.addEventListener('dblclick', () => c.chart.timeScale().fitContent());
     }
     c.host.style.height = height + 'px';
     return c;

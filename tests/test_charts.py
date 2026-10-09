@@ -175,3 +175,32 @@ class Marks(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Drawings(unittest.TestCase):
+    """The Charts tab's drawings: per instrument, cleaned, every device."""
+    def setUp(self):
+        store.init()
+        store.set_json('charts:drawings', {})
+        self.c = app.app.test_client()
+
+    def test_saved_cleaned_and_listed(self):
+        ok = [{'id': 'a1', 'type': 'trend', 'p1': {'t': 1791545100, 'p': 22500.123456}, 'p2': {'t': 1791548700, 'p': 22600}},
+              {'id': 'b2', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 22450}, 'p2': {'t': 1, 'p': 1}},
+              {'id': 'c3', 'type': 'rect', 'p1': {'t': 1791545100, 'p': 22400}, 'p2': {'t': 1791552300, 'p': 22550}}]
+        bad = [{'id': 'x', 'type': 'circle', 'p1': {'t': 1, 'p': 1}}, {'id': 'bad id!', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 1}},
+               {'id': 'y', 'type': 'trend', 'p1': {'t': 1791545100, 'p': 1}}, {'id': 'z', 'type': 'hline', 'p1': {'t': 'soon', 'p': 1}}, 'junk']
+        r = self.c.post('/api/charts/drawings', json={'symbol': 'idx:13', 'drawings': ok + bad}).get_json()
+        self.assertEqual([d['id'] for d in r['drawings']], ['a1', 'b2', 'c3'])
+        self.assertNotIn('p2', r['drawings'][1])                        # a horizontal line is one point
+        self.assertEqual(r['drawings'][0]['p1']['p'], 22500.1235)
+        got = self.c.get('/api/charts/config').get_json()['drawings']
+        self.assertEqual(list(got), ['IDX:13'])
+        self.c.post('/api/charts/drawings', json={'symbol': 'IDX:13', 'drawings': []})
+        self.assertEqual(self.c.get('/api/charts/config').get_json()['drawings'], {})
+
+    def test_unknown_instrument_and_cap(self):
+        self.assertEqual(self.c.post('/api/charts/drawings', json={'symbol': 'NOPE', 'drawings': []}).status_code, 400)
+        many = [{'id': f'h{i}', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 100 + i}} for i in range(80)]
+        r = self.c.post('/api/charts/drawings', json={'symbol': 'IDX:13', 'drawings': many}).get_json()
+        self.assertEqual(len(r['drawings']), app.DRAW_MAX)
