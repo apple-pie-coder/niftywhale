@@ -3680,13 +3680,15 @@ window.addEventListener('themechange', () => {
 const LWL = {};
 function lwlOptions(c, T) {
     const name = (t) => (typeof t === 'number' && c.labels[t] != null ? c.labels[t] : null);
+    // The axis is short (c.axis: "9 Oct" on a day's first point, the time otherwise); the crosshair says it in full.
+    const tick = (t) => (typeof t === 'number' && c.axis && c.axis[t] != null ? c.axis[t] : name(t));
     return {
         autoSize: true,
         layout: { background: { type: 'solid', color: 'transparent' }, textColor: T.ink, fontFamily: T.font, fontSize: 10.5 },
         grid: { vertLines: { visible: false }, horzLines: { color: T.line } },
         rightPriceScale: { borderVisible: false },
         timeScale: { borderColor: T.line, timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true,
-                     tickMarkFormatter: (t, type) => name(t) ?? lwcTick(t, type) },
+                     tickMarkFormatter: (t, type) => tick(t) ?? lwcTick(t, type) },
         localization: { timeFormatter: (t) => name(t) ?? lwcWhen(t) },
         crosshair: { mode: 0, vertLine: { labelVisible: true }, horzLine: { labelVisible: true } },
         // The wheel zooms and a drag pans (a double click shows it all again); a finger's up-down still scrolls the page.
@@ -3705,6 +3707,16 @@ function lwlChart(name, height) {
     }
     c.host.style.height = height + 'px';
     return c;
+}
+// Short axis labels for points in order with these times (ISO, IST): "9 Oct" where a new day starts, "15:15" otherwise.
+function lwlAxis(isos) {
+    let day = '';
+    return isos.map((iso) => {
+        if (!iso) return '';
+        const d = iso.slice(0, 10);
+        if (d !== day) { day = d; return `${+d.slice(8, 10)} ${LWC_MON[+d.slice(5, 7) - 1]}`; }
+        return iso.slice(11, 16);
+    });
 }
 // Into `box` (once; later redraws keep the element where it is).
 const lwlInto = (c, box) => { if (c.host.parentNode !== box) box.prepend(c.host); };
@@ -5681,6 +5693,7 @@ function demoCurveDraw(box, pts) {
     }
     c.redraw = () => demoCurveDraw(box, pts);
     c.labels = pts.map((p) => (p.kind === 'now' ? 'now' : dmWhen(p.ts)));
+    c.axis = lwlAxis(pts.map((p) => (p.kind === 'now' ? null : p.ts))).map((x, i) => (pts[i].kind === 'now' ? 'now' : x));
     const real = isNow ? n - 1 : n;
     c.series.base.applyOptions({ color: T.ink });
     c.series.base.setData(base.map((v, i) => ({ time: i, value: v })));
@@ -6947,6 +6960,7 @@ function equityDraw(box, pts, now) {
     c.redraw = () => equityDraw(box, pts, now);
     const last = pts[pts.length - 1][1];
     c.labels = pts.map((p) => hhmm(p[0])).concat(now ? ['now'] : []);
+    c.axis = lwlAxis(pts.map((p) => p[0])).concat(now ? ['now'] : []);
     c.series.main.applyOptions({ color: last >= 0 ? T.good : T.bad });
     c.zero.applyOptions({ color: T.strong });
     c.series.main.setData(pts.map((p, i) => ({ time: i, value: p[1] })));
