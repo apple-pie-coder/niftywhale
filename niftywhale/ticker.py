@@ -6,6 +6,7 @@ Dhan's quote API gives the last price and the day's open/high/low, but its
 `close` field is not reliably the previous close (after the session it is
 today's), so the previous close comes from daily candles, read once a session.
 """
+import math
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -49,7 +50,7 @@ INDEXES = [
     (69, 'BANKEX', 'BSE Bankex', 'sector'),
 ]
 IDS = [i[0] for i in INDEXES]
-NIFTY, GIFT = 13, 5024
+NIFTY, GIFT, VIX = 13, 5024, 21
 # Tickers with an option chain in options mode: clicking one opens it.
 OPTION_SYMBOL = {13: 'NIFTY', 25: 'BANKNIFTY', 27: 'FINNIFTY', 442: 'MIDCPNIFTY', 51: 'SENSEX'}
 
@@ -101,3 +102,33 @@ def build(quotes: Dict[int, Dict[str, float]], prev: Dict[int, Optional[float]])
             row['vs_nifty'] = round(last - nifty, 2)
         rows.append(row)
     return rows
+
+
+# ---------------------------------------------------------------- the market's mood
+# The page's background tint (index.html, applyMood) follows it. Three things, from the strip's own rows:
+#   Nifty 50's move              half the weight: ±0.8 % is already a strong day
+#   breadth                      how many indices are up rather than down (sectors, themes, broad market)
+#   India VIX's move             fear rising pulls the mood down, and with VIX's level makes `fear`
+MOOD_WORDS = ((0.6, 'Euphoric'), (0.25, 'Upbeat'), (-0.25, 'Calm'), (-0.6, 'Nervous'))
+
+
+def mood(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """{score -1 (fear) .. +1 (euphoria), fear 0..1, label, and what it was made from}, or None
+    without Nifty's change (no previous close yet)."""
+    by = {r['id']: r for r in rows}
+    nifty = (by.get(NIFTY) or {}).get('change_pct')
+    if nifty is None:
+        return None
+    pool = [r['change_pct'] for r in rows if r['id'] not in (GIFT, VIX) and r.get('change_pct') is not None]
+    up, down = sum(1 for c in pool if c > 0), sum(1 for c in pool if c < 0)
+    breadth = (up - down) / len(pool) if pool else 0.0
+    v = by.get(VIX) or {}
+    vix, vix_chg = v.get('last'), v.get('change_pct') or 0.0
+    score = 0.5 * math.tanh(nifty / 0.8) + 0.35 * breadth - 0.15 * math.tanh(vix_chg / 6)
+    score = max(-1.0, min(1.0, score))
+    fear = max(0.0, min(1.0, max((vix - 14) / 10 if vix else 0.0, vix_chg / 15)))
+    label = next((w for cut, w in MOOD_WORDS if score >= cut), 'Fearful')
+    if label == 'Calm' and fear >= 0.5:
+        label = 'Uneasy'
+    return {'score': round(score, 3), 'fear': round(fear, 3), 'label': label, 'nifty': nifty, 'up': up, 'down': down,
+            'count': len(pool), 'vix': vix, 'vix_chg': round(vix_chg, 2)}

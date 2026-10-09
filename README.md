@@ -859,6 +859,24 @@ With *reduce motion* switched on in your system settings, the strip stays still 
 
 ---
 
+#### Market mood
+
+The page's background follows the market's mood, worked out from the ticker's own rows (`ticker.mood`):
+
+| Input | Weight |
+|---|---|
+| Nifty 50's change today | half: ±0.8 % is already a strong day |
+| Breadth: indices up minus down, out of all of them (not GIFT Nifty or VIX) | about a third |
+| India VIX's change | the rest: fear rising pulls the mood down |
+
+The score runs from −1 to +1 and reads as **Fearful**, **Nervous**, **Calm** (or **Uneasy** when the VIX is high or
+jumping), **Upbeat** or **Euphoric**. It tints the page from rose (fearful) through slate blue (calm) to green
+(euphoric), with amber creeping in as the VIX rises. The tint shows as a soft wash at both ends of the top bar,
+a thin line under it and glows at the page's edges. It's stronger the stronger the mood, dimmer after the close
+(the last session's mood), and fades over a few seconds as the mood moves. The market pill's tooltip and
+**Market status** (click the pill) say what the mood is made of; the switch there turns the tint off. It needs Dhan,
+like the ticker.
+
 ### 4.14 News desk
 
 The **News** tab (beside Swing, Intraday, Options and Performance) is the news desk: what has been said about the stocks you are
@@ -2003,7 +2021,7 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/live/status
 
 #### `GET /ws`
 
-The page's live connection. Send `{"t": "sub", "ch": "px", "p": {"s": ["IDX:13"]}}` to subscribe (channels: `px` prices, `ticks` chart ticks `{s, since}`, `notices`, `demo`, `ticker`, `chain` `{symbol, expiry}`), `{"t": "unsub", "ch": …}`, `{"t": "vis", "hidden": true}`, `{"t": "ping"}`. The server sends `hello` first, then `{"t": <channel>, "d": …}` as things change and `{"t": "topics", "d": {…}}` when a table (`db:<table>`) or the app's state (`run`, `market`, `news_run`, `smart_run`) changed. Signs in like a page (the cookie from the app's own origin) or with an API token; closes with 4401 when the sign-in ends, 1013 when 12 pages are connected already.
+The page's live connection. Send `{"t": "sub", "ch": "px", "p": {"s": ["IDX:13"]}}` to subscribe (channels: `px` prices, `ticks` chart ticks `{s, since}`, `notices`, `demo`, `ticker`, `mood`, `chain` `{symbol, expiry}`), `{"t": "unsub", "ch": …}`, `{"t": "vis", "hidden": true}`, `{"t": "ping"}`. The server sends `hello` first, then `{"t": <channel>, "d": …}` as things change and `{"t": "topics", "d": {…}}` when a table (`db:<table>`) or the app's state (`run`, `market`, `news_run`, `smart_run`) changed. Signs in like a page (the cookie from the app's own origin) or with an API token; closes with 4401 when the sign-in ends, 1013 when 12 pages are connected already.
 
 **Parameters:** a WebSocket upgrade (`wss://` through Caddy); messages are JSON
 
@@ -2023,7 +2041,7 @@ PY
 Messages, as they come:
 
 ```json
-{"t": "hello", "on": true, "live": {"source": "dhan", "stream": true, "note": "Dhan live feed, every trade"}, "notices": {"seq": 20, "unread": 3}, "topics": {"db:zones": 412, "db:notices": 57, "run": "9f3a0c1b2d4e"}, "channels": ["chain", "demo", "notices", "px", "ticker", "ticks"]}
+{"t": "hello", "on": true, "live": {"source": "dhan", "stream": true, "note": "Dhan live feed, every trade"}, "notices": {"seq": 20, "unread": 3}, "topics": {"db:zones": 412, "db:notices": 57, "run": "9f3a0c1b2d4e"}, "channels": ["chain", "demo", "mood", "notices", "px", "ticker", "ticks"]}
 {"t": "px", "d": {"on": true, "stream": true, "px": {"IDX:13": [22525.15, 1791533853.72]}}}
 {"t": "topics", "d": {"db:zones": 413}}
 ```

@@ -135,3 +135,38 @@ class Endpoint(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Mood(unittest.TestCase):
+    """The page's background follows ticker.mood: Nifty's move, breadth, India VIX."""
+    def rows(self, nifty, others, vix=None, vix_chg=None):
+        r = [{'id': 13, 'group': 'headline', 'change_pct': nifty, 'last': 22500.0}]
+        r += [{'id': 100 + i, 'group': 'sector', 'change_pct': c, 'last': 1.0} for i, c in enumerate(others)]
+        if vix is not None:
+            r.append({'id': 21, 'group': 'volatility', 'change_pct': vix_chg, 'last': vix})
+        r.append({'id': 5024, 'group': 'headline', 'change_pct': -5.0, 'last': 1.0})      # GIFT Nifty never counts
+        return r
+
+    def test_a_broad_rally_is_euphoric(self):
+        m = ticker.mood(self.rows(1.4, [1.0] * 20, vix=11.5, vix_chg=-6.0))
+        self.assertEqual(m['label'], 'Euphoric')
+        self.assertGreater(m['score'], 0.6)
+        self.assertEqual((m['up'], m['down'], m['count']), (21, 0, 21))
+
+    def test_a_sell_off_with_vix_jumping_is_fearful(self):
+        m = ticker.mood(self.rows(-1.6, [-1.2] * 20, vix=19.0, vix_chg=12.0))
+        self.assertEqual(m['label'], 'Fearful')
+        self.assertLess(m['score'], -0.6)
+        self.assertGreater(m['fear'], 0.5)
+
+    def test_flat_but_vix_high_is_uneasy(self):
+        self.assertEqual(ticker.mood(self.rows(0.05, [0.1, -0.1] * 10, vix=22.0, vix_chg=2.0))['label'], 'Uneasy')
+        self.assertEqual(ticker.mood(self.rows(0.05, [0.1, -0.1] * 10, vix=12.0, vix_chg=0.5))['label'], 'Calm')
+
+    def test_mild_moves(self):
+        self.assertEqual(ticker.mood(self.rows(0.5, [0.4] * 15 + [-0.2] * 5, vix=13, vix_chg=-1))['label'], 'Upbeat')
+        self.assertEqual(ticker.mood(self.rows(-0.5, [-0.4] * 15 + [0.2] * 5, vix=13, vix_chg=3))['label'], 'Nervous')
+
+    def test_no_previous_close_no_mood(self):
+        self.assertIsNone(ticker.mood(self.rows(None, [1.0])))
+        self.assertIsNone(ticker.mood([]))

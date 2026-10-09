@@ -39,7 +39,7 @@ E = [
      '(symbols streamed and still polled) and how many pages have their WebSocket open.'),
     ('state', 'GET', '/ws', '/ws', None, 'a WebSocket upgrade (`wss://` through Caddy); messages are JSON',
      "The page's live connection. Send `{\"t\": \"sub\", \"ch\": \"px\", \"p\": {\"s\": [\"IDX:13\"]}}` to subscribe (channels: "
-     '`px` prices, `ticks` chart ticks `{s, since}`, `notices`, `demo`, `ticker`, `chain` `{symbol, expiry}`), `{\"t\": \"unsub\", \"ch\": …}`, '
+     '`px` prices, `ticks` chart ticks `{s, since}`, `notices`, `demo`, `ticker`, `mood`, `chain` `{symbol, expiry}`), `{\"t\": \"unsub\", \"ch\": …}`, '
      '`{\"t\": \"vis\", \"hidden\": true}`, `{\"t\": \"ping\"}`. The server sends `hello` first, then `{\"t\": <channel>, \"d\": …}` as things '
      'change and `{\"t\": \"topics\", \"d\": {…}}` when a table (`db:<table>`) or the app\'s state (`run`, `market`, `news_run`, `smart_run`) '
      'changed. Signs in like a page (the cookie from the app\'s own origin) or with an API token; closes with 4401 when the sign-in ends, '
@@ -233,7 +233,7 @@ STATIC = {
                                'note': 'Dhan live feed, every trade', 'poll_ms': 1000}),
     '/ws': (101, [{'t': 'hello', 'on': True, 'live': {'source': 'dhan', 'stream': True, 'note': 'Dhan live feed, every trade'},
                    'notices': {'seq': 20, 'unread': 3}, 'topics': {'db:zones': 412, 'db:notices': 57, 'run': '9f3a0c1b2d4e'},
-                   'channels': ['chain', 'demo', 'notices', 'px', 'ticker', 'ticks']},
+                   'channels': ['chain', 'demo', 'mood', 'notices', 'px', 'ticker', 'ticks']},
                   {'t': 'px', 'd': {'on': True, 'stream': True, 'px': {'IDX:13': [22525.15, 1791533853.72]}}},
                   {'t': 'topics', 'd': {'db:zones': 413}}]),
     '/api/auth/state': (200, {'setup': False, 'signed_in': False, 'username': None, 'passkeys': 1, 'passkey_origin': True, 'rp_id': 'pandorasbox.local',

@@ -69,13 +69,31 @@
            font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; overflow-x: clip; }
     button { font: inherit; color: inherit; }
     .num { font-variant-numeric: tabular-nums; }
+    /* The market's mood (applyMood): two soft glows behind everything, from the top left and the bottom
+       right, in the mood's colours. Registered as colours so a change fades over several seconds. */
+    @property --mood-a { syntax: '<color>'; inherits: true; initial-value: transparent; }
+    @property --mood-b { syntax: '<color>'; inherits: true; initial-value: transparent; }
+    @property --mood-line { syntax: '<color>'; inherits: true; initial-value: transparent; }
+    body::before { content: ""; position: fixed; inset: -10%; z-index: -1; pointer-events: none;
+                   background: radial-gradient(75% 62% at 6% 0%, var(--mood-a), transparent 75%),
+                               radial-gradient(70% 60% at 100% 100%, var(--mood-b), transparent 75%);
+                   transition: --mood-a 6s ease, --mood-b 6s ease; animation: mood-drift 48s ease-in-out infinite alternate; }
+    /* The top bar carries it too, a wash from both ends, and a thin line in the mood's colours under it. */
+    .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; pointer-events: none;
+                     background: linear-gradient(90deg, var(--mood-line), transparent 45%, transparent 55%, var(--mood-line));
+                     transition: --mood-line 6s ease; }
+    @keyframes mood-drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(2%, 1.5%, 0) scale(1.06); } }
+    @media (prefers-reduced-motion: reduce) { body::before { animation: none; transition: none; } }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
 
     /* ---------------------------------------------------------- top bar */
     .topbar { position: sticky; top: 0; z-index: 40; height: 58px;
               display: flex; align-items: center; justify-content: space-between; gap: 16px;
-              padding: 0 24px; background: var(--surface); background: color-mix(in srgb, var(--surface) 88%, transparent);
+              padding: 0 24px; background: var(--surface); background: color-mix(in srgb, var(--surface) 80%, transparent);
               -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+    /* The market's mood (applyMood) washes in from both ends of the bar. */
+    .topbar { background-image: linear-gradient(100deg, var(--mood-a) 0%, transparent 38%, transparent 62%, var(--mood-b) 100%);
+              transition: --mood-a 6s ease, --mood-b 6s ease; }
     .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .brand-mark { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
                   background: var(--accent); color: var(--accent-ink); }
@@ -1194,6 +1212,8 @@
     .lab-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
     .lab-acts .btn { padding: 5px 10px; font-size: 12.5px; }
     .lab-sched { margin: 8px 0 0; font-size: 12px; }
+    .mood-sw { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; cursor: pointer; }
+    .mood-sw input { width: 16px; height: 16px; accent-color: var(--accent); }
     /* Coming up: the lab's next runs, soonest first, with a countdown. */
     .lab-next { margin-top: 12px; }
     .lab-next ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
@@ -2588,8 +2608,44 @@ function renderStatus() {
         : '<span class="mp-word">Market c</span><span class="mp-cap">C</span>losed';
     $('market-time').textContent = ' · ' + new Date(S.now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST';
     $('market-src').textContent = ' · ' + (md.live ? 'Real-time' : 'Delayed');
-    mp.title = (md.live ? 'Dhan · ' : 'yfinance · ') + feedLine(md) + ' — click for details';
+    mp.title = (md.live ? 'Dhan · ' : 'yfinance · ') + feedLine(md) + (MOOD.m && MOOD.on ? ' · Mood: ' + moodWhy(MOOD.m) : '') + ' — click for details';
 }
+
+/* The market's mood as the page's background tint: the server's score (ticker.mood: Nifty's move,
+   how many indices are up, India VIX) from rose (fearful) through slate blue (calm) to green (euphoric),
+   amber creeping in as fear (VIX) rises, stronger the stronger the mood, dimmer once the market has closed. */
+const MOOD = { m: null, _on: undefined,                  // the switch is read when first needed (store is defined below)
+    get on() { if (this._on === undefined) this._on = store.get('nw.mood', true); return this._on; }, set on(v) { this._on = v; } };
+const moodSigned = (v, d = 2) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d);
+const moodWhy = (m) => `${m.label} (Nifty ${moodSigned(m.nifty)}%, ${m.up} of ${m.count} indices up`
+    + (m.vix != null ? `, VIX ${(+m.vix).toFixed(1)} ${moodSigned(m.vix_chg, 1)}%` : '') + (m.live ? '' : ', last session') + ')';
+function moodDark() {
+    const t = document.documentElement.dataset.theme;
+    return t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function applyMood(m) {
+    if (m !== undefined) MOOD.m = m && m.label ? m : null;
+    const root = document.documentElement.style;
+    m = MOOD.m;
+    if (!m || !MOOD.on) { ['--mood-a', '--mood-b', '--mood-line'].forEach((k) => root.setProperty(k, 'transparent')); return; }
+    const s = Math.max(-1, Math.min(1, m.score)), f = Math.max(0, Math.min(1, m.fear || 0)), dark = moodDark();
+    // Blended between fixed colours (never around the hue wheel, which would pass through purple).
+    const ROSE = [226, 78, 104], CALM = [88, 134, 196], JOY = [30, 170, 116], AMBER = [234, 150, 46];
+    const mix = (x, y, t) => x.map((v, i) => v + (y[i] - v) * t);
+    const base = s >= 0 ? mix(CALM, JOY, s) : mix(CALM, ROSE, -s);
+    const strength = Math.max(Math.abs(s), 0.45 * f, 0.25);                       // calm still shows a little
+    const alpha = (dark ? 0.3 : 0.32) * (0.45 + 0.55 * strength) * (m.live ? 1 : 0.65);
+    // The second glow leans toward amber as fear (VIX) rises, unless the mood is plainly good.
+    const second = s < 0.25 ? mix(base, AMBER, 0.75 * f) : mix(base, CALM, 0.25);
+    const rgba = (c, a) => `rgb(${c.map((v) => Math.round(v)).join(' ')} / ${Math.min(0.9, a).toFixed(3)})`;
+    root.setProperty('--mood-a', rgba(base, alpha));
+    root.setProperty('--mood-b', rgba(second, alpha * 0.85));
+    root.setProperty('--mood-line', rgba(base, alpha * 1.9));
+}
+WS.listen('mood', (m) => { applyMood(m); if (S) renderStatus(); });
+WS.listen('up', () => WS.sub('mood'));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyMood());
+new MutationObserver(() => applyMood()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 function openStatus() {
     if (!S) return;
     const md = mdState();
@@ -2601,8 +2657,11 @@ function openStatus() {
     openModal('Market status', 'NSE · ' + t + ' IST', `<dl class="mstat">
         <dt>Market</dt><dd>${S.market_open ? 'Open' : 'Closed'}<span class="sub">NSE trades 09:15–15:30 IST, weekdays</span></dd>
         <dt>Data feed</dt><dd>${md.live ? 'Dhan · real-time' : 'yfinance · delayed'}<span class="sub"${md.error ? ` title="${esc(md.error)}"` : ''}>${esc(feedLine(md))}</span></dd>
-        ${tk}</dl>${act ? `<div class="mstat-act"><button class="btn${md.mode === 'token' && md.live ? '' : ' btn-primary'}" id="st-dhan" type="button" style="width:auto">${act}</button></div>` : ''}`);
+        ${tk}${MOOD.m ? `<dt>Mood</dt><dd>${esc(MOOD.m.label)}<span class="sub">${esc(moodWhy(MOOD.m).replace(/^\S+ \(|\)$/g, ''))}.
+            The page's background tint follows it: rose when fearful, blue when calm, green when upbeat, amber as the VIX rises.</span>
+            <label class="mood-sw"><input type="checkbox" id="st-mood"${MOOD.on ? ' checked' : ''}> Tint the background</label></dd>` : ''}</dl>${act ? `<div class="mstat-act"><button class="btn${md.mode === 'token' && md.live ? '' : ' btn-primary'}" id="st-dhan" type="button" style="width:auto">${act}</button></div>` : ''}`);
     if (act) $('st-dhan').addEventListener('click', () => { closeModal(); openDhan(); });
+    if ($('st-mood')) $('st-mood').addEventListener('change', (e) => { MOOD.on = e.target.checked; store.set('nw.mood', MOOD.on); applyMood(); renderStatus(); });
 }
 $('market-pill').addEventListener('click', openStatus);
 
@@ -7109,6 +7168,7 @@ setMode(mode);
 async function refresh() {
     try {
         S = await api('/api/state');
+        if (!WS.up && 'mood' in S) applyMood(S.mood);
         render();
     } catch (e) {
         $('market-text').textContent = 'Server unreachable';
