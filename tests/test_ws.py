@@ -360,8 +360,8 @@ class Endpoint(unittest.TestCase):
             self.assertEqual(r.status_code, 403)
         with mock.patch.object(auth, 'ENABLED', True), mock.patch.object(auth, '_token', return_value=None), \
              mock.patch.object(auth, '_session', return_value=None), mock.patch.object(auth, 'owner', return_value={'id': 1}):
-            r = app.app.test_client().get('/ws', headers={'Accept': 'application/json'})
-            self.assertEqual(r.status_code, 401)
+            r = app.app.test_client().get('/ws', headers={'Upgrade': 'websocket', 'Connection': 'Upgrade'})
+            self.assertEqual(r.status_code, 401)                        # not a redirect to the sign-in page
 
     def test_status(self):
         d = app.app.test_client().get('/api/live/status').get_json()
