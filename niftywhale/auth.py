@@ -408,7 +408,8 @@ def gate():
             return jsonify({'error': 'cross-site request refused'}), 403
         g.auth = {'via': 'session', 'session': s}
         return None
-    if p.startswith('/api/') or 'application/json' in (request.headers.get('Accept') or ''):
+    socket = (request.headers.get('Upgrade') or '').lower() == 'websocket'      # no redirect for a WebSocket
+    if p.startswith('/api/') or socket or 'application/json' in (request.headers.get('Accept') or ''):
         return jsonify({'error': 'sign in first', 'login': '/login'}), 401
     return redirect('/login?next=' + quote(request.full_path.rstrip('?')))
 
