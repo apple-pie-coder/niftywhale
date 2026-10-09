@@ -3341,6 +3341,14 @@ function lwcTime(b) {
     return Date.UTC(+b.day.slice(0, 4), +b.day.slice(5, 7) - 1, +b.day.slice(8, 10), hh, mm) / 1000;
 }
 const lwcVar = (el, n) => getComputedStyle(el).getPropertyValue(n).trim();
+// A candle position on screen, between candles too: the library places whole positions only (it answers 0, the left
+// edge, for anything between two), so half a candle or a fraction is placed between its two whole neighbours.
+function lwcLX(ts, l) {
+    const i = Math.floor(l), a = ts.logicalToCoordinate(i);
+    if (a == null || l === i) return a;
+    const b = ts.logicalToCoordinate(i + 1);
+    return b == null ? a : a + (l - i) * (b - a);
+}
 // A spec colour ('var(--ob)', '#hex', 'none') as a canvas colour, read where the chart is (indicator colours apply there).
 function lwcColor(v, el) {
     if (!v || v === 'none') return null;
@@ -3412,7 +3420,7 @@ class LwcLayer {
         if (!d || !this.chart) return;
         target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
             const W = mediaSize.width, H = mediaSize.height, ts = this.chart.timeScale(), s = this.series;
-            const X = (k) => ts.logicalToCoordinate(k), Y = (v) => s.priceToCoordinate(v);
+            const X = (k) => lwcLX(ts, k), Y = (v) => s.priceToCoordinate(v);
             const priceBottom = d.delta ? H * 0.7 : H;
             ctx.save();
             ctx.font = `10.5px ${d.font}`;
@@ -3718,7 +3726,7 @@ class LwlBetween {
         const d = this.d;
         if (!d || !this.chart) return;
         target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
-            const ts = this.chart.timeScale(), X = (i) => ts.logicalToCoordinate(i), Y = (v) => this.series.priceToCoordinate(v);
+            const ts = this.chart.timeScale(), X = (i) => lwcLX(ts, i), Y = (v) => this.series.priceToCoordinate(v);
             ctx.save();
             d.seps.forEach((i) => {
                 const x = X(i - 0.5);
