@@ -2274,6 +2274,22 @@ const viaSocket = (polling, net = 120000) => WS.up ? Math.max(polling, net) : po
     const orig = Date.prototype[fn];
     Date.prototype[fn] = function (locales, opts) { return orig.call(this, locales, { timeZone: 'Asia/Kolkata', ...(opts || {}) }); };
 });
+// And the other way: the Pi writes many times without a zone ("2026-10-09T20:30:27", its own clock, IST).
+// A browser reads such a string in the device's zone, so a device not on IST shifted it; here a time with no
+// zone is IST. Dates alone ("2026-10-09") and times that carry a zone are left as they are.
+(function () {
+    const Native = Date, NAIVE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+    const fix = (v) => (typeof v === 'string' && NAIVE.test(v) ? v + '+05:30' : v);
+    function ISTDate(...a) {
+        if (!new.target) return Native();                          // Date() called plainly: a string, as always
+        if (a.length === 1) a[0] = fix(a[0]);
+        return new Native(...a);
+    }
+    ISTDate.prototype = Native.prototype;
+    Object.setPrototypeOf(ISTDate, Native);                        // Date.now, Date.UTC and the rest as before
+    ISTDate.parse = (v) => Native.parse(fix(v));
+    window.Date = ISTDate;
+})();
 /* Icons are inline SVG, never emoji: an emoji is drawn by each device's own font (a colour picture on a phone,
    an empty box where there is none), an SVG the same everywhere, in the text colour. */
 const IC = {
