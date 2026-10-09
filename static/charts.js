@@ -90,15 +90,30 @@
         return { bg: v('--surface'), ink: v('--ink-3'), line: v('--line'), strong: v('--line-strong'), up: v('--up'), down: v('--down'),
             accent: v('--accent'), warn: v('--warn'), bad: v('--bad'), good: v('--good'), font: v('--font'), ob: v('--ob-line') };
     }
+    // Axis and crosshair labels read straight off the (already shifted) time, never through toLocaleString,
+    // which a page may pin to a time zone and so shift them again on a device set to another one.
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const p2 = (x) => String(x).padStart(2, '0');
+    const asDate = (t) => typeof t === 'number' ? new Date(t * 1000)
+        : typeof t === 'string' ? new Date(t + 'T00:00:00Z') : new Date(Date.UTC(t.year, t.month - 1, t.day));
+    const tickLabel = (t, type) => {
+        const d = asDate(t);
+        return type === 0 ? String(d.getUTCFullYear()) : type === 1 ? MON[d.getUTCMonth()] : type === 2 ? String(d.getUTCDate())
+            : type === 4 ? `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}` : `${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
+    };
     function chartOptions(c, T) {
+        const when = (t) => {
+            const d = asDate(t), day = `${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`;
+            return c.tf >= 86400 ? day : `${day} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}${c.tf < 60 ? ':' + p2(d.getUTCSeconds()) : ''}`;
+        };
         return {
             autoSize: true,
             layout: { background: { type: 'solid', color: T.bg }, textColor: T.ink, fontFamily: T.font, fontSize: 11 },
             grid: { vertLines: { color: T.line }, horzLines: { color: T.line } },
             rightPriceScale: { borderColor: T.line, scaleMargins: { top: 0.12, bottom: c.hasVol ? 0.22 : 0.08 } },
-            timeScale: { borderColor: T.line, timeVisible: c.tf < 86400, secondsVisible: c.tf < 60, rightOffset: 4, barSpacing: 7 },
+            timeScale: { borderColor: T.line, timeVisible: c.tf < 86400, secondsVisible: c.tf < 60, rightOffset: 4, barSpacing: 7, tickMarkFormatter: tickLabel },
             crosshair: { mode: 0 },
-            localization: { priceFormatter: (p) => fmt(p, c.dp) },
+            localization: { priceFormatter: (p) => fmt(p, c.dp), timeFormatter: when },
         };
     }
     function levelColor(kind, T) { return kind === 'stop' ? T.bad : kind === 'target' ? T.good : kind === 'entry' ? T.accent : T.ob; }

@@ -472,8 +472,6 @@
     .cbtn .ic { margin-right: 4px; }
     .chart { touch-action: pan-y; cursor: crosshair; }
     .fc-body .chart { touch-action: none; }
-    body.chart-dragging, body.chart-dragging .chart { cursor: grabbing; user-select: none; }
-    .pscale { fill: var(--ink-3); font-size: 10.5px; }
     .zoom-btns { display: inline-flex; gap: 3px; }
     .zoom-btns .cbtn { padding: 3px 8px; }
     .zoom-btns .cbtn .ic { margin: 0; }
@@ -796,6 +794,9 @@
                   padding: 3px 10px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); cursor: pointer; }
     .ovl button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
     .chart-wrap { position: relative; }
+    /* A library chart's box (paintChart): the .chart frame, sized by its wrap. */
+    .chart.lwc { height: 340px; overflow: hidden; }
+    .fc-body .chart.lwc { height: 100%; }
     /* Chart buttons: magnet and full view, next to the timeframe controls. */
     .chart-btns { display: flex; gap: 6px; flex-wrap: wrap; }
     .cbtn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line-strong);
@@ -1200,6 +1201,10 @@
     .pf-sig { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: var(--r-pill); margin-left: 4px; }
     .pf-sig[data-s="good"] { background: var(--good-soft); color: var(--good); } .pf-sig[data-s="bad"] { background: var(--bad-soft); color: var(--bad); }
     .pf-eq { width: 100%; height: auto; display: block; }
+    /* Line charts on the chart library (lwlChart): a box of their height, the chart fills it. */
+    .lwl { position: relative; width: 100%; }
+    .oc-day { margin: 4px 0 10px; }
+    .oc-day-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; font-family: var(--mono); margin-bottom: 2px; }
     .pf-eq text { font-size: 10px; fill: var(--ink-3); font-family: var(--mono); }
     .pf-hl { display: grid; gap: 8px; }
     .pf-hl div { font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
@@ -3066,10 +3071,11 @@ function closeFull() {
     }
     fullReturn = null;
     refreshChartBtns();
-    if (lastSpec) paintChart(lastSpec, $('chart-wrap'), ...drawerSize());
+    if (lastSpec) paintChart(lastSpec, $('chart-wrap'));
 }
 function toggleMagnet() {
     magnet = !magnet; store.set('nw.magnet', magnet);
+    Object.values(LWC).forEach((c) => c.chart.applyOptions({ crosshair: { mode: magnet ? 1 : 0 } }));
     refreshChartBtns();
     toast(magnet ? 'Magnet on: the crosshair snaps to open, high, low and close' : 'Magnet off: the crosshair follows the pointer');
 }
@@ -3306,52 +3312,20 @@ function chartBtns() {
                 ${full ? '<path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"/>' : '<path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/>'}</svg>${full ? 'Close' : 'Expand'}</button></div>`;
 }
 
-/* The drawer chart's drawing size: 720×340, scaled to fit. On a narrower panel
-   (a phone) it is drawn at the panel's own width, so its labels keep their size
-   instead of shrinking by half, and taller, so the candles have room. */
-let drawerW = 0;
-function drawerSize() {
-    const w = Math.round(($('chart-wrap') || {}).clientWidth || 0);
-    drawerW = w;
-    if (!w || w >= 720) return [720, 340];
-    const W = Math.max(300, w);
-    return [W, Math.max(250, Math.round(W * 0.62))];
-}
-// A phone turned sideways: redraw the drawer chart for its new width.
-window.addEventListener('resize', () => {
-    const w = Math.round(($('chart-wrap') || {}).clientWidth || 0);
-    if (lastSpec && w && w !== drawerW && $('fullchart').hidden && (w < 720 || drawerW < 720)) {
-        paintChart(lastSpec, $('chart-wrap'), ...drawerSize());
-    }
-});
-
-/* Draw `spec` in the drawer and, when it is open, in full view. */
-function drawCandles(spec) {
-    lastSpec = spec;
-    paintChart(spec, $('chart-wrap'), ...drawerSize());
-    if (!$('fullchart').hidden) paintFull();
-}
-
-function paintFull() {
-    const wrap = $('full-wrap');
-    if (!lastSpec || !wrap) return;
-    if (current) $('fc-sub').textContent = current.trade ? ((current.candles || {}).label || 'trade') : current.intra ? 'intraday · ' + itf + ' candles'
-        : (tf === 'D' ? 'daily candles' : '15m candles');
-    // The real pixel size, so candles and labels are crisp rather than a stretched 720×340.
-    fullSize = wrap.clientWidth + 'x' + wrap.clientHeight;
-    paintChart(lastSpec, wrap, Math.max(320, wrap.clientWidth), Math.max(240, wrap.clientHeight));
-}
-
-/* Zoom: a window [a, b) over the chart's candles, kept while the same chart is open (same stock,
-   timeframe and range) and reset when it changes. New candles keep a window pinned to the right
-   edge pinned there. Everything indexed by candle is cut to the window, so overlays, markers,
-   indicators and the price scale all follow it; cumulative delta is summed over the whole series
-   first, so a window that starts mid-session doesn't restart it. */
-const ZOOM_MIN = 12;
-let zoom = { key: '', a: 0, b: 0, n: 0 };
-// Price: 1 / 0 = fitted to the visible candles. `scale` multiplies that range (under 1 stretches the
-// candles), `shift` moves its middle by that share of it.
-let pz = { scale: 1, shift: 0 };
+/* ------------------------------------------------------------- candle charts */
+// The stock, intraday and trade charts (in the drawer and the expanded view) are drawn with the Charts tab's
+// library, TradingView's Lightweight Charts (static/vendor, v4.2.3), from the same spec the chart builders make:
+//   bars                          candles (a forming one paler)
+//   ind.vwap, ind.bb_*            line series (the Bollinger fill is drawn by the overlay)
+//   ind.delta and its running sum a histogram and a line on their own scales, under the candles
+//   marks, opening-range breaks   the candle series' markers
+//   boxes, ind.orb, lines, seps   the overlay (LwcLayer): zones and gaps, the opening range, levels from where
+//                                 they start, day lines; a level off the chart gets an arrow at the edge
+// A chart is made once for its place (the drawer, the expanded view) and given the spec again on every change.
+// It keeps its zoom while the same chart shows (stock, timeframe, range) and fits everything when that changes.
+// The library zooms and pans: drag, pinch, the wheel (in the drawer only with Ctrl or a trackpad pinch, so the
+// drawer still scrolls), dragging either scale; a double click fits everything again.
+const LWC = {};                                    // wrap id -> one chart
 const zoomKey = () => current ? `${current.symbol}|${current.intra ? 'i' + itf : tf}|${range}` : '';
 
 function cumDelta(bars, delta) {
@@ -3361,348 +3335,406 @@ function cumDelta(bars, delta) {
         run += x || 0; return run;
     });
 }
+// A bar's time for the library: daily candles by date, the rest as the IST clock time drawn as it is.
+function lwcTime(b) {
+    if (!b.day) return b.d;
+    const [hh, mm] = b.d.slice(6).split(':').map(Number);
+    return Date.UTC(+b.day.slice(0, 4), +b.day.slice(5, 7) - 1, +b.day.slice(8, 10), hh, mm) / 1000;
+}
+const lwcVar = (el, n) => getComputedStyle(el).getPropertyValue(n).trim();
+// A spec colour ('var(--ob)', '#hex', 'none') as a canvas colour, read where the chart is (indicator colours apply there).
+function lwcColor(v, el) {
+    if (!v || v === 'none') return null;
+    const m = /^var\((--[\w-]+)\)$/.exec(String(v).trim());
+    return m ? lwcVar(el, m[1]) || null : v;
+}
+function lwcAlpha(c, a) {
+    if (!c) return c;
+    const h = /^#([0-9a-f]{6})$/i.exec(c);
+    if (h) return `rgba(${parseInt(h[1].slice(0, 2), 16)}, ${parseInt(h[1].slice(2, 4), 16)}, ${parseInt(h[1].slice(4), 16)}, ${a})`;
+    const r = /^rgba?\(([^)]+)\)$/.exec(c);
+    if (r) { const p = r[1].split(',').map((x) => x.trim()); return `rgba(${p[0]}, ${p[1]}, ${p[2]}, ${p.length > 3 ? +p[3] * a : a})`; }
+    return c;
+}
+function lwcTheme(el) {
+    const v = (n) => lwcVar(el, n);
+    return { bg: v('--surface'), ink: v('--ink-3'), ink2: v('--ink-2'), line: v('--line'), strong: v('--line-strong'), up: v('--up'), down: v('--down'),
+             font: v('--font') || 'sans-serif', vwap: v('--vwap'), bb: v('--bb'), bbFill: v('--bb-fill'), orb: v('--orb'), orbLine: v('--orb-line'),
+             dUp: v('--delta-up'), dDown: v('--delta-down'), cum: v('--cum'), accent: v('--accent'), warn: v('--warn'),
+             good: v('--good'), bad: v('--bad') };
+}
+// Labels for the time axis and the crosshair, read straight off the time (clock time drawn as it is, or a
+// date): the library's own go through toLocaleString, which this page pins to IST, and so shifted them on a
+// device set to any other zone.
+const LWC_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const lwcD = (t) => typeof t === 'number' ? new Date(t * 1000)
+    : typeof t === 'string' ? new Date(t + 'T00:00:00Z') : new Date(Date.UTC(t.year, t.month - 1, t.day));
+const lwc2 = (x) => String(x).padStart(2, '0');
+const lwcTick = (t, type) => {
+    const d = lwcD(t);
+    return type === 0 ? String(d.getUTCFullYear()) : type === 1 ? LWC_MON[d.getUTCMonth()] : type === 2 ? String(d.getUTCDate())
+        : `${lwc2(d.getUTCHours())}:${lwc2(d.getUTCMinutes())}`;
+};
+const lwcWhen = (t) => {
+    const d = lwcD(t), day = `${d.getUTCDate()} ${LWC_MON[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`;
+    return typeof t === 'number' ? `${day} ${lwc2(d.getUTCHours())}:${lwc2(d.getUTCMinutes())}` : day;
+};
+function lwcOptions(T, full) {
+    return {
+        localization: { timeFormatter: lwcWhen },
+        autoSize: true,
+        layout: { background: { type: 'solid', color: T.bg }, textColor: T.ink, fontFamily: T.font, fontSize: 11 },
+        grid: { vertLines: { color: T.line }, horzLines: { color: T.line } },
+        rightPriceScale: { borderColor: T.strong },
+        timeScale: { borderColor: T.strong, timeVisible: true, secondsVisible: false, rightOffset: 3, tickMarkFormatter: lwcTick },
+        crosshair: { mode: magnet ? 1 : 0 },
+        handleScroll: { mouseWheel: full, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: full },
+        handleScale: { mouseWheel: full, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
+    };
+}
 
-function windowed(spec) {
-    const n = spec.bars.length, key = zoomKey();
-    if (zoom.key !== key || !zoom.n) { zoom = { key, a: 0, b: n, n }; pz = { scale: 1, shift: 0 }; }
-    else if (n !== zoom.n) {
-        const w = zoom.b - zoom.a, pinned = zoom.b >= zoom.n;
-        zoom.n = n;
-        zoom.b = pinned ? n : Math.min(zoom.b, n);
-        zoom.a = Math.max(0, Math.min(zoom.a, zoom.b - Math.min(w, n)));
-        if (pinned) zoom.a = Math.max(0, n - w);
+/* The overlay: one drawing plugin on the candle series, a layer under the candles (zones, gaps, the opening
+   range, the Bollinger fill, day lines) and one over them (levels and their labels, arrows for levels off the chart). */
+class LwcLayer {
+    constructor() {
+        this.d = null;
+        this.views = ['bottom', 'top'].map((z) => ({ zOrder: () => z, renderer: () => ({ draw: (t) => this.draw(t, z) }) }));
     }
-    const I = Object.assign({}, spec.ind || {});
-    if (Array.isArray(I.delta) && I.delta.length === n) I.cum_full = cumDelta(spec.bars, I.delta);
-    const a = zoom.a, b = zoom.b;
-    if (a <= 0 && b >= n) return Object.assign({}, spec, { ind: I, zoomed: false });
-    const cut = (arr) => (Array.isArray(arr) && arr.length === n ? arr.slice(a, b) : arr);
-    const ind = {};
-    Object.entries(I).forEach(([k, v]) => { ind[k] = cut(v); });
-    const inWin = (k) => k >= a && k < b;
-    return Object.assign({}, spec, {
-        bars: spec.bars.slice(a, b), ind, zoomed: true,
-        boxes: spec.boxes.filter((bx) => bx.from == null || bx.from < b).map((bx) => Object.assign({}, bx, bx.from == null ? {} : { from: Math.max(0, bx.from - a) })),
-        lines: spec.lines.map((ln) => Object.assign({}, ln, ln.from == null ? {} : { from: Math.max(0, ln.from - a) })),
-        marks: spec.marks.filter((m) => inWin(m.k)).map((m) => Object.assign({}, m, { k: m.k - a })),
-        seps: spec.seps.filter((sp) => inWin(sp.k)).map((sp) => Object.assign({}, sp, { k: sp.k - a })),
-    });
-}
-
-/* Zoom around a point of the window (`at`: 0 = left edge, 1 = right edge) by `factor` (< 1 zooms in). */
-function zoomBy(factor, at = 1) {
-    if (!lastSpec || !zoom.n) return;
-    const w = zoom.b - zoom.a, nw = Math.max(Math.min(ZOOM_MIN, zoom.n), Math.min(zoom.n, Math.round(w * factor)));
-    if (nw === w) return;
-    const pivot = zoom.a + at * w;
-    zoom.a = Math.round(Math.max(0, Math.min(zoom.n - nw, pivot - at * nw)));
-    zoom.b = zoom.a + nw;
-    drawCandles(lastSpec);
-}
-function panBy(bars) {
-    if (!zoom.n) return;
-    const w = zoom.b - zoom.a, a = Math.max(0, Math.min(zoom.n - w, zoom.a + bars));
-    if (a === zoom.a) return;
-    zoom.a = a; zoom.b = a + w;
-    drawCandles(lastSpec);
-}
-function scalePrice(factor) {
-    pz.scale = Math.max(0.05, Math.min(20, pz.scale * factor));
-    if (lastSpec) drawCandles(lastSpec);
-}
-function zoomReset() {
-    if (!zoom.n) return;
-    zoom.a = 0; zoom.b = zoom.n; pz = { scale: 1, shift: 0 };
-    if (lastSpec) drawCandles(lastSpec);
-}
-
-function paintChart(spec, wrap, W, H) {
-    if (!wrap) return;
-    spec = windowed(spec);
-    const bars = spec.bars;
-    const padL = 8, padR = 62, padT = 12, padB = 22;
-    const n = bars.length, step = (W - padL - padR) / n;
-    // Indicators come aligned with the bars (one value per candle, null where undefined).
-    const I = spec.ind || {};
-    const on = (k) => overlays[k] && Array.isArray(I[k === 'bb' ? 'bb_mid' : k]) && I[k === 'bb' ? 'bb_mid' : k].length === n;
-    const showDelta = on('delta') && I.delta.some((x) => x != null);
-    // With delta on, the price area takes the top 70% and the delta panel the rest.
-    const priceBottom = showDelta ? padT + (H - padT - padB) * 0.7 : H - padB;
-    const dTop = priceBottom + 18, dBot = H - padB;
-    let lo = Math.min(...bars.map((b) => b.l)), hi = Math.max(...bars.map((b) => b.h));
-    lo = Math.min(lo, ...spec.extra); hi = Math.max(hi, ...spec.extra);
-    const fin = (arr) => (arr || []).filter((x) => x != null && isFinite(x));
-    if (on('bb')) { lo = Math.min(lo, ...fin(I.bb_lower)); hi = Math.max(hi, ...fin(I.bb_upper)); }
-    if (on('vwap')) { lo = Math.min(lo, ...fin(I.vwap)); hi = Math.max(hi, ...fin(I.vwap)); }
-    const span = (hi - lo) || 1; lo -= span * 0.06; hi += span * 0.04;
-    if (pz.scale !== 1 || pz.shift !== 0) {
-        const mid = (lo + hi) / 2 + pz.shift * (hi - lo), half = (hi - lo) / 2 * pz.scale;
-        lo = mid - half; hi = mid + half;
+    attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.req = requestUpdate; }
+    detached() { this.req = null; }
+    updateAllViews() {}
+    paneViews() { return this.views; }
+    set(d) { this.d = d; if (this.req) this.req(); }
+    draw(target, z) {
+        const d = this.d;
+        if (!d || !this.chart) return;
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+            const W = mediaSize.width, H = mediaSize.height, ts = this.chart.timeScale(), s = this.series;
+            const X = (k) => ts.logicalToCoordinate(k), Y = (v) => s.priceToCoordinate(v);
+            const priceBottom = d.delta ? H * 0.7 : H;
+            ctx.save();
+            ctx.font = `10.5px ${d.font}`;
+            const dash = (v) => ctx.setLineDash(v ? String(v).split(/\s+/).map(Number) : []);
+            if (z === 'bottom') {
+                if (d.band) {                                              // Bollinger fill, in runs where both bands exist
+                    const { up, low } = d.band;
+                    let run = [];
+                    const flush = () => {
+                        if (run.length > 1) {
+                            ctx.beginPath();
+                            run.forEach((k, i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, X(k), Y(up[k])));
+                            run.slice().reverse().forEach((k) => ctx.lineTo(X(k), Y(low[k])));
+                            ctx.closePath(); ctx.fillStyle = d.bandFill; ctx.fill();
+                        }
+                        run = [];
+                    };
+                    up.forEach((v, k) => { if (v != null && low[k] != null) run.push(k); else flush(); });
+                    flush();
+                }
+                d.boxes.forEach((bx) => {
+                    const y0 = Y(bx.top), y1 = Y(bx.bot);
+                    if (y0 == null || y1 == null) return;
+                    const x0 = bx.from == null ? 0 : Math.max(0, X(bx.from - 0.5) ?? 0), x1 = bx.to == null ? W : Math.min(W, X(bx.to + 0.5) ?? W);
+                    if (x1 <= x0) return;
+                    if (bx.fill) { ctx.fillStyle = bx.fill; ctx.fillRect(x0, y0, x1 - x0, Math.max(1, y1 - y0)); }
+                    if (bx.line) { ctx.strokeStyle = bx.line; ctx.lineWidth = 1; dash(bx.dash ? '4 3' : null); ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, Math.max(1, y1 - y0)); }
+                    if (bx.label && y0 > 10) { ctx.fillStyle = bx.text || bx.line || d.ink; ctx.fillText(bx.label, x0 + 4, y0 - 3); }
+                });
+                d.seps.forEach((sp) => {
+                    const x = X(sp.k - 0.5);
+                    if (x == null || x < 0 || x > W) return;
+                    ctx.strokeStyle = d.strong; ctx.lineWidth = 1; dash('2 3');
+                    ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, H); ctx.stroke();
+                    if (sp.label) { ctx.fillStyle = d.ink; ctx.fillText(sp.label, x + 3, 11); }
+                });
+            } else {
+                const placed = [], edges = { top: [], bottom: [] };
+                const room = (yy) => placed.every((p) => Math.abs(p - yy) > 11) && (placed.push(yy), true);
+                d.lines.forEach((ln) => {
+                    const y = Y(ln.v);
+                    if (y == null || y < 0 || y > priceBottom) { if (ln.edge) (y != null && y > priceBottom ? edges.bottom : edges.top).push(ln); return; }
+                    const x0 = ln.from == null ? 0 : Math.max(0, X(ln.from - 0.5) ?? 0);
+                    ctx.strokeStyle = ln.color; ctx.lineWidth = 1; dash(ln.dash);
+                    ctx.beginPath(); ctx.moveTo(x0, Math.round(y) + 0.5); ctx.lineTo(W, Math.round(y) + 0.5); ctx.stroke();
+                    if (ln.label && room(y)) {
+                        ctx.fillStyle = ln.color; ctx.textAlign = 'right'; ctx.fillText(ln.label, W - 6, y - 3); ctx.textAlign = 'left';
+                    }
+                });
+                dash(null);
+                [['top', 12], ['bottom', priceBottom - 6]].forEach(([side, y0]) => edges[side].forEach((ln, i) => {
+                    const yy = side === 'top' ? y0 + i * 13 : y0 - i * 13, dist = d.last ? (ln.v - d.last) / d.last * 100 : 0;
+                    const text = `${ln.label} ${ln.v.toFixed(2)} (${dist >= 0 ? '+' : ''}${dist.toFixed(1)}%)`;
+                    ctx.textAlign = 'right'; ctx.fillStyle = ln.color; ctx.font = `600 10.5px ${d.font}`;
+                    ctx.fillText(text, W - 6, yy);
+                    const tw = ctx.measureText(text).width, ax = W - 12 - tw;
+                    ctx.beginPath();
+                    if (side === 'top') { ctx.moveTo(ax, yy - 8); ctx.lineTo(ax + 4, yy - 2); ctx.lineTo(ax - 4, yy - 2); }
+                    else { ctx.moveTo(ax, yy + 1); ctx.lineTo(ax + 4, yy - 5); ctx.lineTo(ax - 4, yy - 5); }
+                    ctx.closePath(); ctx.fill(); ctx.textAlign = 'left'; ctx.font = `10.5px ${d.font}`;
+                }));
+                if (d.delta) {                                             // the delta panel's caption
+                    const yy = priceBottom + 13;
+                    ctx.fillStyle = d.ink; ctx.font = `700 10.5px ${d.font}`;
+                    ctx.fillText(d.deltaLabel, 6, yy);
+                    if (d.cumShown) { ctx.fillStyle = d.cum; ctx.fillText('Cum Δ', 6 + ctx.measureText(d.deltaLabel).width + 12, yy); }
+                }
+            }
+            ctx.restore();
+        });
     }
-    const y = (v) => padT + (hi - v) / (hi - lo) * (priceBottom - padT);
-    // A polyline through the non-null values, broken at gaps.
-    const path = (vals) => vals.map((v, k) => (v == null || !isFinite(v) ? null : [k, v]))
-        .reduce((acc, pt, i, all) => acc + (pt ? `${all[i - 1] ? 'L' : 'M'}${cxOf(pt[0]).toFixed(1)} ${y(pt[1]).toFixed(1)}` : ''), '');
-    const cxOf = (k) => padL + k * step + step / 2;
-    const right = W - padR;
-    // Everything in the price area is clipped to it, so a stretched or moved chart never spills into
-    // the delta panel (labels in the price scale sit inside the clip's width).
-    const clipId = 'pclip-' + (wrap.id || 'c');
-    let g = `<defs><clipPath id="${clipId}"><rect x="0" y="0" width="${W}" height="${priceBottom + 1}"/></clipPath></defs><g clip-path="url(#${clipId})">`;
-    const last = bars[n - 1];
-    const placed = [y(last.c)];
-    const room = (yy) => placed.every((p) => Math.abs(p - yy) > 11) && (placed.push(yy), true);
-    // The price scale: round prices (1, 2, 2.5 or 5 x a power of ten) about 45 px apart.
-    const ticks = (() => {
-        const want = Math.max(3, Math.floor((priceBottom - padT) / 45)), raw = (hi - lo) / want;
-        const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-        const stepP = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((x) => x >= raw) || 10 * mag;
-        const out = [];
-        for (let v = Math.ceil(lo / stepP) * stepP; v <= hi; v += stepP) out.push(+v.toFixed(6));
-        return { values: out, dp: stepP < 1 ? 2 : stepP < 10 ? 1 : 0 };
-    })();
-    ticks.values.forEach((v) => {
-        g += `<line x1="${padL}" x2="${right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="0.6"/>`;
-    });
-    g += `<line x1="${right}" x2="${right}" y1="${padT}" y2="${priceBottom}" stroke="var(--line-strong)" stroke-width="0.8"/>`;
+}
 
-    spec.seps.forEach((sp) => {
-        const x0 = padL + sp.k * step;
-        g += `<line x1="${x0}" x2="${x0}" y1="${padT}" y2="${H - padB}" stroke="var(--line-strong)" stroke-dasharray="2 3"/>
-              <text x="${x0 + 3}" y="${padT + 10}">${esc(sp.label)}</text>`;
+function lwcMake(wrap) {
+    const old = LWC[wrap.id];
+    if (old) { try { old.chart.remove(); } catch (e) { /* gone with its element */ } }
+    const full = wrap.id === 'full-wrap';
+    wrap.innerHTML = '<div class="chart lwc" role="img" aria-label="Candles with zone, levels and indicators"></div><div class="tip" hidden></div>';
+    const el = wrap.firstChild, T = lwcTheme(el);
+    const c = { wrap, el, full, tip: wrap.querySelector('.tip'), chart: LightweightCharts.createChart(el, lwcOptions(T, full)),
+                key: null, spec: null, n: 0, extra: [], T };
+    c.candle = c.chart.addCandlestickSeries({
+        borderVisible: false, priceLineVisible: true, lastValueVisible: true, priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+        // Levels the spec asks to keep in view (a near target, the zone) widen the price range.
+        autoscaleInfoProvider: (base) => {
+            const r = base();
+            if (!r || !r.priceRange || !c.extra.length) return r;
+            return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...c.extra), maxValue: Math.max(r.priceRange.maxValue, ...c.extra) } };
+        },
     });
-    spec.boxes.forEach((bx) => {
-        const x0 = Math.max(padL, padL + bx.from * step);
-        g += `<rect x="${x0}" y="${y(bx.top)}" width="${right - x0}" height="${Math.max(1, y(bx.bot) - y(bx.top))}"
-                fill="${bx.fill}" stroke="${bx.line}" stroke-width="1" ${bx.dash ? 'stroke-dasharray="4 3"' : ''}/>`;
-        if (bx.label) g += `<text x="${x0 + 4}" y="${y(bx.top) - 3}">${bx.label}</text>`;
+    const line = (o) => c.chart.addLineSeries({ priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...o });
+    c.vwap = line({ lineWidth: 2, lastValueVisible: true, title: 'VWAP' });
+    c.bbU = line({ lineWidth: 1 }); c.bbL = line({ lineWidth: 1 }); c.bbM = line({ lineWidth: 1, lineStyle: 2 });
+    c.delta = c.chart.addHistogramSeries({ priceScaleId: 'delta', priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'volume' } });
+    c.cum = line({ priceScaleId: 'cum', lineWidth: 2 });
+    ['delta', 'cum'].forEach((id) => c.chart.priceScale(id).applyOptions({ scaleMargins: { top: 0.76, bottom: 0.03 }, visible: false }));
+    c.layer = new LwcLayer();
+    c.candle.attachPrimitive(c.layer);
+    c.chart.subscribeCrosshairMove((p) => lwcTip(c, p));
+    // In the drawer the wheel scrolls the drawer; Ctrl (or a trackpad pinch, which arrives as Ctrl + wheel) zooms.
+    el.addEventListener('wheel', (e) => {
+        if (full || !(e.ctrlKey || e.metaKey) || !e.deltaY) return;
+        e.preventDefault();
+        const r = el.getBoundingClientRect();
+        lwcZoom(c, e.deltaY < 0 ? 0.8 : 1.25, Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
+    }, { passive: false });
+    el.addEventListener('dblclick', () => lwcFit(c));
+    return c;
+}
+
+// The drawer's chart height: as the old 720×340 drawing scaled to the panel's width, taller on a phone.
+const lwcHeight = (wrap) => { const w = wrap.clientWidth || 720; return w >= 720 ? Math.round(w * 340 / 720) : Math.max(250, Math.round(w * 0.62)); };
+
+function lwcBar(b, t, T) {
+    const up = b.c >= b.o, col = b.live ? lwcAlpha(up ? T.up : T.down, 0.45) : (up ? T.up : T.down);
+    return { time: t, open: b.o, high: b.h, low: b.l, close: b.c, color: col, wickColor: col, borderColor: col };
+}
+
+function paintChart(spec, wrap) {
+    if (!wrap || !window.LightweightCharts) return;
+    let c = LWC[wrap.id];
+    if (!c || c.wrap !== wrap || !wrap.contains(c.el)) c = LWC[wrap.id] = lwcMake(wrap);
+    if (!c.full) c.el.style.height = lwcHeight(wrap) + 'px';
+    const bars = spec.bars, n = bars.length;
+    const key = zoomKey() + '|' + (current && current.trade ? current.trade.ref : '') + '|' + (n ? (bars[0].day || '') + bars[0].d : '');
+    // The same spec with the same candles: a live price moved the last one.
+    if (c.spec === spec && c.n === n && c.key === key && n) {
+        c.candle.update(lwcBar(bars[n - 1], c.times[n - 1], c.T));
+        c.layer.set({ ...c.layer.d, last: bars[n - 1].c });
+        return;
+    }
+    const T = c.T = lwcTheme(c.el), el = c.el;
+    c.chart.applyOptions(lwcOptions(T, c.full));
+    // Times must rise: anything out of order (it should not happen) is dropped rather than break the chart.
+    const times = [], keep = [];
+    bars.forEach((b, k) => { const t = lwcTime(b); if (!times.length || t > times[times.length - 1]) { times.push(t); keep.push(k); } });
+    if (keep.length !== n) { console.warn('chart: candles out of order dropped'); spec = { ...spec, bars: keep.map((k) => bars[k]) }; }
+    const B = spec.bars, N = B.length, I = spec.ind || {};
+    const on = (k) => overlays[k] && Array.isArray(I[k === 'bb' ? 'bb_mid' : k]) && I[k === 'bb' ? 'bb_mid' : k].length === N;
+    const showDelta = on('delta') && I.delta.some((x) => x != null), view = indSetting('delta_view');
+    c.spec = spec; c.n = N; c.times = times; c.key = key;
+    c.extra = (spec.extra || []).filter((v) => v != null && isFinite(v));
+    c.candle.applyOptions({ upColor: T.up, downColor: T.down, wickUpColor: T.up, wickDownColor: T.down });
+    c.candle.setData(B.map((b, k) => lwcBar(b, times[k], T)));
+    c.chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.08, bottom: showDelta ? 0.32 : 0.08 } });
+    const lineData = (arr) => arr.map((v, k) => (v == null || !isFinite(v) ? { time: times[k] } : { time: times[k], value: v }));
+    const set = (series, shown, arr, opts) => { series.applyOptions({ visible: shown, ...opts }); series.setData(shown ? lineData(arr) : []); };
+    set(c.vwap, on('vwap'), I.vwap, { color: T.vwap });
+    set(c.bbU, on('bb'), I.bb_upper, { color: T.bb }); set(c.bbL, on('bb'), I.bb_lower, { color: T.bb }); set(c.bbM, on('bb'), I.bb_mid, { color: T.bb });
+    const cum = showDelta ? cumDelta(B, I.delta) : [];
+    c.delta.applyOptions({ visible: showDelta && view !== 'cumulative' });
+    c.delta.setData(showDelta && view !== 'cumulative'
+        ? I.delta.map((x, k) => ({ time: times[k], value: x || 0, color: lwcAlpha((x || 0) >= 0 ? T.dUp : T.dDown, 0.75) })) : []);
+    set(c.cum, showDelta && view !== 'bars', cum, { color: T.cum });
+    // Markers: the candlestick patterns (▲ under a bullish one, ▼ over a bearish one) and opening-range breaks.
+    const marks = [];
+    spec.marks.forEach(({ k, p }) => {
+        if (k < 0 || k >= N) return;
+        const col = lwcColor(p.at_zone ? 'var(--warn)' : 'var(--accent)', el);
+        marks.push({ time: times[k], position: p.side === 'short' ? 'aboveBar' : 'belowBar', shape: p.side === 'short' ? 'arrowDown' : 'arrowUp', color: col, text: p.short });
     });
-    // Opening range: the first N minutes' high-low box, carried across the session,
-    // and a marker on the first close outside it (the breakout).
+    const boxes = spec.boxes.map((bx) => ({ from: bx.from, top: bx.top, bot: bx.bot, fill: lwcColor(bx.fill, el), line: lwcColor(bx.line, el), dash: bx.dash, label: bx.label }));
     if (overlays.orb && I.orb) {
         const dayOf = (b) => b.day || (b.t || '').slice(0, 10);
         Object.entries(I.orb).forEach(([day, o]) => {
-            const ks = bars.map((b, k) => (dayOf(b) === day ? k : -1)).filter((k) => k >= 0);
+            const ks = B.map((b, k) => (dayOf(b) === day ? k : -1)).filter((k) => k >= 0);
             if (!ks.length) return;
-            const x0 = padL + ks[0] * step, x1 = padL + (ks[ks.length - 1] + 1) * step;
-            g += `<rect x="${x0}" y="${y(o.high)}" width="${x1 - x0}" height="${Math.max(1, y(o.low) - y(o.high))}"
-                    fill="var(--orb)" stroke="var(--orb-line)" stroke-width="0.8" stroke-dasharray="5 3"/>
-                  <text x="${x0 + 3}" y="${y(o.high) - 3}" style="fill:var(--orb-line)">ORB</text>`;
+            boxes.push({ from: ks[0], to: ks[ks.length - 1], top: o.high, bot: o.low, fill: T.orb, line: T.orbLine, dash: true, label: 'ORB' });
             if (o.breakout) {
-                const hhmm = o.breakout.time.slice(11, 16);
-                const k = ks.find((kk) => (bars[kk].t || bars[kk].d || '').includes(hhmm));
+                const hm = o.breakout.time.slice(11, 16), k = ks.find((kk) => (B[kk].t || B[kk].d || '').includes(hm));
                 if (k != null) {
-                    const up = o.breakout.dir === 'up', cx = cxOf(k);
-                    const yy = up ? y(bars[k].h) - 14 : y(bars[k].l) + 22;
-                    g += `<g><title>Opening range ${up ? 'breakout' : 'breakdown'}: closed ${up ? 'above' : 'below'} ${(up ? o.high : o.low).toFixed(2)}</title>
-                          <text x="${cx}" y="${yy}" text-anchor="middle" style="fill:var(--orb-line);font-weight:800;font-size:9.5px">${up ? 'ORB▲' : 'ORB▼'}</text></g>`;
+                    const upB = o.breakout.dir === 'up';
+                    marks.push({ time: times[k], position: upB ? 'aboveBar' : 'belowBar', shape: upB ? 'arrowUp' : 'arrowDown', color: T.orbLine, text: 'ORB' });
                 }
             }
         });
     }
-    if (on('bb')) {
-        const up = I.bb_upper, low = I.bb_lower;
-        const ks = up.map((v, k) => (v != null && low[k] != null ? k : -1)).filter((k) => k >= 0);
-        if (ks.length > 1) {
-            const top = ks.map((k) => `${cxOf(k).toFixed(1)} ${y(up[k]).toFixed(1)}`).join(' L');
-            const bot = ks.slice().reverse().map((k) => `${cxOf(k).toFixed(1)} ${y(low[k]).toFixed(1)}`).join(' L');
-            g += `<path d="M${top} L${bot} Z" fill="var(--bb-fill)" stroke="none"/>
-                  <path d="${path(up)}" fill="none" stroke="var(--bb)" stroke-width="1"/>
-                  <path d="${path(low)}" fill="none" stroke="var(--bb)" stroke-width="1"/>
-                  <path d="${path(I.bb_mid)}" fill="none" stroke="var(--bb)" stroke-width="0.8" stroke-dasharray="4 3"/>`;
-        }
-    }
-    const edges = { top: [], bottom: [] };
-    spec.lines.forEach((ln) => {
-        if (ln.v == null) return;
-        if (ln.v < lo || ln.v > hi) {
-            // Off the chart: say where it is rather than leave nothing at all.
-            if (ln.edge) (ln.v > hi ? edges.top : edges.bottom).push(ln);
-            return;
-        }
-        const from = ln.from != null ? Math.max(padL, cxOf(ln.from)) : padL;
-        g += `<line x1="${from}" x2="${right}" y1="${y(ln.v)}" y2="${y(ln.v)}" stroke="${ln.color}" stroke-width="1"
-                ${ln.dash ? `stroke-dasharray="${ln.dash}"` : ''}/>`;
-        if (room(y(ln.v))) g += `<text x="${right + 4}" y="${y(ln.v) + 3.5}" style="fill:${ln.color}">${ln.label}</text>`;
+    marks.sort((x, y) => (x.time > y.time ? 1 : x.time < y.time ? -1 : 0));
+    c.candle.setMarkers(marks);
+    c.layer.set({
+        font: T.font, ink: T.ink, strong: T.strong, cum: T.cum, last: B[N - 1].c, delta: showDelta, cumShown: showDelta && view !== 'bars',
+        deltaLabel: view === 'cumulative' ? 'Δ est.' : 'Δ est.' + (I.delta_source === 'bar' ? ' (from bars)' : ''),
+        band: on('bb') ? { up: I.bb_upper, low: I.bb_lower } : null, bandFill: T.bbFill,
+        boxes, seps: spec.seps.filter((sp) => sp.k >= 0 && sp.k < N),
+        lines: spec.lines.filter((ln) => ln.v != null).map((ln) => ({ ...ln, color: lwcColor(ln.color, el) })),
     });
-    bars.forEach((b, k) => {
-        const cx = cxOf(k), col = b.c >= b.o ? 'var(--up)' : 'var(--down)';
-        const bw = Math.max(1, step * 0.62);
-        g += `<g ${b.live ? 'opacity="0.45"' : ''}><line x1="${cx}" x2="${cx}" y1="${y(b.h)}" y2="${y(b.l)}" stroke="${col}" stroke-width="1"/>
-              <rect x="${cx - bw / 2}" y="${y(Math.max(b.o, b.c))}" width="${bw}"
-                    height="${Math.max(1, Math.abs(y(b.o) - y(b.c)))}" fill="${col}"/></g>`;
-    });
-    if (on('vwap')) {
-        g += `<path d="${path(I.vwap)}" fill="none" stroke="var(--vwap)" stroke-width="1.6"/>`;
-        const lv = I.vwap[n - 1];
-        if (lv != null && room(y(lv))) g += `<text x="${right + 4}" y="${y(lv) + 3.5}" style="fill:var(--vwap);font-weight:700">VWAP</text>`;
-    }
-    // Pattern markers: a ▲ under the candle that completed a bullish pattern,
-    // a ▼ over the candle that completed a bearish one, with its short name.
-    const stack = {};
-    spec.marks.forEach(({ k, p }) => {
-        if (k < 0 || k >= n) return;
-        const cx = cxOf(k), lvl = (stack[k] = (stack[k] || 0) + 1) - 1;
-        const col = p.at_zone ? 'var(--warn)' : 'var(--accent)';
-        const title = `<title>${esc(p.label)}${p.at_zone ? ' · inside the zone' : ''}</title>`;
-        if (p.side === 'short') {
-            const yy = Math.max(padT + 8, y(bars[k].h) - 6 - lvl * 13);
-            g += `<g>${title}<path d="M${cx} ${yy} l4 -6 h-8 z" fill="${col}"/>
-                  <text x="${cx + 6}" y="${yy - 1}" style="fill:${col};font-weight:700;font-size:9.5px">${esc(p.short)}</text></g>`;
-        } else {
-            const yy = Math.min(priceBottom - 4, y(bars[k].l) + 6 + lvl * 13);
-            g += `<g>${title}<path d="M${cx} ${yy} l4 6 h-8 z" fill="${col}"/>
-                  <text x="${cx + 6}" y="${yy + 6}" style="fill:${col};font-weight:700;font-size:9.5px">${esc(p.short)}</text></g>`;
-        }
-    });
-    // The current price: a dashed line across and a filled tag on the scale, in the last candle's colour.
-    const lastCol = last.c >= last.o ? 'var(--up)' : 'var(--down)', ly = y(last.c);
-    g += `<line x1="${padL}" x2="${right}" y1="${ly}" y2="${ly}" stroke="${lastCol}" stroke-width="0.8" stroke-dasharray="2 3" opacity="0.8"/>
-          <rect x="${right + 1}" y="${ly - 8}" width="${padR - 3}" height="16" rx="3" fill="${lastCol}"/>
-          <text x="${right + 5}" y="${ly + 4}" style="fill:#fff;font-weight:700">${last.c.toFixed(last.c < 1000 ? 2 : 1)}</text>`;
-    // Scale labels last, so the level labels and the price tag keep their places.
-    ticks.values.forEach((v) => {
-        if (room(y(v))) g += `<text x="${right + 5}" y="${y(v) + 3.5}" class="pscale">${v.toFixed(ticks.dp)}</text>`;
-    });
-    g += '</g>';
-    [0, Math.floor(n / 2), n - 1].forEach((k) => g += `<text x="${padL + k * step}" y="${H - 6}">${esc(spec.axis(bars[k]))}</text>`);
-    // Delta panel: estimated delta per candle as bars around a zero line, and
-    // cumulative delta (restarting each session on intraday charts) as a line,
-    // each on its own scale.
-    let cum = null;
-    if (showDelta) {
-        const d = I.delta.map((x) => x || 0);
-        cum = Array.isArray(I.cum_full) && I.cum_full.length === n ? I.cum_full : cumDelta(bars, I.delta);
-        const dMax = Math.max(1, ...d.map(Math.abs)), cMax = Math.max(1, ...cum.map(Math.abs));
-        const mid = (dTop + dBot) / 2, half = (dBot - dTop) / 2 - 2;
-        const yd = (v) => mid - v / dMax * half, yc = (v) => mid - v / cMax * half;
-        g += `<line x1="${padL}" x2="${right}" y1="${dTop - 9}" y2="${dTop - 9}" stroke="var(--line)"/>
-              <line x1="${padL}" x2="${right}" y1="${mid}" y2="${mid}" stroke="var(--line-strong)" stroke-width="0.6"/>
-              <text x="${padL + 2}" y="${dTop - 1}" style="font-weight:700">Δ est.${I.delta_source === 'bar' ? ' (from bars)' : ''}</text>
-              <text x="${padL + 92}" y="${dTop - 1}" style="fill:var(--cum);font-weight:700">— Cum Δ</text>`;
-        const bw = Math.max(1, step * 0.62), view = indSetting('delta_view');
-        if (view !== 'cumulative') d.forEach((x, k) => {
-            const cx = cxOf(k), top = Math.min(mid, yd(x)), h = Math.max(0.8, Math.abs(yd(x) - mid));
-            g += `<rect x="${cx - bw / 2}" y="${top}" width="${bw}" height="${h}" fill="${x >= 0 ? 'var(--delta-up)' : 'var(--delta-down)'}" opacity="0.75"/>`;
-        });
-        if (view !== 'bars') g += `<path d="${cum.map((v, k) => `${k ? 'L' : 'M'}${cxOf(k).toFixed(1)} ${yc(v).toFixed(1)}`).join('')}"
-                    fill="none" stroke="var(--cum)" stroke-width="1.5"/>
-              <text x="${right + 4}" y="${yc(cum[n - 1]) + 3.5}" style="fill:var(--cum);font-weight:700">${fmtVol(cum[n - 1])}</text>`;
-    }
-    const lastC = bars[n - 1].c;
-    [['top', padT + 4], ['bottom', priceBottom - 4]].forEach(([side, yy]) => {
-        edges[side].forEach((ln, k) => {
-            const ty = side === 'top' ? yy + k * 12 : yy - k * 12, tip = side === 'top' ? 'M0 4l4-5 4 5z' : 'M0-4l4 5 4-5z';
-            const dist = (ln.v - lastC) / lastC * 100;
-            g += `<g transform="translate(${right - 150},${ty})"><path d="${tip}" fill="${ln.color}"/>
-                <text x="12" y="3.5" style="fill:${ln.color};font-weight:650">${ln.label} ${ln.v.toFixed(2)} (${dist >= 0 ? '+' : ''}${dist.toFixed(1)}%)</text></g>`;
-        });
-    });
-    g += `<g id="xh" style="pointer-events:none"></g>`;
-
-    // Wrapped: as a direct flex item the svg loses its aspect ratio.
-    wrap.innerHTML = `<svg class="chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img"
-        aria-label="Candles with zone, levels and candlestick patterns">${g}</svg>
-        <div class="tip" hidden></div>`;
-    const svg = wrap.querySelector('svg'), xh = svg.querySelector('#xh'), tip = wrap.querySelector('.tip');
-    const pats = {};
-    spec.marks.forEach(({ k, p }) => { (pats[k] = pats[k] || []).push((p.side === 'short' ? '▼ ' : '▲ ') + p.label + (p.at_zone ? ' (in zone)' : '')); });
-
-    // Crosshair: nearest candle under the pointer, its OHLC in a tooltip. With the
-    // magnet on, the horizontal line snaps to whichever of that candle's open,
-    // high, low or close is nearest the pointer, and reads that exact price.
-    const move = (e) => {
-        const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-        const p = pt.matrixTransform(svg.getScreenCTM().inverse());
-        const k = Math.max(0, Math.min(n - 1, Math.floor((p.x - padL) / step)));
-        const b = bars[k], cx = cxOf(k);
-        let yy = Math.max(padT, Math.min(priceBottom, p.y));
-        let price = hi - (yy - padT) / (priceBottom - padT) * (hi - lo), snap = null;
-        if (magnet) {
-            snap = [['O', b.o], ['H', b.h], ['L', b.l], ['C', b.c]]
-                .reduce((best, x) => (Math.abs(y(x[1]) - yy) < Math.abs(y(best[1]) - yy) ? x : best));
-            price = snap[1]; yy = y(price);
-        }
-        xh.innerHTML = `<line x1="${cx}" x2="${cx}" y1="${padT}" y2="${H - padB}" stroke="var(--ink-3)" stroke-dasharray="3 3"/>
-            <line x1="${padL}" x2="${right}" y1="${yy}" y2="${yy}" stroke="${snap ? 'var(--accent)' : 'var(--ink-3)'}" stroke-dasharray="3 3"/>
-            ${snap ? `<circle cx="${cx}" cy="${yy}" r="3.5" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.8"/>` : ''}
-            <rect x="${right + 1}" y="${yy - 8}" width="${padR - 2}" height="16" rx="3" fill="${snap ? 'var(--accent)' : 'var(--ink)'}"/>
-            <text x="${right + 4}" y="${yy + 4}" style="fill:${snap ? 'var(--accent-ink)' : 'var(--surface)'};font-weight:700">${
-                snap ? snap[0] + ' ' + price.toFixed(price < 1000 ? 2 : 1) : price.toFixed(1)}</text>`;
-        const prev = k > 0 ? bars[k - 1].c : null;
-        const chg = prev ? ((b.c - prev) / prev * 100) : null;
-        const v = (key, val) => (snap && snap[0] === key ? `<u>${key} ${val.toFixed(2)}</u>` : `${key} ${val.toFixed(2)}`);
-        tip.innerHTML = `<b>${esc(spec.label(b))}</b>${b.live ? ' · forming' : ''}<br>${v('O', b.o)} · ${v('H', b.h)}<br>${v('L', b.l)} · ${v('C', b.c)}` +
-            (chg == null ? '' : `<br>${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`) +
-            (I.volume && I.volume[k] != null ? `<br>Vol ${fmtVol(I.volume[k])}` : '') +
-            (showDelta ? `<br>Δ est. ${fmtVol(I.delta[k])} · Cum ${fmtVol(cum[k])}` : '') +
-            (on('vwap') && I.vwap[k] != null ? `<br>VWAP ${I.vwap[k].toFixed(2)}` : '') +
-            (on('bb') && I.bb_mid[k] != null ? `<br>BB ${I.bb_lower[k].toFixed(1)} · ${I.bb_mid[k].toFixed(1)} · ${I.bb_upper[k].toFixed(1)}` : '') +
-            (pats[k] ? '<br>' + pats[k].map(esc).join('<br>') : '');
-        const wpx = wrap.clientWidth, left = cx / W * wpx;
-        tip.style.left = Math.max(80, Math.min(wpx - 80, left)) + 'px';
-        tip.style.top = (yy / H * wrap.clientHeight > wrap.clientHeight / 2 ? 8 : wrap.clientHeight - 100) + 'px';
-        tip.hidden = false;
-    };
-    // Grab and scale (chartDrag): drag the chart to move it through time and price, drag the
-    // price scale to stretch prices, drag the time axis to show more or fewer candles. The wheel
-    // zooms time around the pointer (price, over the price scale). A double click fits it all again.
-    const geo = { right, padL, padB, H, W, step, priceBottom, plotH: priceBottom - padT, wrap };
-    const region = (p) => p.x > right ? 'price' : (p.y > H - padB && !showDelta) || p.y > H - padB - 2 ? 'time' : 'chart';
-    const pointAt = (e) => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
-    svg.addEventListener('wheel', (e) => {
-        // In the drawer the wheel scrolls the drawer; Ctrl (or a trackpad pinch, which arrives as
-        // Ctrl + wheel) zooms. In the expanded view the wheel always zooms.
-        if (!e.deltaY || (wrap.id !== 'full-wrap' && !e.ctrlKey && !e.metaKey)) return;
-        e.preventDefault();
-        const p = pointAt(e);
-        if (region(p) === 'price') return scalePrice(e.deltaY < 0 ? 0.85 : 1.18);
-        zoomBy(e.deltaY < 0 ? 0.8 : 1.25, Math.max(0, Math.min(1, (p.x - padL) / (right - padL))));
-    }, { passive: false });
-    svg.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return;
-        const p = pointAt(e);
-        chartDrag = { mode: region(p), x0: e.clientX, y0: e.clientY, a0: zoom.a, b0: zoom.b, shift0: pz.shift, scale0: pz.scale,
-                      geo, rect: svg.getBoundingClientRect(), moved: false, axis: null, id: e.pointerId };
-        move(e);
-    });
-    svg.addEventListener('pointermove', (e) => { if (!chartDrag) move(e); else e.preventDefault(); });
-    svg.addEventListener('pointerleave', () => { if (!chartDrag) { xh.innerHTML = ''; tip.hidden = true; } });
-    svg.addEventListener('dblclick', zoomReset);
-    svg.dataset.zoomed = spec.zoomed || pz.scale !== 1 || pz.shift !== 0 ? '1' : '0';
+    if (c.fitted !== key) { c.fitted = key; lwcFit(c); }
 }
 
-/* The drag in progress, kept outside the svg: every move redraws the chart (a new svg), so the
-   gesture is followed on the document and measured from where it started. */
-let chartDrag = null, dragFrame = null;
-document.addEventListener('pointermove', (e) => {
-    const d = chartDrag;
-    if (!d || e.pointerId !== d.id) return;
-    // Screen pixels to chart units (the svg is drawn at a fixed size and scaled to its box).
-    const sx = d.geo.W / d.rect.width, sy = d.geo.H / d.rect.height;
-    const dx = (e.clientX - d.x0) * sx, dy = (e.clientY - d.y0) * sy;
-    if (!d.moved) {
-        if (Math.hypot(dx, dy) < 5) return;
-        d.moved = true;
-        // A mostly sideways drag on the chart moves time only, so a pan doesn't nudge the price.
-        d.axis = d.mode === 'chart' && Math.abs(dx) > Math.abs(dy) * 1.5 ? 'x' : 'xy';
-        document.body.classList.add('chart-dragging');
-    }
-    if (d.mode === 'chart') {
-        const w = d.b0 - d.a0, a = Math.max(0, Math.min(zoom.n - w, d.a0 - Math.round(dx / d.geo.step)));
-        zoom.a = a; zoom.b = a + w;
-        if (d.axis === 'xy') pz.shift = d.shift0 + dy / d.geo.plotH * d.scale0;
-    } else if (d.mode === 'price') {
-        pz.scale = Math.max(0.05, Math.min(20, d.scale0 * Math.exp(dy / 160)));     // drag up: stretch
-    } else {
-        const w0 = d.b0 - d.a0, w = Math.max(Math.min(ZOOM_MIN, zoom.n), Math.min(zoom.n, Math.round(w0 * Math.exp(dx / 220))));
-        zoom.b = d.b0; zoom.a = Math.max(0, d.b0 - w);                                   // keeps the right edge
-    }
-    if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = null; if (lastSpec) drawCandles(lastSpec); });
+// The OHLC box under the crosshair (and what else that candle has), as before; with the magnet on, the price
+// nearest the pointer is underlined.
+function lwcTip(c, p) {
+    const tip = c.tip, spec = c.spec;
+    if (!p || p.time == null || !p.point || p.logical == null || !spec) { tip.hidden = true; return; }
+    const k = Math.round(p.logical), bars = spec.bars, I = spec.ind || {};
+    if (k < 0 || k >= bars.length) { tip.hidden = true; return; }
+    const b = bars[k], prev = k > 0 ? bars[k - 1].c : null, chg = prev ? (b.c - prev) / prev * 100 : null;
+    let snap = null;
+    if (magnet) snap = [['O', b.o], ['H', b.h], ['L', b.l], ['C', b.c]]
+        .reduce((best, x) => (Math.abs((c.candle.priceToCoordinate(x[1]) ?? 0) - p.point.y) < Math.abs((c.candle.priceToCoordinate(best[1]) ?? 0) - p.point.y) ? x : best));
+    const v = (key, val) => (snap && snap[0] === key ? `<u>${key} ${val.toFixed(2)}</u>` : `${key} ${val.toFixed(2)}`);
+    const on = (key) => overlays[key] && Array.isArray(I[key === 'bb' ? 'bb_mid' : key]) && I[key === 'bb' ? 'bb_mid' : key].length === bars.length;
+    const pats = spec.marks.filter((m) => m.k === k).map((m) => (m.p.side === 'short' ? '▼ ' : '▲ ') + m.p.label + (m.p.at_zone ? ' (in zone)' : ''));
+    let cumK = null;
+    if (on('delta') && I.delta[k] != null) cumK = cumDelta(bars, I.delta)[k];
+    tip.innerHTML = `<b>${esc(spec.label(b))}</b>${b.live ? ' · forming' : ''}<br>${v('O', b.o)} · ${v('H', b.h)}<br>${v('L', b.l)} · ${v('C', b.c)}` +
+        (chg == null ? '' : `<br>${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`) +
+        (I.volume && I.volume[k] != null ? `<br>Vol ${fmtVol(I.volume[k])}` : '') +
+        (cumK != null ? `<br>Δ est. ${fmtVol(I.delta[k])} · Cum ${fmtVol(cumK)}` : '') +
+        (on('vwap') && I.vwap[k] != null ? `<br>VWAP ${I.vwap[k].toFixed(2)}` : '') +
+        (on('bb') && I.bb_mid[k] != null ? `<br>BB ${I.bb_lower[k].toFixed(1)} · ${I.bb_mid[k].toFixed(1)} · ${I.bb_upper[k].toFixed(1)}` : '') +
+        (pats.length ? '<br>' + pats.map(esc).join('<br>') : '');
+    const wpx = c.wrap.clientWidth, hpx = c.el.clientHeight;
+    tip.style.left = Math.max(80, Math.min(wpx - 80, p.point.x)) + 'px';
+    tip.style.top = (p.point.y > hpx / 2 ? 8 : Math.max(8, hpx - 110)) + 'px';
+    tip.hidden = false;
+}
+
+function lwcFit(c) {
+    c.chart.priceScale('right').applyOptions({ autoScale: true });
+    c.chart.timeScale().fitContent();
+}
+// Zoom around a point of the visible candles (`at`: 0 = left edge, 1 = right edge) by `factor` (< 1 zooms in).
+function lwcZoom(c, factor, at = 1) {
+    if (!c || !c.n) return;
+    const ts = c.chart.timeScale(), r = ts.getVisibleLogicalRange();
+    if (!r) return;
+    const w = r.to - r.from, nw = Math.max(Math.min(12, c.n), Math.min(c.n * 1.2, w * factor)), pivot = r.from + at * w;
+    ts.setVisibleLogicalRange({ from: pivot - at * nw, to: pivot + (1 - at) * nw });
+}
+const lwcActive = () => (!$('fullchart').hidden ? LWC['full-wrap'] : LWC['chart-wrap']);
+function zoomBy(factor, at = 1) { lwcZoom(lwcActive(), factor, at); }
+function zoomReset() { const c = lwcActive(); if (c) lwcFit(c); }
+
+/* Draw `spec` in the drawer and, when it is open, in full view. */
+function drawCandles(spec) {
+    lastSpec = spec;
+    paintChart(spec, $('chart-wrap'));
+    if (!$('fullchart').hidden) paintFull();
+}
+function paintFull() {
+    const wrap = $('full-wrap');
+    if (!lastSpec || !wrap) return;
+    if (current) $('fc-sub').textContent = current.trade ? ((current.candles || {}).label || 'trade') : current.intra ? 'intraday · ' + itf + ' candles'
+        : (tf === 'D' ? 'daily candles' : '15m candles');
+    paintChart(lastSpec, wrap);
+}
+// The drawer chart's height follows its width (a phone turned sideways); a new theme or indicator colour redraws.
+window.addEventListener('resize', () => { const c = LWC['chart-wrap']; if (c && c.wrap.isConnected) c.el.style.height = lwcHeight(c.wrap) + 'px'; });
+window.addEventListener('themechange', () => {
+    Object.values(LWC).forEach((c) => { c.spec = null; });
+    if (lastSpec && $('drawer').dataset.open === '1') drawCandles(lastSpec);
 });
-const endChartDrag = () => { if (chartDrag) { chartDrag = null; document.body.classList.remove('chart-dragging'); } };
-document.addEventListener('pointerup', endChartDrag);
-document.addEventListener('pointercancel', endChartDrag);
+
+/* ------------------------------------------------------------- line charts */
+// The Performance curve, the Demo balance curve and the option chain's day lines, on the same library. Each is one
+// chart kept for its panel and put back into it whenever the panel is drawn again, so a live redraw (every second
+// while prices move) only gives it new data. Points in order go in as x = 0, 1, 2 ... with `labels[i]` naming them
+// on the axis and under the crosshair; real times read as the candle charts' do.
+const LWL = {};
+function lwlOptions(c, T) {
+    const name = (t) => (typeof t === 'number' && c.labels[t] != null ? c.labels[t] : null);
+    return {
+        autoSize: true,
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: T.ink, fontFamily: T.font, fontSize: 10.5 },
+        grid: { vertLines: { visible: false }, horzLines: { color: T.line } },
+        rightPriceScale: { borderVisible: false },
+        timeScale: { borderColor: T.line, timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true,
+                     tickMarkFormatter: (t, type) => name(t) ?? lwcTick(t, type) },
+        localization: { timeFormatter: (t) => name(t) ?? lwcWhen(t) },
+        crosshair: { mode: 0, vertLine: { labelVisible: true }, horzLine: { labelVisible: true } },
+        handleScroll: false, handleScale: false,
+    };
+}
+function lwlChart(name, height) {
+    let c = LWL[name];
+    if (!c) {
+        const host = document.createElement('div');
+        host.className = 'lwl';
+        c = LWL[name] = { name, host, labels: [], series: {} };
+        c.chart = LightweightCharts.createChart(host, lwlOptions(c, lwcTheme(document.body)));
+    }
+    c.host.style.height = height + 'px';
+    return c;
+}
+// Into `box` (once; later redraws keep the element where it is).
+const lwlInto = (c, box) => { if (c.host.parentNode !== box) box.prepend(c.host); };
+window.addEventListener('themechange', () => Object.values(LWL).forEach((c) => {
+    c.chart.applyOptions(lwlOptions(c, lwcTheme(document.body)));
+    if (c.redraw) c.redraw();
+}));
+
+/* An area between two lines, green where the first is above the second and red where it is below, and faint
+   lines where a new day starts: the Demo curve's gain or loss against the money put in. */
+class LwlBetween {
+    constructor() { this.d = null; this.views = [{ zOrder: () => 'bottom', renderer: () => ({ draw: (t) => this.draw(t) }) }]; }
+    attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.req = requestUpdate; }
+    detached() { this.req = null; }
+    updateAllViews() {}
+    paneViews() { return this.views; }
+    set(d) { this.d = d; if (this.req) this.req(); }
+    draw(target) {
+        const d = this.d;
+        if (!d || !this.chart) return;
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+            const ts = this.chart.timeScale(), X = (i) => ts.logicalToCoordinate(i), Y = (v) => this.series.priceToCoordinate(v);
+            ctx.save();
+            d.seps.forEach((i) => {
+                const x = X(i - 0.5);
+                if (x == null) return;
+                ctx.strokeStyle = d.line; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, mediaSize.height); ctx.stroke();
+            });
+            ctx.setLineDash([]);
+            for (let i = 0; i < d.a.length - 1; i++) {
+                const x0 = X(i), x1 = X(i + 1), a0 = Y(d.a[i]), a1 = Y(d.a[i + 1]), b0 = Y(d.b[i]), b1 = Y(d.b[i + 1]);
+                if ([x0, x1, a0, a1, b0, b1].some((v) => v == null)) continue;
+                ctx.fillStyle = (d.a[i] + d.a[i + 1]) / 2 >= (d.b[i] + d.b[i + 1]) / 2 ? d.up : d.down;
+                ctx.beginPath(); ctx.moveTo(x0, a0); ctx.lineTo(x1, a1); ctx.lineTo(x1, b1); ctx.lineTo(x0, b0); ctx.closePath(); ctx.fill();
+            }
+            ctx.restore();
+        });
+    }
+}
 
 function levelsHtml(a) {
     if (!a.plan) return '';
@@ -4630,7 +4662,7 @@ function demoApply(L, d) {
     for (const m in L.by_mode) Object.assign(d.by_mode[m] || (d.by_mode[m] = {}), L.by_mode[m]);
     renderDemoTotals();
     patchDemoOpen();
-    if (!$('dm-curve').matches(':hover')) $('dm-curve').innerHTML = demoCurve(demoCurvePts());
+    demoCurveDraw($('dm-curve'), demoCurvePts());
     return true;
 }
 WS.listen('demo', (L) => { if (mode === 'demo' && demoData && L && L.open) demoApply(L, demoData); });
@@ -5592,10 +5624,9 @@ LIVE.hooks.push({
         }
         if (!forming || b.c === p) return;
         b.c = p; b.h = Math.max(b.h, p); b.l = Math.min(b.l, p);
-        const wrap = $('chart-wrap'), full = !$('fullchart').hidden;
-        if (chartDrag || (!full && wrap && wrap.matches(':hover')) || (full && $('full-wrap').matches(':hover'))) return;
-        if (wrap) paintChart(lastSpec, wrap, ...drawerSize());
-        if (full) paintFull();
+        // Only the forming candle moves (the chart keeps its zoom and the crosshair stays where it is).
+        paintChart(lastSpec, $('chart-wrap'));
+        if (!$('fullchart').hidden) paintFull();
     },
 });
 
@@ -5607,115 +5638,80 @@ let dmCurve = null;          // the drawn curve's points and geometry, for the h
 // The balance after every deposit, withdrawal and closed trade, against the money put in:
 // green where the account is above it, red where below; a dot per trade (won / lost),
 // amber for money in or out; hover for the line's story, click a trade to open its stock.
-function demoCurve(pts) {
-    if (pts.length < 2) { dmCurve = null; return '<div class="empty"><b>The balance curve starts with your first closed trade</b>Each deposit, withdrawal and closed trade moves it.</div>'; }
-    const W = 520, H = 190, L = 50, R = 58, T = 12, B = 22, n = pts.length;
+// The balance after each event (a closed trade, money in or out), evenly spaced, against the money put in so far
+// (dashed): green between them where the account is up, red where it is down. A dot per event: green a win, red a loss,
+// amber money in or out; while positions are open, a dashed last step to "now". Hover for the event, click a trade
+// to open its stock.
+function demoCurveDraw(box, pts) {
+    if (pts.length < 2) {
+        dmCurve = null;
+        box.innerHTML = '<div class="empty"><b>The balance curve starts with your first closed trade</b>Each deposit, withdrawal and closed trade moves it.</div>';
+        return;
+    }
+    const n = pts.length, T = lwcTheme(document.body), isNow = pts[n - 1].kind === 'now';
     let inv = 0;
     const base = pts.map((p) => (inv += p.kind === 'trade' || p.kind === 'now' ? 0 : p.amount));      // money put in so far
-    const vals = pts.map((p) => p.balance).concat(base);
-    let lo = Math.min(...vals), hi = Math.max(...vals);
-    const padv = (hi - lo) * 0.08 || Math.abs(hi) * 0.01 || 1; lo -= padv; hi += padv;
-    const x = (i) => L + i * (W - L - R) / (n - 1), y = (v) => T + (hi - v) / (hi - lo) * (H - T - B);
-    const isNow = pts[n - 1].kind === 'now';
-    const line = pts.slice(0, isNow ? -1 : n).map((p, i) => `${x(i).toFixed(1)},${y(p.balance).toFixed(1)}`);
-    const baseLine = base.map((b, i) => `${x(i).toFixed(1)},${y(b).toFixed(1)}`);
-    const uid = 'dmc';
-    // Area between the balance and the money put in, split by colour with two clips.
-    const between = line.concat(baseLine.slice(0, line.length).reverse()).join(' ');
-    const above = [`${L},${T}`, ...baseLine, `${W - R},${T}`].join(' ');
-    const below = [`${L},${H - B}`, ...baseLine, `${W - R},${H - B}`].join(' ');
-    let g = `<defs><clipPath id="${uid}-up"><polygon points="${above}"/></clipPath><clipPath id="${uid}-dn"><polygon points="${below}"/></clipPath>
-        <linearGradient id="${uid}-gu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--good)" stop-opacity="0.32"/><stop offset="1" stop-color="var(--good)" stop-opacity="0.04"/></linearGradient>
-        <linearGradient id="${uid}-gd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--bad)" stop-opacity="0.04"/><stop offset="1" stop-color="var(--bad)" stop-opacity="0.32"/></linearGradient></defs>`;
-    // Gridlines and the rupee scale.
-    for (let k = 0; k <= 3; k++) {
-        const v = lo + (hi - lo) * k / 3, yy = y(v);
-        g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/>
-              <text x="${L - 6}" y="${yy + 3}" text-anchor="end" class="sm-ax">${rsShort(v)}</text>`;
+    const c = lwlChart('demo', 190);
+    if (c.host.parentNode !== box) {
+        box.innerHTML = '<div class="dmc-tip" hidden></div><div class="sm-legend"></div>';
+        lwlInto(c, box);
     }
-    // A faint line and a label where each new day starts.
-    let lastDay = '', lastLabel = -Infinity;
-    pts.forEach((p, i) => {
-        const day = (p.ts || '').slice(0, 10);
-        if (day && day !== lastDay) {
-            if (i > 0) g += `<line x1="${x(i)}" x2="${x(i)}" y1="${T}" y2="${H - B}" stroke="var(--line)" stroke-dasharray="2 3"/>`;
-            const lx = i > 0 ? x(i) + 3 : L;
-            if (lx - lastLabel >= 40 && lx <= W - R - 30) {           // a label only where it has room
-                g += `<text x="${lx}" y="${H - 6}" class="sm-ax">${new Date(day + 'T12:00:00+05:30').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</text>`;
-                lastLabel = lx;
-            }
-            lastDay = day;
-        }
-    });
-    g += `<polygon points="${between}" fill="url(#${uid}-gu)" clip-path="url(#${uid}-up)"/>
-          <polygon points="${between}" fill="url(#${uid}-gd)" clip-path="url(#${uid}-dn)"/>
-          <polyline fill="none" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 3" points="${baseLine.join(' ')}"/>
-          <polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" points="${line.join(' ')}"/>`;
-    if (isNow) g += `<polyline fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-dasharray="4 3" points="${line[line.length - 1]} ${x(n - 1).toFixed(1)},${y(pts[n - 1].balance).toFixed(1)}"/>`;
-    pts.forEach((p, i) => {
-        if (p.kind === 'now') { g += `<circle cx="${x(i)}" cy="${y(p.balance)}" r="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/>`; return; }
-        const c = p.kind !== 'trade' ? 'var(--warn)' : p.amount >= 0 ? 'var(--good)' : 'var(--bad)';
-        g += `<circle cx="${x(i)}" cy="${y(p.balance)}" r="${p.kind !== 'trade' ? 3.5 : 2.2}" fill="${c}" stroke="var(--surface)" stroke-width="1"/>`;
-    });
-    // The latest balance, tagged on the right.
-    const last = pts[n - 1], ly = y(last.balance), up = last.balance >= base[n - 1];
-    g += `<rect x="${W - R + 4}" y="${ly - 9}" width="${R - 6}" height="18" rx="4" fill="${up ? 'var(--good)' : 'var(--bad)'}"/>
-          <text x="${W - R + 4 + (R - 6) / 2}" y="${ly + 3.5}" text-anchor="middle" class="dmc-tag">${rsShort(last.balance)}</text>`;
-    // The hover layer: a crosshair, a ring on the point, and a capture area.
-    g += `<g class="dmc-hover" style="display:none"><line class="dmc-x" y1="${T}" y2="${H - B}" stroke="var(--ink-3)" stroke-width="1"/>
-          <circle class="dmc-ring" r="5" fill="none" stroke="var(--accent)" stroke-width="2"/></g>
-          <rect class="dmc-hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>`;
-    dmCurve = { pts, base, x, y, W, H, L, R, n };
+    if (!c.series.bal) {
+        const fmt = { type: 'custom', formatter: (v) => rsShort(v), minMove: 1 };
+        c.series.base = c.chart.addLineSeries({ lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
+        c.series.bal = c.chart.addLineSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4, priceFormat: fmt });
+        c.series.now = c.chart.addLineSeries({ lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
+        c.fill = new LwlBetween();
+        c.series.bal.attachPrimitive(c.fill);
+        c.chart.subscribeCrosshairMove((p) => dmTip(box, p));
+        c.chart.subscribeClick((p) => {
+            const q = dmCurve && p && p.logical != null ? dmCurve.pts[Math.round(p.logical)] : null;
+            if (q && q.symbol) openStock(q.symbol);
+        });
+    }
+    c.redraw = () => demoCurveDraw(box, pts);
+    c.labels = pts.map((p) => (p.kind === 'now' ? 'now' : dmWhen(p.ts)));
+    const real = isNow ? n - 1 : n;
+    c.series.base.applyOptions({ color: T.ink });
+    c.series.base.setData(base.map((v, i) => ({ time: i, value: v })));
+    c.series.bal.applyOptions({ color: T.accent });
+    c.series.bal.setData(pts.slice(0, real).map((p, i) => ({ time: i, value: p.balance })));
+    c.series.now.applyOptions({ color: T.accent });
+    c.series.now.setData(isNow ? [{ time: n - 2, value: pts[n - 2].balance }, { time: n - 1, value: pts[n - 1].balance }] : []);
+    c.series.bal.setMarkers(pts.slice(0, real).map((p, i) => ({ time: i, position: 'inBar', shape: 'circle', size: p.kind !== 'trade' ? 0.9 : 0.6,
+        color: p.kind !== 'trade' ? T.warn : p.amount >= 0 ? T.good : T.bad })));
+    const seps = [];
+    pts.forEach((p, i) => { if (i && (p.ts || '').slice(0, 10) !== (pts[i - 1].ts || '').slice(0, 10)) seps.push(i); });
+    c.fill.set({ a: pts.map((p) => p.balance), b: base, up: lwcAlpha(T.good, 0.18), down: lwcAlpha(T.bad, 0.18), line: T.line, seps });
+    if (c.n !== n) { c.n = n; c.chart.timeScale().fitContent(); }
+    dmCurve = { pts, base, n };
     // Peak and the deepest fall from a peak, after charges.
     let peak = -Infinity, dd = 0, ddPct = 0;
     pts.forEach((p) => { peak = Math.max(peak, p.balance); const f = p.balance - peak; if (f < dd) { dd = f; ddPct = 100 * f / peak; } });
     const wins = pts.filter((p) => p.kind === 'trade' && p.amount > 0).length, losses = pts.filter((p) => p.kind === 'trade' && p.amount < 0).length;
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Demo account balance">${g}</svg><div class="dmc-tip" hidden></div>
-        <div class="sm-legend"><span><i style="background:var(--good)"></i>${wins} won</span><span><i style="background:var(--bad)"></i>${losses} lost</span>
-            <span><i style="background:var(--warn)"></i>money in / out</span><span class="muted">dashed: money put in</span>
-            <span class="muted">peak ${rsShort(peak)} · deepest fall ${dd < 0 ? rsShort(dd) + ' (' + ddPct.toFixed(1) + '%)' : 'none'}</span></div>`;
+    box.querySelector('.sm-legend').innerHTML = `<span><i style="background:var(--good)"></i>${wins} won</span><span><i style="background:var(--bad)"></i>${losses} lost</span>
+        <span><i style="background:var(--warn)"></i>money in / out</span><span class="muted">dashed: money put in</span>
+        <span class="muted">peak ${rsShort(peak)} · deepest fall ${dd < 0 ? rsShort(dd) + ' (' + ddPct.toFixed(1) + '%)' : 'none'}</span>`;
 }
 
-function dmCurveAt(e) {
-    const c = dmCurve, svg = $('dm-curve').querySelector('svg');
-    if (!c || !svg) return null;
-    const r = svg.getBoundingClientRect(), sx = (e.clientX - r.left) * c.W / r.width;
-    const i = Math.round((sx - c.L) / ((c.W - c.L - c.R) / (c.n - 1)));
-    return { i: Math.max(0, Math.min(c.n - 1, i)), r, svg };
-}
-$('dm-curve').addEventListener('pointermove', (e) => {
-    const at = dmCurveAt(e), tip = $('dm-curve').querySelector('.dmc-tip');
-    if (!at || !tip) return;
-    const c = dmCurve, p = c.pts[at.i], hv = at.svg.querySelector('.dmc-hover');
-    hv.style.display = '';
-    hv.querySelector('.dmc-x').setAttribute('x1', c.x(at.i)); hv.querySelector('.dmc-x').setAttribute('x2', c.x(at.i));
-    const ring = hv.querySelector('.dmc-ring'); ring.setAttribute('cx', c.x(at.i)); ring.setAttribute('cy', c.y(p.balance));
-    const vs = p.balance - c.base[at.i];
-    const what = p.kind === 'now' ? `<b>Now, with ${p.open} open position${p.open === 1 ? '' : 's'}</b><div class="muted">balance ${rs(p.closed, 2)} + open ${rsSigned(p.amount, 2)}</div>`
-        : p.kind === 'trade' ? `<b>${esc(p.label)}</b><div class="muted">${MODE_NAME[p.mode] || ''}${p.outcome ? ' · ' + esc(p.outcome) : ''}</div>`
-        : `<b>${p.kind === 'withdraw' ? 'Funds withdrawn' : at.i === 0 ? 'Opening balance' : 'Funds added'}</b>${p.label ? `<div class="muted">${esc(p.label)}</div>` : ''}`;
-    tip.innerHTML = `<div class="muted">${dmWhen(p.ts)}</div>${what}
-        <div class="dmc-row"><span>${p.kind === 'trade' ? 'Net' : p.kind === 'now' ? 'Open P&L' : 'Amount'}</span>${rsSigned(p.amount, 2)}</div>
-        <div class="dmc-row"><span>Balance</span><b>${rs(p.balance, 2)}</b></div>
-        <div class="dmc-row"><span>vs money in</span>${rsSigned(vs, 2)} <span class="muted">(${c.base[at.i] ? (100 * vs / c.base[at.i]).toFixed(2) : '0'}%)</span></div>`;
+function dmTip(box, p) {
+    const tip = box.querySelector('.dmc-tip'), c = dmCurve;
+    if (!tip || !c || !p || p.logical == null || !p.point) { if (tip) tip.hidden = true; box.style.cursor = ''; return; }
+    const i = Math.max(0, Math.min(c.n - 1, Math.round(p.logical))), q = c.pts[i], vs = q.balance - c.base[i];
+    const what = q.kind === 'now' ? `<b>Now, with ${q.open} open position${q.open === 1 ? '' : 's'}</b><div class="muted">balance ${rs(q.closed, 2)} + open ${rsSigned(q.amount, 2)}</div>`
+        : q.kind === 'trade' ? `<b>${esc(q.label)}</b><div class="muted">${MODE_NAME[q.mode] || ''}${q.outcome ? ' · ' + esc(q.outcome) : ''}</div>`
+        : `<b>${q.kind === 'withdraw' ? 'Funds withdrawn' : i === 0 ? 'Opening balance' : 'Funds added'}</b>${q.label ? `<div class="muted">${esc(q.label)}</div>` : ''}`;
+    tip.innerHTML = `<div class="muted">${dmWhen(q.ts)}</div>${what}
+        <div class="dmc-row"><span>${q.kind === 'trade' ? 'Net' : q.kind === 'now' ? 'Open P&L' : 'Amount'}</span>${rsSigned(q.amount, 2)}</div>
+        <div class="dmc-row"><span>Balance</span><b>${rs(q.balance, 2)}</b></div>
+        <div class="dmc-row"><span>vs money in</span>${rsSigned(vs, 2)} <span class="muted">(${c.base[i] ? (100 * vs / c.base[i]).toFixed(2) : '0'}%)</span></div>`;
     tip.hidden = false;
     // Beside the point, flipped to the other side near the right edge.
-    const wrap = $('dm-curve').getBoundingClientRect(), px = at.r.left - wrap.left + c.x(at.i) * at.r.width / c.W;
-    const py = at.r.top - wrap.top + c.y(p.balance) * at.r.height / c.H;
-    tip.style.left = (px + 14 + tip.offsetWidth > wrap.width ? px - 14 - tip.offsetWidth : px + 14) + 'px';
-    tip.style.top = Math.max(4, Math.min(wrap.height - tip.offsetHeight - 4, py - tip.offsetHeight / 2)) + 'px';
-    $('dm-curve').style.cursor = p.symbol ? 'pointer' : '';
-});
-$('dm-curve').addEventListener('pointerleave', () => {
-    const hv = $('dm-curve').querySelector('.dmc-hover'), tip = $('dm-curve').querySelector('.dmc-tip');
-    if (hv) hv.style.display = 'none';
-    if (tip) tip.hidden = true;
-});
-$('dm-curve').addEventListener('click', (e) => {
-    const at = dmCurveAt(e);
-    const p = at && dmCurve.pts[at.i];
-    if (p && p.symbol) openStock(p.symbol);
-});
+    const bw = box.clientWidth, bh = box.clientHeight, hostTop = LWL.demo.host.offsetTop, px0 = p.point.x + LWL.demo.host.offsetLeft;
+    tip.style.left = (px0 + 14 + tip.offsetWidth > bw ? px0 - 14 - tip.offsetWidth : px0 + 14) + 'px';
+    tip.style.top = Math.max(4, Math.min(bh - tip.offsetHeight - 4, hostTop + p.point.y - tip.offsetHeight / 2)) + 'px';
+    box.style.cursor = q.symbol ? 'pointer' : '';
+}
 
 // The account boxes and the by-mode table: everything the open positions' prices move.
 function renderDemoTotals() {
@@ -5747,7 +5743,7 @@ function renderDemo() {
         + ` · ${d.settings.max_open ? 'at most ' + d.settings.max_open + ' open' : 'no limit open'} · ${d.settings.max_per_day ? d.settings.max_per_day + ' a day' : 'no daily limit'}`
         : 'Add demo money to start: every trade the app takes from then on is mirrored here';
     renderDemoTotals();
-    $('dm-curve').innerHTML = started ? demoCurve(demoCurvePts()) : '';
+    if (started) demoCurveDraw($('dm-curve'), demoCurvePts()); else $('dm-curve').innerHTML = '';
     const qty = (p) => p.lots ? `${p.lots} lot${p.lots > 1 ? 's' : ''} × ${p.lot_size}` : p.qty.toLocaleString('en-IN');
     const prod = (p) => `<span class="ctype">${esc((d.products || {})[p.product] || p.product || '')}</span>`;
     const side = (p) => p.mode === 'options' ? `<span class="muted">buy</span> ${p.direction === 'short' ? 'bearish' : 'bullish'}`
@@ -6494,22 +6490,41 @@ function ocChart(d) {
         <text x="${W - padR}" y="${H - 4}" text-anchor="end">▮ call OI  ▮ put OI  — yesterday's OI</text></svg>`;
 }
 
+// Spot, PCR and ATM IV through the day, one above the other on a shared time axis (the chart is drawn into its
+// slot by ocDayPaint after the drawer's HTML is in place).
 function dayLines(d) {
     const se = d.series;
     if (!se.ts || se.ts.length < 2) return '<p class="why">The day\'s PCR and IV lines start after the second snapshot.</p>';
-    const W = 720, H = 120, pad = 22;
-    const line = (vals, color, label, row) => {
-        const v = vals.map((x) => (x == null ? null : +x)), fin = v.filter((x) => x != null);
-        if (fin.length < 2) return '';
-        let lo = Math.min(...fin), hi = Math.max(...fin); if (hi === lo) { hi += 1; lo -= 1; }
-        const yy = (x) => row * (H / 3) + 8 + (1 - (x - lo) / (hi - lo)) * (H / 3 - 16);
-        const pts = v.map((x, i) => x == null ? null : `${pad + i / (v.length - 1) * (W - pad * 2)},${yy(x).toFixed(1)}`).filter(Boolean).join(' ');
-        return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"/>
-            <text x="${pad}" y="${row * (H / 3) + 10}">${label} ${fin[0].toFixed(2)} → ${fin[fin.length - 1].toFixed(2)}</text>`;
-    };
-    return `<svg class="oc-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spot, PCR and ATM IV through the day">
-        ${line(se.spot, 'var(--accent)', 'Spot', 0)}${line(se.pcr, 'var(--good)', 'PCR', 1)}${line(se.atm_iv, 'var(--warn)', 'ATM IV', 2)}
-        <text x="${W - pad}" y="${H - 2}" text-anchor="end">${tm(se.ts[0])} – ${tm(se.ts[se.ts.length - 1])}</text></svg>`;
+    const fin = (vals) => (vals || []).map((x) => (x == null ? null : +x)).filter((x) => x != null);
+    const part = (vals, color, label) => { const f = fin(vals); return f.length < 2 ? '' : `<span style="color:${color}">${label} ${f[0].toFixed(2)} → ${f[f.length - 1].toFixed(2)}</span>`; };
+    return `<div class="oc-day"><div class="oc-day-leg">${part(se.spot, 'var(--accent)', 'Spot')}${part(se.pcr, 'var(--good)', 'PCR')}${part(se.atm_iv, 'var(--warn)', 'ATM IV')}
+        <span class="muted">${tm(se.ts[0])} – ${tm(se.ts[se.ts.length - 1])}</span></div><div data-lwl="ocday"></div></div>`;
+}
+// An ISO time's clock (IST) as the chart's time.
+const lwcIso = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10), +iso.slice(11, 13), +iso.slice(14, 16), +(iso.slice(17, 19) || 0)) / 1000;
+function ocDayPaint(se) {
+    const slot = document.querySelector('[data-lwl="ocday"]');
+    if (!slot || !se || !se.ts || se.ts.length < 2) return;
+    const c = lwlChart('ocday', 150), T = lwcTheme(document.body);
+    slot.replaceWith(c.host);
+    if (!c.series.spot) {
+        const mk = (id, top, bottom) => {
+            const sr = c.chart.addLineSeries({ priceScaleId: id, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+            c.chart.priceScale(id).applyOptions({ scaleMargins: { top, bottom }, visible: false });
+            return sr;
+        };
+        c.series.spot = mk('spot', 0.04, 0.70); c.series.pcr = mk('pcr', 0.37, 0.37); c.series.iv = mk('iv', 0.70, 0.04);
+        c.chart.applyOptions({ rightPriceScale: { visible: false } });
+    }
+    c.redraw = () => ocDayPaint(se);
+    // Times must rise; a repeated or out-of-order read is left out.
+    const keep = [];
+    se.ts.forEach((t, i) => { const v = lwcIso(t); if (!keep.length || v > keep[keep.length - 1][0]) keep.push([v, i]); });
+    const data = (vals) => keep.map(([t, i]) => (vals && vals[i] != null && isFinite(vals[i]) ? { time: t, value: +vals[i] } : { time: t }));
+    c.series.spot.applyOptions({ color: T.accent }); c.series.spot.setData(data(se.spot));
+    c.series.pcr.applyOptions({ color: T.good }); c.series.pcr.setData(data(se.pcr));
+    c.series.iv.applyOptions({ color: T.warn }); c.series.iv.setData(data(se.atm_iv));
+    if (c.n !== keep.length) { c.n = keep.length; c.chart.timeScale().fitContent(); }
 }
 
 function renderOptionsDrawer(keep) {
@@ -6577,6 +6592,7 @@ function renderOptionsDrawer(keep) {
             OI in contracts × lot (shares). Bars: each side's OI next to the chain's largest.</p>` +
         (ideaRows ? `<h3 class="label" style="margin:16px 0 6px">Ideas on ${esc(d.symbol)}</h3><div class="table-wrap"><table>
             <thead><tr><th>Time</th><th>Option</th><th class="r">Entry</th><th>Result</th><th class="r">R</th></tr></thead><tbody>${ideaRows}</tbody></table></div>` : '');
+    ocDayPaint(d.live_ts ? ocSeriesNow(d) : d.series);
     document.querySelectorAll('[data-oexp]').forEach((b) => b.addEventListener('click', () => openOptions(d.symbol, b.dataset.oexp)));
     if ($('o-dw-all')) $('o-dw-all').addEventListener('click', () => { ocAllStrikes = !ocAllStrikes; renderOptionsDrawer(); });
     // Open the chain at the money, and on a narrow screen with the strike column in the middle.
@@ -6902,32 +6918,32 @@ LIVE.hooks.push({
     want: () => (mode === 'perf' && PF && PF.source === 'live' ? (PF.open_live || []).map((o) => o.lp).filter(Boolean) : []),
     apply: () => {
         if (mode !== 'perf' || !PF || PF.source !== 'live' || !(PF.open_live || []).length || !$('pf-equity')) return;
-        if ($('pf-equity').matches(':hover')) return;
-        $('pf-equity').innerHTML = equitySvg(PF.equity, pfNow(PF));
+        equityDraw($('pf-equity'), PF.equity, pfNow(PF));
     },
 });
 
-function equitySvg(pts, now) {
-    if (!pts || pts.length < 2) return '<p class="muted">The curve starts after the second closed trade.</p>';
-    const W = 720, H = 220, pl = 44, pr = now ? 92 : 10, pt = 12, pb = 24;
-    const vals = pts.map((p) => p[1]).concat(now ? [now.r] : []);
-    let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals); if (hi === lo) hi = lo + 1;
-    const nx = pts.length - (now ? 0 : 1);
-    const x = (i) => pl + i / nx * (W - pl - pr), y = (v) => pt + (hi - v) / (hi - lo) * (H - pt - pb);
-    const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
+// The cumulative R curve, a point per closed trade, and while trades are open a dashed last step to "now" (their R at
+// live prices), which pfLive moves every second.
+function equityDraw(box, pts, now) {
+    if (!pts || pts.length < 2) { box.innerHTML = '<p class="muted">The curve starts after the second closed trade.</p>'; return; }
+    const c = lwlChart('equity', 220), T = lwcTheme(document.body);
+    if (c.host.parentNode !== box) { box.innerHTML = ''; lwlInto(c, box); }
+    if (!c.series.main) {
+        const fmtR = { type: 'custom', formatter: (v) => sgnR(v, 1), minMove: 0.01 };
+        c.series.main = c.chart.addLineSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 3, priceFormat: fmtR });
+        c.series.now = c.chart.addLineSeries({ lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, priceFormat: fmtR });
+        c.zero = c.series.main.createPriceLine({ price: 0, lineWidth: 1, lineStyle: 0, axisLabelVisible: false });
+    }
+    c.redraw = () => equityDraw(box, pts, now);
     const last = pts[pts.length - 1][1];
-    const nowG = now ? `<polyline points="${x(pts.length - 1).toFixed(1)},${y(last).toFixed(1)} ${x(pts.length).toFixed(1)},${y(now.r).toFixed(1)}"
-            fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-dasharray="4 3"/>
-        <circle cx="${x(pts.length)}" cy="${y(now.r)}" r="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/>
-        <text x="${x(pts.length) + 8}" y="${y(now.r) - 4}" style="fill:var(--accent)">now ${sgnR(now.r, 1)}</text>
-        <text x="${x(pts.length) + 8}" y="${y(now.r) + 9}">${now.n} open</text>` : '';
-    const ticks = [lo, (lo + hi) / 2, hi].map((v) => `<text x="${pl - 6}" y="${y(v) + 3}" text-anchor="end">${v.toFixed(0)}R</text>
-        <line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-dasharray="3 4"/>`).join('');
-    return `<svg class="pf-eq" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative R">${ticks}
-        <line x1="${pl}" x2="${W - pr}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line-strong)"/>
-        <polyline points="${line}" fill="none" stroke="var(--${last >= 0 ? 'good' : 'bad'})" stroke-width="2"/>${nowG}
-        <text x="${pl}" y="${H - 6}">${esc(pts[0][0].slice(0, 10))}</text>
-        <text x="${W - pr}" y="${H - 6}" text-anchor="end">${esc(pts[pts.length - 1][0].slice(0, 10))} · ${sgnR(last, 1)}</text></svg>`;
+    c.labels = pts.map((p) => hhmm(p[0])).concat(now ? ['now'] : []);
+    c.series.main.applyOptions({ color: last >= 0 ? T.good : T.bad });
+    c.zero.applyOptions({ color: T.strong });
+    c.series.main.setData(pts.map((p, i) => ({ time: i, value: p[1] })));
+    c.series.now.applyOptions({ color: T.accent, title: now ? `now · ${now.n} open` : '' });
+    c.series.now.setData(now ? [{ time: pts.length - 1, value: last }, { time: pts.length, value: now.r }] : []);
+    const n = pts.length + (now ? 1 : 0);
+    if (c.n !== n) { c.n = n; c.chart.timeScale().fitContent(); }
 }
 
 function renderPerf() {
@@ -6952,7 +6968,7 @@ function renderPerf() {
               + stat('Win rate', s.win_rate + '%', `avg win ${sgnR(s.avg_win, 1)} · avg loss ${sgnR(s.avg_loss, 1)}`)
               + stat('Total', sgnR(s.total_r, 1), `${sgnR(s.avg_r)} a trade · PF ${s.profit_factor ?? '—'}`, s.total_r >= 0 ? 'good' : 'bad')
               + stat('Max drawdown', sgnR(s.max_drawdown, 1), 'deepest fall from a peak');
-        $('pf-equity').innerHTML = equitySvg(d.equity, pfNow(d));
+        equityDraw($('pf-equity'), d.equity, pfNow(d));
         const hl = d.highlights || [];
         $('pf-high').innerHTML = hl.length ? `<div class="pf-hl">${hl.map((h) => `<div><span class="pf-sig" data-s="${h.signal}">${h.signal === 'good' ? 'better' : 'worse'}</span>
             <span><b>${esc(h.dimension)}: ${esc(h.bucket)}</b> — ${sgnR(h.avg_r)} a trade over ${h.n} trades (${h.win_rate}% won)</span></div>`).join('')}</div>`
