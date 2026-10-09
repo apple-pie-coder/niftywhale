@@ -164,7 +164,7 @@ E = [
      {'layout': [{'symbol': 'IDX:13', 'tf': 300, 'levels': True}, {'symbol': 'PAYTM', 'tf': 900, 'levels': True}]},
      '`layout`: a list of `{symbol, tf, levels}`', 'Saves the Charts tab\'s layout.'),
     ('charts', 'POST', '/api/charts/drawings', '/api/charts/drawings', {'symbol': 'IDX:13', 'drawings': [{'id': 'a1', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 22500}}]},
-     '`symbol`, `drawings`: a list of `{id, type: "trend" | "hline" | "rect", p1, p2}`',
+     '`symbol`, `drawings`: a list of `{id, type: "trend" | "hline" | "rect", p1, p2, color}` (`color` optional, `#rrggbb`)',
      "Replaces one instrument's drawings on the Charts tab (an empty list removes them). Points are `{t, p}`: the chart's time in "
      'seconds (IST clock time) and a price; a horizontal line has no `p2`. Up to 60 an instrument; `GET /api/charts/config` carries '
      'them all as `drawings`.'),

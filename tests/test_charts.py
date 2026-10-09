@@ -204,3 +204,10 @@ class Drawings(unittest.TestCase):
         many = [{'id': f'h{i}', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 100 + i}} for i in range(80)]
         r = self.c.post('/api/charts/drawings', json={'symbol': 'IDX:13', 'drawings': many}).get_json()
         self.assertEqual(len(r['drawings']), app.DRAW_MAX)
+
+    def test_colours_kept_when_valid(self):
+        d = [{'id': 'a', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 1}, 'color': '#E5484D'},
+             {'id': 'b', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 2}, 'color': 'red; background:url(x)'}]
+        r = self.c.post('/api/charts/drawings', json={'symbol': 'IDX:13', 'drawings': d}).get_json()
+        self.assertEqual(r['drawings'][0]['color'], '#e5484d')
+        self.assertNotIn('color', r['drawings'][1])

@@ -3802,6 +3802,7 @@ def _chart_layout(raw) -> list:
 DRAW_TYPES = ('trend', 'hline', 'rect')
 DRAW_MAX = 60
 DRAW_ID = re.compile(r'^[A-Za-z0-9_-]{1,24}$')
+DRAW_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
 
 
 def _point(raw):
@@ -3823,6 +3824,8 @@ def _drawings(raw) -> list:
         item = {'id': d['id'], 'type': d['type'], 'p1': p1}
         if d['type'] != 'hline':
             item['p2'] = p2
+        if isinstance(d.get('color'), str) and DRAW_COLOR.match(d['color']):
+            item['color'] = d['color'].lower()
         out.append(item)
     return out[:DRAW_MAX]
 
@@ -3871,7 +3874,8 @@ def api_charts_config():
 @app.route('/api/charts/drawings', methods=['POST'])
 def api_charts_drawings():
     """One instrument's drawings, replaced: {"symbol": "IDX:13", "drawings": [{"id", "type": "trend" | "hline" | "rect",
-    "p1": {"t": seconds, "p": price}, "p2": {...}}]} (no p2 for a horizontal line). An empty list removes them."""
+    "p1": {"t": seconds, "p": price}, "p2": {...}, "color": "#rrggbb"}]} (no p2 for a horizontal line; no colour: the
+    theme's). An empty list removes them."""
     body = request.get_json(silent=True) or {}
     sym = str(body.get('symbol') or '').upper()
     if not charts.known(sym):
