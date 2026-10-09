@@ -1287,6 +1287,14 @@ def api_notices_read():
     return jsonify(store.notice_counts())
 
 
+@app.route('/api/notices/clear', methods=['POST'])
+def api_notices_clear():
+    """Clear every notification from the bell (on every device). They stay cleared: the same event is not
+    raised again."""
+    n = store.clear_notices()
+    return jsonify({'cleared': n, **store.notice_counts()})
+
+
 def live_symbols(raw) -> list:
     """The feed symbols a page asked for: valid ones, at most LIVE_MAX."""
     syms = []

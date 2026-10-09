@@ -2831,6 +2831,23 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
 }
 ```
 
+#### `POST /api/notices/clear`
+
+Clears every notification from the bell, on every device; returns how many and the new counts. They stay cleared: the same event (a trade near its stop, say) is not raised again.
+
+```sh
+curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
+  -d '{}' http://127.0.0.1:5058/api/notices/clear
+```
+
+```json
+{
+  "cleared": 81,
+  "seq": 134,
+  "unread": 0
+}
+```
+
 ### 12.6 Demo funds
 
 #### `GET /api/demo`
