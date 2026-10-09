@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- iPhone: no phone-number links on prices, IDs and counts; the colours of the status bar; added to the Home Screen it
+     opens as its own app (standalone), with its own icon and name. -->
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111d27" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="NiftyWhale">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<title>NiftyWhale guide</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<style>
+    :root {
+        color-scheme: light;
+        --plane: #f4f6f8; --surface: #ffffff; --sunk: #eef1f4;
+        --line: #dde3e9; --line-strong: #c5ced8;
+        --ink: #0f1d2b; --ink-2: #3a4a5a; --ink-3: #6b7b8c;
+        --accent: #0b6e8a; --accent-ink: #ffffff; --accent-soft: #e2f1f5;
+        --r-sm: 6px; --r-md: 9px; --r-lg: 13px;
+        --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+            color-scheme: dark;
+            --plane: #0b141c; --surface: #111d27; --sunk: #0e1922;
+            --line: #213140; --line-strong: #2d4152;
+            --ink: #e6edf3; --ink-2: #b6c3cf; --ink-3: #7d8e9e;
+            --accent: #3fb5d4; --accent-ink: #04202a; --accent-soft: #11313d;
+        }
+    }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 76px; }
+    /* Stop iPhone Safari enlarging text in wide blocks (the README's tables). */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body { margin: 0; font-family: var(--font); background: var(--plane); color: var(--ink);
+           font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: clip; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+
+    .topbar { position: sticky; top: 0; z-index: 10; height: 58px; display: flex; align-items: center;
+              justify-content: space-between; gap: 16px; padding: 0 24px;
+              background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(12px);
+              border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+                  background: var(--accent); color: var(--accent-ink); }
+    .brand b { font-weight: 700; }
+    .brand-sub { color: var(--ink-3); font-size: 13px; padding-left: 10px; border-left: 1px solid var(--line); }
+    .back { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong);
+            background: var(--surface); color: var(--ink-2); border-radius: var(--r-md); padding: 7px 12px;
+            font-size: 13px; font-weight: 600; text-decoration: none; }
+    .back:hover { background: var(--sunk); }
+
+    /* The whole window: the contents on the left, the guide across the rest. */
+    .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 28px;
+              margin: 0; padding: 24px 28px; align-items: start; }
+    nav.toc { position: sticky; top: 82px; max-height: calc(100vh - 100px); overflow-y: auto;
+              font-size: 13px; padding-right: 6px; }
+    nav.toc .label { font-size: 11px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
+                     color: var(--ink-3); margin-bottom: 8px; }
+    nav.toc ul { list-style: none; margin: 0; padding: 0; }
+    nav.toc ul ul { padding-left: 12px; }
+    nav.toc > .toc > ul > li > a { font-weight: 600; }
+    nav.toc > .toc > ul > li > ul > li > ul { display: none; }    /* section + subsection is enough */
+    nav.toc a { display: block; padding: 3px 8px; border-radius: var(--r-sm); color: var(--ink-2);
+                text-decoration: none; }
+    nav.toc a:hover { background: var(--sunk); }
+    nav.toc a[aria-current="true"] { background: var(--accent-soft); color: var(--accent); }
+    /* The README's own title and contents list are redundant beside this nav. */
+    nav.toc > .toc > ul > li:first-child > a { display: none; }
+    nav.toc > .toc > ul > li:first-child > ul { padding-left: 0; }
+
+    article { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+              padding: 28px 36px 40px; min-width: 0; }
+    article h1 { font-size: 30px; letter-spacing: -0.02em; margin: 0 0 8px; }
+    article h2 { font-size: 22px; letter-spacing: -0.01em; margin: 40px 0 10px; padding-top: 8px;
+                 border-top: 1px solid var(--line); }
+    article h3 { font-size: 17px; margin: 26px 0 8px; }
+    article h2 + h3 { margin-top: 12px; }
+    article p, article li { color: var(--ink-2); }
+    article strong { color: var(--ink); }
+    article a { color: var(--accent); }
+    article hr { display: none; }                                   /* h2 already draws a rule */
+    article ul, article ol { padding-left: 22px; }
+    article li { margin: 3px 0; }
+    code { font-family: var(--mono); font-size: 0.88em; background: var(--sunk); border: 1px solid var(--line);
+           border-radius: 4px; padding: 1px 5px; }
+    pre { background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px;
+          overflow-x: auto; line-height: 1.45; }
+    pre code { background: none; border: 0; padding: 0; font-size: 12.5px; }
+    .table-wrap { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: var(--r-md); }
+    table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+    th { text-align: left; background: var(--sunk); font-size: 12px; font-weight: 650; color: var(--ink-2);
+         padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink-2); }
+    tr:last-child td { border-bottom: 0; }
+    td code { white-space: nowrap; }
+    /* Long inline code (a command, a path) wraps instead of pushing a phone's page sideways. */
+    article :not(pre) > code { overflow-wrap: anywhere; }
+    article td code { overflow-wrap: normal; }
+    /* The API reference: one block per endpoint; on a wide screen the answer sits beside the request. */
+    .api-ep { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 18px; }
+    .api-ep h4 { margin: 14px 0 8px; font-size: 15px; }
+    .api-ep h4 code { font-size: 14px; background: none; border: 0; padding: 0; color: var(--ink); }
+    .api-ep pre { margin: 8px 0; max-height: 520px; }
+    @media (min-width: 1300px) {
+        .api-ep { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 28px; align-items: start; }
+        .api-ep > .api-req { grid-column: 1; }
+        .api-ep > .api-res { grid-column: 2; grid-row: 1 / span 2; }
+        .api-ep > .api-res pre { margin-top: 14px; }
+    }
+
+    /* The contents appear once: as the side nav on wide screens, as the
+       README's own list on phones (where the nav would be a screen of links
+       before any text). */
+    nav.toc a[href="#contents"] { display: none; }
+    @media (min-width: 961px) { #contents, #contents + ol { display: none; } }
+    @media (max-width: 960px) {
+        .layout { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; }
+        nav.toc { display: none; }
+        article { padding: 20px 18px 28px; }
+        .brand-sub { display: none; }
+    }
+</style>
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path fill-rule="evenodd" transform="translate(.4 .7) scale(.92)" d="M2.5 14C2.5 10.4 6.3 8.5 10.5 8.5c3.7 0 6.1 1.7 7.1 3.9.9-1.2 1.5-2.6 1.6-4.1L16.9 6.4c.6-.9 2.2-.8 3 .3.6-1 1.9-1.6 2.9-1.2l-1.9 2.9c-.2 3.2-.6 5.6-2 7.5-1.8 2.4-4.6 3.6-8.4 3.6-4.7 0-8-2-8-5.5z M8.1 12.6a1.1 1.1 0 1 0-2.2 0 1.1 1.1 0 1 0 2.2 0z"/>
+            </svg>
+        </span>
+        <b>NiftyWhale</b><span class="brand-sub">Guide</span>
+    </a>
+    <a class="back" href="/"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-0.1em"><path d="M13 8H3M7.5 3.5L3 8l4.5 4.5"/></svg> Dashboard</a>
+</header>
+
+<div class="layout">
+    <nav class="toc" aria-label="Guide contents">
+        <div class="label">Contents</div>
+        {{ toc|safe }}
+    </nav>
+    <article id="doc">{{ body|safe }}</article>
+</div>
+
+<script>
+    // Tables scroll on their own instead of widening the page on a phone.
+    document.querySelectorAll('#doc table').forEach((t) => {
+        const w = document.createElement('div');
+        w.className = 'table-wrap';
+        t.parentNode.insertBefore(w, t);
+        w.appendChild(t);
+    });
+
+    // Highlight the section being read in the contents.
+    const links = new Map();
+    document.querySelectorAll('nav.toc a[href^="#"]').forEach((a) => links.set(a.getAttribute('href').slice(1), a));
+    const heads = [...document.querySelectorAll('#doc h2[id], #doc h3[id]')];
+    const mark = () => {
+        let cur = heads[0];
+        for (const h of heads) { if (h.getBoundingClientRect().top < 120) cur = h; else break; }
+        links.forEach((a) => a.removeAttribute('aria-current'));
+        const a = cur && links.get(cur.id);
+        if (a) a.setAttribute('aria-current', 'true');
+    };
+    document.addEventListener('scroll', mark, { passive: true });
+    mark();
+</script>
+<script>
+// The API reference (section 12): group each endpoint's heading, text, request and answer into one
+// block, so a wide screen can show the answer beside the request.
+(function () {
+    const start = document.getElementById('12-api-reference');
+    if (!start) return;
+    const heads = [];
+    for (let el = start.nextElementSibling; el && el.tagName !== 'H2'; el = el.nextElementSibling) if (el.tagName === 'H4') heads.push(el);
+    heads.forEach((h) => {
+        const parts = [];
+        for (let el = h.nextElementSibling; el && !/^H[1-4]$/.test(el.tagName) && el.tagName !== 'HR'; el = el.nextElementSibling) parts.push(el);
+        const box = document.createElement('section'), req = document.createElement('div'), res = document.createElement('div');
+        box.className = 'api-ep'; req.className = 'api-req'; res.className = 'api-res';
+        h.parentNode.insertBefore(box, h);
+        req.appendChild(h);
+        // The answer is the last code block (with the line that names its status, if there is one).
+        const pres = parts.filter((p) => p.tagName === 'PRE' || p.querySelector && p.querySelector('pre'));
+        const answer = pres.length > 1 ? pres[pres.length - 1] : null;
+        parts.forEach((p) => {
+            const isLabel = answer && p.nextElementSibling === answer && /^Answer/.test(p.textContent);
+            (p === answer || isLabel ? res : req).appendChild(p);
+        });
+        box.appendChild(req);
+        if (res.childElementCount) box.appendChild(res);
+    });
+})();
+</script>
+</body>
+</html>
