@@ -3676,7 +3676,7 @@ def api_lab():
         'settings': {**{k: st[k] for k in ('lab_swing_universe', 'lab_intraday_universe', 'lab_years_swing',
                                            'lab_years_intraday', 'weekly_report')},
                      'swing_universe': lab.universe_key('swing'), 'intraday_universe': lab.universe_key('intraday')},
-        'candidates': store.count_candidates(),
+        'candidates': store.count_candidates(), 'upcoming': lab.next_runs(),
     }))
 
 

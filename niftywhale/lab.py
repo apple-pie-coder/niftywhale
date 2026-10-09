@@ -744,6 +744,95 @@ def run_job(job: Dict[str, Any]) -> str:
     return ' · '.join(msgs)[:1000]
 
 
+# The regular runs: (job kind, weekdays it runs on, time IST). schedule() below queues them.
+RUNS = (('nightly', (0, 1, 2, 3, 4), dtime(20, 30)), ('tune', (5,), dtime(6, 0)), ('report', (5,), dtime(9, 0)))
+DAY_NAMES = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+RUN_WHAT = {'nightly': 'Top up candle history and records, backtest the current rules, check proposals in shadow, '
+                       'rollbacks and pauses, options candidate outcomes',
+            'tune': 'Walk-forward tuning per mode; a better rule set starts its shadow run',
+            'report': 'The weekly report on Telegram'}
+
+
+def next_at(now: datetime, days, at: dtime, done_today: bool) -> datetime:
+    """The next time a run on `days` at `at` is queued: today if it has not been yet (a time already past
+    means it is due now), else the next of its days."""
+    if now.weekday() in days and not done_today:
+        return now.replace(hour=at.hour, minute=at.minute, second=0, microsecond=0)
+    d = now.date()
+    for i in range(1, 8):
+        day = d + timedelta(days=i)
+        if day.weekday() in days:
+            return datetime.combine(day, at, tzinfo=now.tzinfo)
+    raise ValueError('no run day')
+
+
+def upcoming(now: datetime, marks: Dict[str, str], report_on: bool, jobs: List[Dict[str, Any]],
+             states: Dict[str, Dict[str, Any]], pol: Dict[str, Any], bootstrapped: bool = True) -> List[Dict[str, Any]]:
+    """What the lab runs next, soonest first: jobs already queued, then each regular run with its date and
+    time, and what may change it (a job still running then, the market hours, a mode cooling down)."""
+    out: List[Dict[str, Any]] = []
+    running = next((j for j in jobs if j.get('status') == 'running'), None)
+    run_label = KIND_LABEL.get(running['kind'], running['kind']) if running else None
+    for j in sorted((j for j in jobs if j.get('status') == 'queued'), key=lambda j: j['id']):
+        why = (f'starts when {run_label} (running now) finishes' if running else 'starts within a minute')
+        if busy_market(now) and j.get('kind') in ('bootstrap', 'nightly', 'backtest', 'tune'):
+            why += '; its heavy work waits for 15:45'
+        out.append({'kind': j['kind'], 'label': KIND_LABEL.get(j['kind'], j['kind']), 'at': None, 'queued': True,
+                    'job': j['id'], 'what': RUN_WHAT.get(j['kind'], ''), 'notes': [why]})
+    if not bootstrapped:
+        out.append({'kind': 'bootstrap', 'label': KIND_LABEL['bootstrap'], 'at': None, 'queued': True,
+                    'what': 'Download history, build records, baseline backtests', 'notes': ['as soon as the lab starts']})
+    today = now.date().isoformat()
+    open_kinds = {j['kind'] for j in jobs if j.get('status') in ('queued', 'running')}
+    regular = []
+    for kind, days, at in RUNS:
+        if kind == 'report' and not report_on:
+            continue
+        when = next_at(now, days, at, marks.get(kind) == today)
+        notes = []
+        if when <= now:
+            notes.append('queued within a minute')
+        if kind in open_kinds:
+            # store.add_job keeps one open job per kind: a run that comes while the last is still open is folded into it.
+            notes.append(f'skipped if the {KIND_LABEL[kind].lower()} queued or running now has not finished by then')
+        elif running and when > now:
+            notes.append(f'waits for {run_label} if it is still running then')
+        if kind == 'nightly':
+            shadow = [m for m in autopilot.MODES if (states.get(m) or {}).get('challenger')]
+            if shadow:
+                notes.append('also replays the proposal in shadow for ' + ', '.join(shadow))
+        if kind == 'tune':
+            if pol.get('mode') == 'off':
+                notes.append('the autopilot is off: every mode is skipped')
+            else:
+                for m in autopilot.MODES:
+                    st = states.get(m) or {}
+                    last = (st.get('last_change') or {}).get('at')
+                    free = datetime.fromisoformat(last) + timedelta(days=pol['cooldown_days']) if last else None
+                    if free and free.tzinfo is None:
+                        free = free.replace(tzinfo=now.tzinfo)
+                    if free and free > when:
+                        notes.append(f'{m}: cooling down after the change on {last[:10]}, tuned again from '
+                                     f'{free.strftime("%a %d %b")}')
+                    elif st.get('challenger'):
+                        notes.append(f'{m}: skipped, a proposal is in shadow')
+                    elif st.get('awaiting'):
+                        notes.append(f'{m}: skipped, a proposal awaits your approval')
+        regular.append({'kind': kind, 'label': KIND_LABEL[kind], 'at': when.isoformat(timespec='minutes'), 'queued': False,
+                        'day': DAY_NAMES[when.weekday()], 'what': RUN_WHAT[kind], 'notes': notes, '_when': when})
+    for r in sorted(regular, key=lambda r: r['_when']):
+        del r['_when']
+        out.append(r)
+    return out
+
+
+def next_runs(now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    now = now or data.now_ist()
+    return upcoming(now, store.get_json('lab:schedule', {}) or {}, store.settings().get('weekly_report') == '1',
+                    store.jobs(12), {m: state(m) for m in autopilot.MODES}, policy(),
+                    bool(store.get_json('lab:bootstrapped')))
+
+
 def schedule(now: datetime) -> None:
     """Queue the regular jobs when their time comes (once each)."""
     marks = store.get_json('lab:schedule', {}) or {}
@@ -757,9 +846,9 @@ def schedule(now: datetime) -> None:
     if not store.get_json('lab:bootstrapped'):
         if store.add_job('bootstrap'):
             store.set_json('lab:bootstrapped', True)
-    due('nightly', now.weekday() < 5 and now.time() >= dtime(20, 30))
-    due('tune', now.weekday() == 5 and now.time() >= dtime(6, 0))
-    due('report', now.weekday() == 5 and now.time() >= dtime(9, 0) and store.settings().get('weekly_report') == '1')
+    report_on = store.settings().get('weekly_report') == '1'
+    for kind, days, at in RUNS:
+        due(kind, now.weekday() in days and now.time() >= at and (kind != 'report' or report_on))
 
 
 def main() -> None:

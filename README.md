@@ -1502,6 +1502,17 @@ Use backtests to compare rules, not as a forecast.
 
 The **Lab** panel shows what history is on disk and the latest jobs, with buttons for **Run backtest now**, **Tune now** and **Send weekly report**.
 
+Its **Coming up** list shows what the lab runs next, soonest first, with the day, the time (IST) and a countdown:
+jobs already queued, then the nightly update, Saturday's tuning and the weekly report (when it is on). Each says
+what may change it:
+- a job still running then (one job of a kind is open at a time, so a nightly still running at the next 20:30
+  means that night's run is skipped);
+- for tuning, a mode cooling down after a change (and from which day it is tuned again), a proposal in shadow
+  or awaiting approval, or the autopilot off;
+- for the nightly update, the modes whose proposal it replays in shadow.
+
+`GET /api/lab` carries the same list as `upcoming`.
+
 ### 7.4 The autopilot
 
 **What it can change:** only the filter thresholds the rule tuners already expose. It never touches the strategy or the code, and it never places an order.
