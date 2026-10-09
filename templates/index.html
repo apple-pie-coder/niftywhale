@@ -2075,6 +2075,120 @@
 <script src="/static/vendor/lightweight-charts.js"></script>
 <script src="/static/charts.js"></script>
 <script>
+/* ------------------------------------------------------------- the live connection */
+// One WebSocket per page (/ws, niftywhale/hub.py). The server pushes what changes as it changes: prices
+// (px), the Charts tab's ticks, the bell, the panels this page subscribed to (demo, ticker, chain) and
+// "this changed" (topics: a database table, a scan's progress, the market opening), which loads that
+// panel again at once. Subscriptions live here and are sent again after every reconnect. While the
+// socket is down, or the server refused it (too many pages), every panel polls over HTTP as before.
+const WS = { sock: null, up: false, tries: 0, subs: {}, fns: {}, timer: null, last: 0, topics: null };
+WS.send = (o) => { try { if (WS.up) WS.sock.send(JSON.stringify(o)); } catch (e) { /* closing */ } };
+WS.listen = (t, fn) => { (WS.fns[t] = WS.fns[t] || []).push(fn); };
+WS.emit = (t, d) => (WS.fns[t] || []).forEach((fn) => { try { fn(d); } catch (e) { console.warn('ws ' + t, e); } });
+// Subscribe (again: new parameters replace the old) or stop. Same parameters again send nothing.
+WS.sub = (ch, p) => {
+    const body = JSON.stringify(p || {});
+    if (WS.subs[ch] === body) return;
+    WS.subs[ch] = body;
+    WS.send({ t: 'sub', ch, p: p || {} });
+};
+WS.unsub = (ch) => { if (!(ch in WS.subs)) return; delete WS.subs[ch]; WS.send({ t: 'unsub', ch }); };
+WS.connect = () => {
+    clearTimeout(WS.timer);
+    if (!('WebSocket' in window) || WS.sock) return;
+    let s;
+    try { s = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); }
+    catch (e) { return; }
+    WS.sock = s;
+    s.onopen = () => {
+        WS.up = true; WS.last = Date.now();
+        for (const ch in WS.subs) WS.send({ t: 'sub', ch, p: JSON.parse(WS.subs[ch]) });
+        if (document.hidden) WS.send({ t: 'vis', hidden: true });
+    };
+    s.onmessage = (e) => {
+        WS.last = Date.now();
+        let m;
+        try { m = JSON.parse(e.data); } catch (er) { return; }
+        if (m.t === 'hello') { WS.tries = 0; WS.emit('up', m); return; }
+        WS.emit(m.t, m.d !== undefined ? m.d : m);
+    };
+    s.onclose = (e) => {
+        const was = WS.up;
+        WS.up = false; WS.sock = null;
+        if (was) WS.emit('down', e);
+        if (e.code === 4401) { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); return; }
+        // Refused for being one page too many: poll, and ask again in a minute. Else back off to 30 s.
+        const wait = e.code === 1013 ? 60000 : Math.min(30000, 1000 * 2 ** Math.min(WS.tries++, 5));
+        WS.timer = setTimeout(WS.connect, document.hidden ? Math.max(wait, 5000) : wait);
+    };
+    s.onerror = () => { /* onclose follows */ };
+};
+// A socket can die without a word (a phone asleep, Wi-Fi changing): ask when it has been quiet, and
+// start again when even that goes unanswered.
+setInterval(() => {
+    if (!WS.up) return;
+    const quiet = Date.now() - WS.last;
+    if (quiet > 45000) { try { WS.sock.close(); } catch (e) { /* gone */ } }
+    else if (quiet > 20000) WS.send({ t: 'ping' });
+}, 10000);
+document.addEventListener('visibilitychange', () => {
+    if (WS.up) {
+        WS.send({ t: 'vis', hidden: document.hidden });
+        if (!document.hidden && Date.now() - WS.last > 20000) WS.send({ t: 'ping' });
+    } else if (!document.hidden && !WS.sock) WS.connect();
+});
+window.addEventListener('online', () => { if (!WS.sock) WS.connect(); });
+window.LiveSocket = WS;                     // charts.js takes its ticks from here when it is up
+
+// "This changed" -> the panels to load again. A panel loads at most once per its gap, the last change
+// in a burst included; panels on a tab not shown wait until it is opened (their loaders return early).
+const TOPIC_PANELS = {
+    'db:scans': ['state', 'board'], 'db:candidates': ['state'], 'db:zones': ['state', 'board', 'perf'], 'db:alerts': ['state', 'board'],
+    'db:settings': ['state'], 'db:results': ['state', 'perf'], 'db:signals': ['state'], 'db:autopilot_log': ['state', 'perf'],
+    'db:oc_snapshots': ['options'], 'db:oc_ideas': ['options', 'perf'], 'db:oc_candidates': ['options'], 'db:oc_daily': ['options'],
+    'db:bt_runs': ['perf'], 'db:lab_jobs': ['perf'], 'db:news': ['news'], 'db:sm_deals': ['smart'], 'db:sm_flows': ['smart'],
+    'db:sm_poi': ['smart'], 'db:sm_delivery': ['smart'], 'db:demo_ledger': ['demo'], 'db:demo_positions': ['demo', 'perf'],
+    run: ['state', 'options'], market: ['state', 'board', 'ticker', 'demo'], news_run: ['news'], smart_run: ['smart'],
+};
+const PANELS = {
+    state: { gap: 1500, load: () => refresh() },
+    board: { gap: 2000, load: () => loadBoard() },
+    demo: { gap: 1500, load: () => { if (mode === 'demo') loadDemo(); } },
+    options: { gap: 2000, load: () => { if (mode === 'options') loadOptions(); } },
+    perf: { gap: 3000, load: () => { if (mode === 'perf') loadPerf(); } },
+    news: { gap: 3000, load: () => loadNews() },
+    smart: { gap: 3000, load: () => { if (mode === 'smart') loadSmart(); } },
+    ticker: { gap: 2000, load: () => { if (!tkCollapsed) loadTicker(); } },
+};
+function panelKick(name) {
+    const P = PANELS[name];
+    if (!P || P.timer) return;
+    const wait = Math.max(250, P.gap - (Date.now() - (P.at || 0)));
+    P.timer = setTimeout(() => { P.timer = null; P.at = Date.now(); if (!document.hidden) P.load(); else P.stale = true; }, wait);
+}
+function topicsChanged(changed) {
+    const want = new Set();
+    Object.keys(changed).forEach((k) => (TOPIC_PANELS[k] || []).forEach((p) => want.add(p)));
+    want.forEach(panelKick);
+}
+WS.listen('up', (m) => {
+    // A reconnect: whatever changed while the socket was down loads now.
+    if (WS.topics) {
+        const changed = {};
+        Object.keys(m.topics || {}).forEach((k) => { if (WS.topics[k] !== m.topics[k]) changed[k] = 1; });
+        topicsChanged(changed);
+    }
+    WS.topics = Object.assign({}, m.topics || {});
+});
+WS.listen('topics', (d) => { Object.assign(WS.topics || (WS.topics = {}), d); topicsChanged(d); });
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    Object.keys(PANELS).forEach((k) => { if (PANELS[k].stale) { PANELS[k].stale = false; panelKick(k); } });
+});
+// How long a panel waits before loading again by itself: with the socket up it is told when to, and this is
+// only a safety net.
+const viaSocket = (polling, net = 120000) => WS.up ? Math.max(polling, net) : polling;
+
 // Every time on the page is market time, India (IST), whatever zone the phone or computer is set to:
 // a phone abroad, or one left on UTC, would otherwise show 03:45 for the 09:15 open. A call that names
 // its own timeZone keeps it.
@@ -3612,7 +3726,7 @@ async function loadBoard() {
         renderBoard(b);
         // Every minute while the market is open; otherwise the last session will not change.
         // Real-time source: every 10 s in session. Delayed source: once a minute is plenty.
-        boardTimer = setTimeout(loadBoard, !b.market_open ? 600000 : b.source === 'dhan' ? 10000 : 60000);
+        boardTimer = setTimeout(loadBoard, viaSocket(!b.market_open ? 600000 : b.source === 'dhan' ? 10000 : 60000, 60000));
     } catch (e) {
         $('board-meta').textContent = 'Board unavailable: ' + e.message;
         boardTimer = setTimeout(loadBoard, 120000);
@@ -3743,7 +3857,7 @@ async function loadNews() {
         newsData = await api('/api/news?' + q);
         renderNews();
     } catch (e) { $('news-meta').textContent = 'News unavailable: ' + e.message; }
-    newsTimer = setTimeout(loadNews, 120000);
+    newsTimer = setTimeout(loadNews, viaSocket(120000, 300000));
 }
 
 function renderNews() {
@@ -4362,7 +4476,7 @@ async function loadDemo() {
     clearTimeout(demoTimer);
     try { demoData = await api('/api/demo'); renderDemo(); demoLive(); }
     catch (e) { $('dm-meta').textContent = 'Demo funds unavailable: ' + e.message; }
-    if (mode === 'demo') demoTimer = setTimeout(loadDemo, 30000);
+    if (mode === 'demo') demoTimer = setTimeout(loadDemo, viaSocket(30000));
 }
 
 // In session the open positions' prices and the totals they move come every second from the live
@@ -4370,22 +4484,33 @@ async function loadDemo() {
 async function demoLive() {
     clearTimeout(demoLiveTimer);
     const gen = ++demoLiveGen, d = demoData;
-    if (mode !== 'demo' || document.hidden || !d || !d.live || !d.live.on || !(d.open || []).length) return;
+    const want = mode === 'demo' && !document.hidden && d && d.live && d.live.on && (d.open || []).length;
+    if (WS.up) { if (want) WS.sub('demo'); else WS.unsub('demo'); return; }          // pushed, each change
+    WS.unsub('demo');
+    if (!want) return;
     try {
         const L = await api('/api/demo/live');
         if (gen !== demoLiveGen || d !== demoData) return;              // a newer round took over
-        const ids = (x) => x.map((p) => p.id).sort().join(',');
-        if (ids(L.open) !== ids(d.open)) { loadDemo(); return; }       // a position opened or closed
-        const byId = Object.fromEntries(L.open.map((p) => [p.id, p]));
-        d.open.forEach((p) => Object.assign(p, byId[p.id] || {}));
-        d.account = L.account; d.live = L.live;
-        for (const m in L.by_mode) Object.assign(d.by_mode[m] || (d.by_mode[m] = {}), L.by_mode[m]);
-        renderDemoTotals();
-        patchDemoOpen();
-        if (!$('dm-curve').matches(':hover')) $('dm-curve').innerHTML = demoCurve(demoCurvePts());
+        if (!demoApply(L, d)) return;
     } catch (e) { /* the next round tries again */ }
     if (gen === demoLiveGen && mode === 'demo' && d.live.on) demoLiveTimer = setTimeout(demoLive, d.live.every_ms || 1000);
 }
+// One live update into the tab; false when a position opened or closed (the tab loads again instead).
+function demoApply(L, d) {
+    const ids = (x) => x.map((p) => p.id).sort().join(',');
+    if (ids(L.open) !== ids(d.open)) { loadDemo(); return false; }
+    const byId = Object.fromEntries(L.open.map((p) => [p.id, p]));
+    d.open.forEach((p) => Object.assign(p, byId[p.id] || {}));
+    d.account = L.account; d.live = L.live;
+    for (const m in L.by_mode) Object.assign(d.by_mode[m] || (d.by_mode[m] = {}), L.by_mode[m]);
+    renderDemoTotals();
+    patchDemoOpen();
+    if (!$('dm-curve').matches(':hover')) $('dm-curve').innerHTML = demoCurve(demoCurvePts());
+    return true;
+}
+WS.listen('demo', (L) => { if (mode === 'demo' && demoData && L && L.open) demoApply(L, demoData); });
+WS.listen('up', () => demoLive());
+WS.listen('down', () => demoLive());
 document.addEventListener('visibilitychange', () => { if (!document.hidden && mode === 'demo') demoLive(); });
 
 function demoOpenMeta() {
@@ -4579,6 +4704,13 @@ async function liveTick() {
     clearTimeout(LIVE.timer);
     const seq = ++LIVE.seq, hidden = document.hidden;
     let wait = 5000;
+    if (WS.up) {
+        // The socket pushes the prices and the bell: only say what is on screen, when that changes.
+        if (!hidden) WS.sub('px', { s: lpWanted().sort() });
+        WS.sub('notices');
+        LIVE.timer = setTimeout(liveTick, 1000);
+        return;
+    }
     try {
         // A hidden tab asks for no prices, only whether a notification arrived (its title shows the count).
         const syms = hidden ? [] : lpWanted();
@@ -4592,6 +4724,10 @@ async function liveTick() {
     if (seq === LIVE.seq) LIVE.timer = setTimeout(liveTick, wait);
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) liveTick(); });
+WS.listen('px', (d) => { LIVE.on = d.on; if (d.on && !document.hidden && d.px) lpUpdate(d.px); });
+WS.listen('notices', (c) => nbSeen(c));
+WS.listen('up', (m) => { LIVE.on = !!m.on; if (m.notices) nbSeen(m.notices); liveTick(); });
+WS.listen('down', () => { liveTick(); Object.keys(PANELS).forEach(panelKick); });     // back to polling, from now
 
 // A table drawn again (its own reload) shows the server's price; the newest one we have goes
 // straight in, without a flash, so a cell never steps back in time for a second.
@@ -5607,7 +5743,7 @@ function setMode(m) {
     $('charts-view').hidden = m !== 'charts';
     if (m === 'charts' && window.LiveCharts) LiveCharts.open($('charts-view'));
     if (S) renderModeMeta();
-    if (m === 'demo') loadDemo(); else { clearTimeout(demoTimer); clearTimeout(demoLiveTimer); }
+    if (m === 'demo') loadDemo(); else { clearTimeout(demoTimer); clearTimeout(demoLiveTimer); WS.unsub('demo'); }
     if (m === 'news') loadNews();
     if (m === 'smart') loadSmart();
     if (m === 'options') loadOptions(); else clearTimeout(optTimer);
@@ -5961,7 +6097,7 @@ async function loadOptions() {
         $('o-meta').textContent = 'Could not load: ' + e.message;
     }
     const busy = O && O.state.running;
-    if (!document.hidden) optTimer = setTimeout(loadOptions, busy ? 3000 : 30000);
+    if (!document.hidden) optTimer = setTimeout(loadOptions, viaSocket(busy ? 3000 : 30000));
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && mode === 'options') loadOptions(); });
 
@@ -6096,19 +6232,35 @@ let ocLiveTimer = null;
 async function ocLive() {
     clearTimeout(ocLiveTimer);
     const d = current && current.options;
-    if (!d || $('drawer').dataset.open !== '1' || d.session !== todayIST()) return;
+    const open = d && $('drawer').dataset.open === '1' && d.session === todayIST();
+    if (WS.up) {
+        // Pushed every second while the drawer shows it; this only notices the drawer closing.
+        if (open) { WS.sub('chain', { symbol: d.symbol, expiry: d.expiry }); ocLiveTimer = setTimeout(ocLive, 1000); }
+        else WS.unsub('chain');
+        return;
+    }
+    WS.unsub('chain');
+    if (!open) return;
     if (!document.hidden && LIVE.on) {
         try {
             const L = await api(`/api/options/chain/${encodeURIComponent(d.symbol)}/live?expiry=${d.expiry}`);
             if (!current || current.options !== d) return;
-            if (L && L.chain) {
-                Object.assign(d, { chain: L.chain, summary: { ...d.summary, ...L.summary }, live_ts: L.ts });
-                if (!document.querySelector('#dw-body .oc-chart:hover')) renderOptionsDrawer(true);
-            }
+            ocApply(L, d);
         } catch (e) { /* the next round tries again */ }
     }
     if (current && current.options === d) ocLiveTimer = setTimeout(ocLive, 3000);
 }
+function ocApply(L, d) {
+    if (!L || !L.chain) return;
+    Object.assign(d, { chain: L.chain, summary: { ...d.summary, ...L.summary }, live_ts: L.ts });
+    if (!document.querySelector('#dw-body .oc-chart:hover')) renderOptionsDrawer(true);
+}
+WS.listen('chain', (L) => {
+    const d = current && current.options;
+    if (d && L && L.symbol === d.symbol && L.expiry === d.expiry && $('drawer').dataset.open === '1') ocApply(L, d);
+});
+WS.listen('up', () => ocLive());
+WS.listen('down', () => ocLive());
 function ocSeriesNow(d) {
     const se = d.series, s = d.summary, out = {};
     Object.keys(se).forEach((k) => { out[k] = (se[k] || []).slice(); });
@@ -6429,6 +6581,12 @@ async function loadTicker() {
     let d = null;
     try { d = await api('/api/ticker'); } catch (e) { d = null; }
     renderTicker(d);
+    // With the socket the strip is pushed as it changes (prices, previous closes coming in).
+    if (WS.up) {
+        if (!tkCollapsed) WS.sub('ticker'); else WS.unsub('ticker');
+        if (!document.hidden && !tkCollapsed) tickTimer = setTimeout(loadTicker, 300000);
+        return;
+    }
     // Collapsed: no polling until it is opened again.
     // Previous closes load in the background after a restart: ask again soon until they are in.
     const waiting = d && d.rows && d.rows.some((r) => r.prev_close == null && r.label !== 'GIFT NIFTY');
@@ -6498,12 +6656,15 @@ function openTkSettings() {
 $('tk-settings').addEventListener('click', openTkSettings);
 $('tk-play').addEventListener('click', () => { tkPaused = !tkPaused; store.set('nw.tk.paused', tkPaused); tkApplyState(); });
 $('tk-hide').addEventListener('click', () => {
-    tkCollapsed = true; store.set('nw.tk.collapsed', true); clearTimeout(tickTimer); tkApplyState(); $('tk-show').focus();
+    tkCollapsed = true; store.set('nw.tk.collapsed', true); clearTimeout(tickTimer); WS.unsub('ticker'); tkApplyState(); $('tk-show').focus();
 });
 $('tk-show').addEventListener('click', () => {
     tkCollapsed = false; store.set('nw.tk.collapsed', false); tkApplyState(); $('tk-hide').focus(); loadTicker();
 });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !tkCollapsed) loadTicker(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !tkCollapsed && !WS.up) loadTicker(); });
+WS.listen('ticker', (d) => { if (!tkCollapsed) renderTicker(d); });
+WS.listen('up', () => { if (!tkCollapsed) WS.sub('ticker'); });
+WS.listen('down', () => { WS.unsub('ticker'); });
 $('tk-track').addEventListener('click', (e) => {
     const it = e.target.closest('[data-opt]');
     if (!it) return;
@@ -6532,7 +6693,7 @@ async function loadPerf() {
         renderPerf();
     } catch (e) { $('pf-meta').textContent = 'Could not load: ' + e.message; }
     const running = LAB && LAB.jobs.some((j) => j.status === 'running' || j.status === 'queued');
-    if (!document.hidden) pfTimer = setTimeout(loadPerf, running ? 10000 : 60000);
+    if (!document.hidden) pfTimer = setTimeout(loadPerf, viaSocket(running ? 10000 : 60000));
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && mode === 'perf') loadPerf(); });
 
@@ -6916,7 +7077,7 @@ async function refresh() {
     clearTimeout(pollTimer);
     const busy = S && (S.scan_state.running || S.watch_state.running ||
                        S.intraday.state.scanning || S.intraday.state.checking);
-    pollTimer = setTimeout(refresh, busy ? 2000 : 20000);
+    pollTimer = setTimeout(refresh, viaSocket(busy ? 2000 : 20000));
 }
 
 async function saveSetting(key, value) {
@@ -7614,6 +7775,7 @@ loadNews();
 api('/api/demo').then((d) => { demoData = d; renderDemo(); }).catch(() => {});
 nbLoad(true).finally(liveTick);
 loadTicker();
+WS.connect();
 </script>
 </body>
 </html>

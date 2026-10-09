@@ -31,8 +31,19 @@ E = [
      'GIFT Nifty\'s gap to Nifty, and the option symbol for the five with chains. Empty without Dhan.'),
     ('state', 'GET', '/api/live', '/api/live?s=PAYTM,IDX:13', None,
      '`?s=` comma-separated feed symbols: a stock, `IDX:<id>` for an index, `OPT:<segment>:<id>` for an option contract (up to 250)',
-     'The once-a-second live prices behind every moving number on the page. Asking puts the symbols on the feed for 30 s; '
-     'each price comes with the time it was read. Also carries the notification count (`notices`: `seq`, `unread`).'),
+     'The live prices behind every moving number on the page, for a page without its WebSocket (`/ws` pushes the same as they trade) '
+     'and for scripts. Asking puts the symbols on the feed for 30 s; each price comes with the time it was read. Also carries the '
+     'notification count (`notices`: `seq`, `unread`).'),
+    ('state', 'GET', '/api/live/status', '/api/live/status', None, '',
+     "The live plumbing: Dhan's market feed WebSocket (connected, since, instruments carried, packets, the last error), the feed "
+     '(symbols streamed and still polled) and how many pages have their WebSocket open.'),
+    ('state', 'GET', '/ws', '/ws', None, 'a WebSocket upgrade (`wss://` through Caddy); messages are JSON',
+     "The page's live connection. Send `{\"t\": \"sub\", \"ch\": \"px\", \"p\": {\"s\": [\"IDX:13\"]}}` to subscribe (channels: "
+     '`px` prices, `ticks` chart ticks `{s, since}`, `notices`, `demo`, `ticker`, `chain` `{symbol, expiry}`), `{\"t\": \"unsub\", \"ch\": …}`, '
+     '`{\"t\": \"vis\", \"hidden\": true}`, `{\"t\": \"ping\"}`. The server sends `hello` first, then `{\"t\": <channel>, \"d\": …}` as things '
+     'change and `{\"t\": \"topics\", \"d\": {…}}` when a table (`db:<table>`) or the app\'s state (`run`, `market`, `news_run`, `smart_run`) '
+     'changed. Signs in like a page (the cookie from the app\'s own origin) or with an API token; closes with 4401 when the sign-in ends, '
+     '1013 when 12 pages are connected already.'),
     ('state', 'GET', '/api/glossary', '/api/glossary', None, '',
      'Every abbreviation and symbol the dashboard shows, by group (the Legend).'),
     ('state', 'GET', '/api/search', '/api/search?q=pay', None, '`?q=` text',
@@ -216,6 +227,15 @@ E += [
 
 # The answers shown for the sign-in endpoints: (status, JSON).
 STATIC = {
+    '/api/live/status': (200, {'on': True, 'pages': 2, 'realtime': True, 'source': 'dhan', 'stream': {'connected': True, 'since': 1791560432.1,
+                               'instruments': 61, 'packets': 48211, 'last_packet': 1791561620.4, 'error': None},
+                               'feed': {'error': None, 'last_poll': 1791560431.0, 'streamed': 26, 'polled': 0},
+                               'note': 'Dhan live feed, every trade', 'poll_ms': 1000}),
+    '/ws': (101, [{'t': 'hello', 'on': True, 'live': {'source': 'dhan', 'stream': True, 'note': 'Dhan live feed, every trade'},
+                   'notices': {'seq': 20, 'unread': 3}, 'topics': {'db:zones': 412, 'db:notices': 57, 'run': '9f3a0c1b2d4e'},
+                   'channels': ['chain', 'demo', 'notices', 'px', 'ticker', 'ticks']},
+                  {'t': 'px', 'd': {'on': True, 'stream': True, 'px': {'IDX:13': [22525.15, 1791533853.72]}}},
+                  {'t': 'topics', 'd': {'db:zones': 413}}]),
     '/api/auth/state': (200, {'setup': False, 'signed_in': False, 'username': None, 'passkeys': 1, 'passkey_origin': True, 'rp_id': 'pandorasbox.local',
                               'origins': ['https://pandorasbox.local:5443', 'https://192.168.1.50:5443'], 'locked_for': 0}),
     '/api/auth/setup/begin': (200, {'secret': 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', 'uri': 'otpauth://totp/NiftyWhale:me?secret=JBSW…&issuer=NiftyWhale&digits=6&period=30',

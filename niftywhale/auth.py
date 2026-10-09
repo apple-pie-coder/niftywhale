@@ -401,13 +401,38 @@ def gate():
         return None
     s = _session()
     if s:
-        if request.method not in ('GET', 'HEAD', 'OPTIONS') and not _same_origin():
+        # A WebSocket handshake is a GET, but it opens a two-way channel: another site's page must not
+        # open one with the cookie (cross-site WebSocket hijacking), so it is checked like a write.
+        upgrade = (request.headers.get('Upgrade') or '').lower() == 'websocket'
+        if (upgrade or request.method not in ('GET', 'HEAD', 'OPTIONS')) and not _same_origin():
             return jsonify({'error': 'cross-site request refused'}), 403
         g.auth = {'via': 'session', 'session': s}
         return None
     if p.startswith('/api/') or 'application/json' in (request.headers.get('Accept') or ''):
         return jsonify({'error': 'sign in first', 'login': '/login'}), 401
     return redirect('/login?next=' + quote(request.full_path.rstrip('?')))
+
+
+def still_valid(info: Optional[Dict[str, Any]]) -> bool:
+    """For a long-lived connection (the page's WebSocket): is the sign-in it opened with still good?
+    A session in use stays alive, as each request would keep it."""
+    if not ENABLED:
+        return True
+    if not info:
+        return False
+    with _db() as c:
+        if info.get('via') == 'token':
+            return bool(c.execute('SELECT 1 FROM api_tokens WHERE id = ? AND revoked = 0', (info.get('token'),)).fetchone())
+        sid = (info.get('session') or {}).get('id')
+        rows = _rows(c.execute('SELECT * FROM auth_sessions WHERE id = ? AND revoked = 0', (sid,)))
+        if not rows:
+            return False
+        s, now = rows[0], time.time()
+        if now > s['expires']:
+            return False
+        c.execute('UPDATE auth_sessions SET last_seen = ?, expires = MAX(expires, ?) WHERE id = ?',
+                  (now, now + (REMEMBER_S if s['remember'] else SESSION_IDLE_S), s['id']))
+    return True
 
 
 def _need_session(fresh: bool = False):

@@ -9,6 +9,9 @@
  *
  * One poll for all charts brings the new ticks; each chart folds them into its last candle or
  * starts the next one, so a 1-second chart moves every second and a weekly one updates its week.
+ * When the page has a live socket (window.LiveSocket: up, sub(channel, params), unsub(channel),
+ * listen(type, fn); NiftyWhale's /ws) the ticks are pushed on its 'ticks' channel instead, as they
+ * trade; while it is down the poll takes over.
  * Candles are fetched again now and then to pick up volume and correct the forming candle.
  * Drawn with TradingView's Lightweight Charts (static/vendor, Apache 2.0).
  */
@@ -345,35 +348,58 @@
         if (c.hasVol && b.v === 0 && b.time !== lastB.time) c.vol.update(volBar(b, T));
     }
 
+    const sock = () => (window.LiveSocket && window.LiveSocket.up ? window.LiveSocket : null);
+    let subSig = '';
+    const seen = {};                        // symbol -> the newest tick folded in (a resent one is skipped)
     async function poll() {
         clearTimeout(pollT);
         let wait = (cfg && cfg.poll_ms) || 2000;
         // Something above the grid changed height (the ticker strip loading, a banner): fit again.
         if (grid && visible() && Math.abs(grid.getBoundingClientRect().top + window.scrollY - gridTop) > 2) relayout();
+        const S = sock();
         if (charts.length && visible()) {
-            const syms = [...new Set(charts.map((c) => c.symbol))];
-            try {
-                const d = await getJSON(`${API}/live?symbols=${encodeURIComponent(syms.join(','))}&since=${since}`);
-                since = d.now;
-                cfg.market_open = d.market_open;
-                cfg.poll_ms = d.poll_ms;
-                wait = d.poll_ms;
-                feedLine(d);
-                charts.forEach((c) => {
-                    const ts = d.ticks[c.symbol] || [];
-                    ts.forEach(([at, p]) => tick(c, at, p));
-                    if (ts.length) {
-                        if (!c.el.querySelector('.ch-msg').hidden && c.bars.length) c.el.querySelector('.ch-msg').hidden = true;
-                        if (!c.bars.length && c.tf < 60) load(c, true);
-                        setPrice(c, ts[ts.length - 1][1]);
-                        legend(c, null);
-                    }
-                });
-            } catch (e) {
-                feedLine({ error: e.message });
+            const syms = [...new Set(charts.map((c) => c.symbol))].sort();
+            if (S) {
+                // Pushed: only say which symbols, when that changes (and check again in a second).
+                const sig = syms.join(',');
+                if (sig !== subSig) { subSig = sig; S.sub('ticks', { s: syms, since }); }
+                wait = 1000;
+            } else {
+                subSig = '';
+                try {
+                    const d = await getJSON(`${API}/live?symbols=${encodeURIComponent(syms.join(','))}&since=${since}`);
+                    took(d);
+                    wait = d.poll_ms;
+                } catch (e) {
+                    feedLine({ error: e.message });
+                }
             }
+        } else if (subSig) {
+            if (S) S.unsub('ticks');
+            subSig = '';
         }
         pollT = setTimeout(poll, wait);
+    }
+    function took(d) {
+        since = Math.max(since, d.now || 0);
+        cfg.market_open = d.market_open;
+        cfg.poll_ms = d.poll_ms;
+        feedLine(d);
+        const fresh = {};
+        Object.keys(d.ticks || {}).forEach((s) => {
+            fresh[s] = d.ticks[s].filter(([at]) => !(at <= (seen[s] || 0)));
+            if (fresh[s].length) seen[s] = fresh[s][fresh[s].length - 1][0];
+        });
+        charts.forEach((c) => {
+            const ts = fresh[c.symbol] || [];
+            ts.forEach(([at, p]) => tick(c, at, p));
+            if (ts.length) {
+                if (!c.el.querySelector('.ch-msg').hidden && c.bars.length) c.el.querySelector('.ch-msg').hidden = true;
+                if (!c.bars.length && c.tf < 60) load(c, true);
+                setPrice(c, ts[ts.length - 1][1]);
+                legend(c, null);
+            }
+        });
     }
     function feedLine(d) {
         const f = root.querySelector('.ch-feed');
@@ -437,6 +463,12 @@
         window.addEventListener('resize', () => { if (visible()) relayout(); });
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && maxed && visible() && !e.target.closest('input')) { maxed = null; charts.forEach((c) => { c.el.querySelector('[data-a="max"]').innerHTML = IC.max; }); relayout(); } });
         document.addEventListener('visibilitychange', () => { if (!document.hidden && visible()) poll(); });
+        if (window.LiveSocket) {
+            window.LiveSocket.listen('ticks', (d) => { if (subSig && d && d.ticks) took(d); });
+            // Up again (a new connection remembers nothing) or down (polling from now): start over.
+            window.LiveSocket.listen('up', () => { subSig = ''; poll(); });
+            window.LiveSocket.listen('down', () => { subSig = ''; poll(); });
+        }
         new MutationObserver(rethemeAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rethemeAll);
         poll();

@@ -34,9 +34,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from flask import Flask, jsonify, redirect, render_template, request  # noqa: E402
+from flask import Flask, g, jsonify, redirect, render_template, request  # noqa: E402
+from flask_sock import Sock  # noqa: E402
 
-from niftywhale import (auth, autopilot, charts, config, data, demo, dhan, features, glossary, history, indicators, intraday, news, notify,  # noqa: E402
+from niftywhale import (auth, autopilot, charts, config, data, demo, dhan, features, glossary, history, hub, indicators, intraday, news, notify,  # noqa: E402
                         options, patterns, perf, smart, smc, store, ticker, universe)
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
@@ -1286,18 +1287,28 @@ def api_notices_read():
     return jsonify(store.notice_counts())
 
 
+def live_symbols(raw) -> list:
+    """The feed symbols a page asked for: valid ones, at most LIVE_MAX."""
+    syms = []
+    for s in raw:
+        s = str(s).strip().upper()
+        if s and s not in syms and len(syms) < LIVE_MAX and live_symbol_ok(s):
+            syms.append(s)
+    return syms
+
+
+def live_on() -> bool:
+    return data.market_open() and dhan.available()
+
+
 @app.route('/api/live')
 def api_live():
     """The latest price of each feed symbol asked for (a stock, 'IDX:<id>', 'OPT:<segment>:<id>'),
-    for every live number on the page: the browser asks each second for what is on screen. Asking
-    puts a symbol on the feed's one-a-second Dhan poll for WATCH_S seconds; prices are answered
-    only while fresh (LIVE_FRESH_S)."""
-    on = data.market_open() and dhan.available()
-    syms = []
-    for s in (request.args.get('s') or '').split(','):
-        s = s.strip().upper()
-        if s and s not in syms and len(syms) < LIVE_MAX and live_symbol_ok(s):
-            syms.append(s)
+    for every live number on the page. The page's WebSocket (/ws, channel px) pushes the same
+    prices as they trade; this is what a page polls each second when it has no socket. Asking puts
+    a symbol on the feed for WATCH_S seconds; prices are answered only while fresh (LIVE_FRESH_S)."""
+    on = live_on()
+    syms = live_symbols((request.args.get('s') or '').split(','))
     if on and syms:
         charts.FEED.mark(syms)
     px_ = {}
@@ -1330,6 +1341,7 @@ def marks_loop() -> None:
                 if ok:
                     charts.FEED.mark(_open_live_keys())
                     live_warnings(_open_trades(), data.now_ist())
+                    charts.SOURCE.prune()
                 feed_watch(ok, data.now_ist())
             elif time.time() - pruned > 86400:
                 store.prune_notices()
@@ -2492,6 +2504,7 @@ def _chain_lp(sym: str, expiry: str, table: list) -> list:
 # move by what the stored window moved (far strikes barely do); max pain and IV stay as read.
 CHAIN_LIVE: dict = {}
 CHAIN_LIVE_S = 3.0
+CHAIN_STREAM_S = 1.0          # with the stream: worked out again from its packets this often
 CHAIN_LIVE_LOCK = threading.Lock()
 
 
@@ -2501,19 +2514,33 @@ def chain_live(sym: str, expiry: str = None):
     if not snap or snap['session'] != now.date().isoformat() or not data.market_open(now) or not dhan.available():
         return None
     key = (sym, snap['expiry'])
+    # With Dhan's stream the chain's contracts are subscribed in full mode (OI, volume, depth) and
+    # the chain is worked out again every second from what it pushed; without it, one REST quote
+    # of every contract per CHAIN_LIVE_S.
+    streamed = charts.streaming()
+    ttl = CHAIN_STREAM_S if streamed else CHAIN_LIVE_S
     hit = CHAIN_LIVE.get(key)
-    if hit and time.time() - hit[0] < CHAIN_LIVE_S and hit[1]['snap'] == snap['id']:
+    if hit and time.time() - hit[0] < ttl and hit[1]['snap'] == snap['id']:
         return hit[1]
     with CHAIN_LIVE_LOCK:                 # however many browsers watch, one request per CHAIN_LIVE_S
         hit = CHAIN_LIVE.get(key)
-        if hit and time.time() - hit[0] < CHAIN_LIVE_S and hit[1]['snap'] == snap['id']:
+        if hit and time.time() - hit[0] < ttl and hit[1]['snap'] == snap['id']:
             return hit[1]
         chain = options.expand(snap['chain'])
         ids = dhan.option_ids(sym, snap['expiry'], [(r['k'], s.upper()) for r in chain['strikes'] for s in options.SIDES if r[s]])
-        by_seg: dict = {}
-        for sid, seg in ids.values():
-            by_seg.setdefault(seg, []).append(int(sid))
-        q = dhan.quotes_full(by_seg)
+        q = None
+        if streamed:
+            syms = {f'OPT:{seg}:{int(sid)}': (seg, int(sid)) for sid, seg in ids.values()}
+            charts.FEED.mark(list(syms), mode='full')
+            got = charts.SOURCE.carried(list(syms))
+            if syms and len(got) >= 0.8 * len(syms):
+                q = {syms[s]: {'ltp': x.get('ltp') or 0, 'oi': x.get('oi') or 0, 'vol': x.get('vol') or 0,
+                               'bid': x.get('bid') or 0, 'ask': x.get('ask') or 0} for s, x in got.items()}
+        if q is None:
+            by_seg: dict = {}
+            for sid, seg in ids.values():
+                by_seg.setdefault(seg, []).append(int(sid))
+            q = dhan.quotes_full(by_seg)
         before = options.totals(chain['strikes'])
         moved = 0
         for r in chain['strikes']:
@@ -2599,6 +2626,24 @@ def _load_prev_closes(session) -> None:
 
 
 TICKER_PREV_RETRY = 300
+TICKER_KEYS = [f'IDX:{i}' for i in ticker.IDS]
+
+
+def _ticker_stream(session) -> bool:
+    """The strip from Dhan's stream (the indices in quote mode: price and the day's open / high /
+    low), once it carries most of them; False sends the caller to the REST quote."""
+    charts.FEED.mark(TICKER_KEYS, mode='quote')
+    got = charts.SOURCE.carried(TICKER_KEYS)
+    if len(got) < len(TICKER_KEYS) // 2:
+        return False
+    quotes = {int(k[4:]): {'last': q['ltp'], 'open': q.get('open'), 'high': q.get('high'), 'low': q.get('low')}
+              for k, q in got.items() if q.get('ltp')}
+    # Indices the stream has not priced yet keep their last REST quote.
+    for r in TICKER['rows'] if TICKER['session'] == session else []:
+        quotes.setdefault(r['id'], r)
+    TICKER.update(rows=ticker.build(quotes, TICKER['prev'] if TICKER['prev_session'] == session else {}),
+                  at=time.time(), error=None, session=session)
+    return True
 
 
 def ticker_state() -> dict:
@@ -2611,6 +2656,10 @@ def ticker_state() -> dict:
     if (TICKER['prev_session'] != session or retry) and not TICKER['loading_prev']:
         TICKER['loading_prev'] = True
         threading.Thread(target=_load_prev_closes, args=(session,), daemon=True, name='ticker-prev').start()
+    if live and charts.streaming() and _ticker_stream(session):
+        return {'rows': TICKER['rows'], 'live': True, 'source': 'dhan', 'stream': True, 'session': session.isoformat(),
+                'updated': datetime.fromtimestamp(TICKER['at'], data.IST).isoformat(timespec='seconds'),
+                'refresh_s': 1, 'error': None}
     ttl = TICKER_TTL_LIVE if live else TICKER_TTL_CLOSED
     stale = lambda: time.time() - TICKER['at'] >= ttl or TICKER['session'] != session or not TICKER['rows']
     if stale():
@@ -3115,18 +3164,21 @@ def _demo_live_state() -> dict:
     return {'on': on, 'every_ms': 1000 if on else 0, 'error': charts.FEED.error if on else None}
 
 
-@app.route('/api/demo/live')
-def api_demo_live():
-    """The open positions' latest prices and the account totals they move, for the Demo tab's quick
-    refresh (every second in session); /api/demo has everything else."""
+def demo_live() -> dict:
+    """The open positions' latest prices and the account totals they move."""
     positions = live_demo(store.demo_positions())
     opn = [p for p in positions if p['status'] == 'open']
     by_mode = {m: {'open': sum(1 for p in opn if p['mode'] == m),
                    'unreal': round(sum(p['unreal'] or 0 for p in opn if p['mode'] == m), 2)} for m in DEMO_MODES}
-    return jsonify(safe({'now': time.time(), 'live': _demo_live_state(), 'account': demo_account(positions=positions),
-                         'by_mode': by_mode,
-                         'open': [{'id': p['id'], 'last': p['last'], 'unreal': p['unreal'], 'live_at': p.get('live_at')}
-                                  for p in opn]}))
+    return {'live': _demo_live_state(), 'account': demo_account(positions=positions), 'by_mode': by_mode,
+            'open': [{'id': p['id'], 'last': p['last'], 'unreal': p['unreal'], 'live_at': p.get('live_at')} for p in opn]}
+
+
+@app.route('/api/demo/live')
+def api_demo_live():
+    """The Demo tab's quick refresh (every second in session, when the page has no WebSocket: the
+    socket's demo channel pushes the same); /api/demo has everything else."""
+    return jsonify(safe({'now': time.time(), **demo_live()}))
 
 
 @app.route('/api/demo')
@@ -3797,9 +3849,14 @@ def api_charts_candles():
     return jsonify(safe(out))
 
 
+def chart_syms(raw) -> list:
+    return [s for s in raw if charts.known(s)][:CHART_MAX]
+
+
 @app.route('/api/charts/live')
 def api_charts_live():
-    syms = [s for s in (request.args.get('symbols') or '').upper().split(',') if charts.known(s)][:CHART_MAX]
+    """New ticks for the Charts tab, when the page has no WebSocket (its ticks channel pushes them)."""
+    syms = chart_syms((request.args.get('symbols') or '').upper().split(','))
     try:
         since = float(request.args.get('since') or 0)
     except ValueError:
@@ -3906,6 +3963,122 @@ def api_telegram_test():
         return jsonify({'error': 'TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set'}), 400
     ok = notify.send('🐋 <b>NiftyWhale</b> test message. Alerts will arrive here.')
     return (jsonify({'status': 'sent'}), 200) if ok else (jsonify({'error': 'Telegram rejected it'}), 502)
+
+
+# ---------------------------------------------------------------------------
+# The page's WebSocket (niftywhale/hub.py): one connection per open page, through which the server
+# pushes prices, ticks, the bell, the open panels and "this changed" as they happen. A page without
+# it (refused, or a proxy in the way) polls the HTTP routes above as before.
+# ---------------------------------------------------------------------------
+app.config['SOCK_SERVER_OPTIONS'] = {'ping_interval': 25, 'max_message_size': 64 * 1024}
+sock = Sock(app)
+HUB = hub.Hub(lambda: store.DB_PATH)
+WS_RENEW_S = 5               # a connection renews its symbols' interest on the feed this often
+_nc = {'v': None, 'counts': None}
+
+
+def notice_counts_now() -> dict:
+    """The bell's counts, read again only when the notices table changed (one query for every page)."""
+    v = HUB.topics().get('db:notices')
+    if v is None or v != _nc['v'] or _nc['counts'] is None:
+        _nc['counts'], _nc['v'] = store.notice_counts(), v
+    return _nc['counts']
+
+
+def ws_px(p: dict, mem: dict):
+    """Live prices: each symbol's price once it changes, as soon as the feed has it."""
+    if mem.get('p') is not p:
+        mem.update(p=p, syms=live_symbols(p.get('s') or []), sent={}, renewed=0.0)
+    on, now, syms = live_on(), time.time(), mem['syms']
+    out = {'on': on, 'stream': charts.streaming(), 'px': {}} if on != mem.get('on') else None
+    mem['on'] = on
+    if not on or not syms:
+        return out
+    if now - mem['renewed'] > WS_RENEW_S:
+        charts.FEED.mark(syms)
+        mem['renewed'] = now
+    sent = mem['sent']
+    for sym, (at, price) in charts.FEED.since(syms, now - LIVE_FRESH_S).items():
+        if sent.get(sym, 0) < at:
+            sent[sym] = at
+            if out is None:
+                out = {'on': on, 'stream': charts.streaming(), 'px': {}}
+            out['px'][sym] = [round(price, 3), at]
+    return out
+
+
+def ws_ticks(p: dict, mem: dict):
+    """The Charts tab's ticks since each symbol's last one sent, and the feed's state every few seconds."""
+    if mem.get('p') is not p:
+        try:
+            since = float(p.get('since') or 0)
+        except (TypeError, ValueError):
+            since = 0.0
+        mem.update(p=p, syms=chart_syms([str(x).upper() for x in p.get('s') or []]), since={}, start=since,
+                   renewed=0.0, said=0.0)
+    now, syms = time.time(), mem['syms']
+    if not syms:
+        return None
+    if now - mem['renewed'] > WS_RENEW_S:
+        charts.FEED.watch(syms)
+        mem['renewed'] = now
+    ticks = {}
+    for sym in syms:
+        got = charts.FEED.ticks(sym, mem['since'].get(sym, mem['start']))[-600:]
+        if got:
+            mem['since'][sym] = got[-1][0]
+            ticks[sym] = [[round(t, 3), px] for t, px in got]
+    if not ticks and now - mem['said'] < 5:
+        return None
+    mem['said'] = now
+    return {'now': now, 'ticks': ticks, 'market_open': data.market_open(), 'error': charts.FEED.error, **charts.live()}
+
+
+def ws_demo(p: dict, mem: dict):
+    return demo_live() if live_on() else None
+
+
+def ws_chain(p: dict, mem: dict):
+    sym, expiry = str(p.get('symbol') or '').upper(), p.get('expiry')
+    if not SYMBOL_RE.match(sym) or (expiry and not re.match(r'^\d{4}-\d{2}-\d{2}$', str(expiry))):
+        raise hub.BadRequest('bad symbol or expiry')
+    out = chain_live(sym, expiry)
+    return {**out, 'symbol': sym} if out else None
+
+
+def ws_ticker(p: dict, mem: dict):
+    return ticker_state()
+
+
+HUB.channel('px', ws_px, every=0.2, dedupe=False)
+HUB.channel('ticks', ws_ticks, every=0.25, dedupe=False)
+HUB.channel('notices', lambda p, mem: notice_counts_now(), every=1.0, background=True)
+HUB.channel('demo', ws_demo, every=1.0)
+HUB.channel('chain', ws_chain, every=1.0)
+HUB.channel('ticker', ws_ticker, every=1.0)
+# In-memory state whose change means a panel should load again (the tables are seen by db_changes).
+_public = lambda d: {k: v for k, v in d.items() if not k.startswith('_')}
+HUB.probe('run', lambda: {k: _public(v) for k, v in STATE.items()})
+HUB.probe('market', lambda: [data.market_open(), dhan.available()])
+HUB.probe('news_run', lambda: _public(NEWS_STATE))
+HUB.probe('smart_run', lambda: _public(SMART_STATE))
+
+
+@sock.route('/ws')
+def ws_page(ws):
+    """The page's live connection (niftywhale/hub.py): sign-in as for any page (a cookie from the
+    app's own origin, or an API token)."""
+    who = getattr(g, 'auth', None)
+    HUB.serve(ws, still_signed_in=lambda: auth.still_valid(who),
+              hello=lambda: {'on': live_on(), 'live': charts.live(), 'notices': notice_counts_now()})
+
+
+@app.route('/api/live/status')
+def api_live_status():
+    """The live plumbing: Dhan's stream, the feed and the pages connected."""
+    return jsonify(safe({**charts.live(), 'on': live_on(), 'stream': charts.SOURCE.status(), 'feed': {
+        'error': charts.FEED.error, 'last_poll': charts.FEED.last_poll or None, 'streamed': charts.FEED.streamed,
+        'polled': charts.FEED.polled}, 'pages': HUB.clients()}))
 
 
 # ---------------------------------------------------------------------------
