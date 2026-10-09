@@ -347,6 +347,18 @@ Alerts from before paper trading started (6 Oct 2026) stay as they were: trigger
   in twelves (12 / 24 / 48 / 96, 24 to start). The page you are on survives the dashboard's refresh; changing a filter or sort
   goes back to page 1. The zone watcher keeps closed zones for 14 days, and the alert and signal logs their last 300.
 
+#### Theme
+
+**Light**, **Dark** or **System** (follow the device, switching live when it does): the top bar's theme button opens
+the choice on any screen, the sidebar's App section has the same three, and the command palette has *Theme: ...*. The
+choice is kept per device and every open tab follows it; the Guide, the sign-in page and the certificate page use it
+too. On a phone the browser's own bars take the theme's colour.
+
+Under the hood (`static/theme.js`, `static/theme.css`): both palettes live in one stylesheet as colour tokens, and a
+small script loaded first on every page sets `<html data-theme="light|dark">` before anything is drawn, so a page never
+flashes the wrong theme. A switch eases the colours over a quarter second (not with reduced motion) and fires a
+`themechange` event, which the charts and the mood tint redraw on.
+
 ### 4.2 Sidebar
 
 Six sections. Each has a small header, sometimes with one text action on the right, and rows

@@ -13,24 +13,17 @@
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="manifest" href="/static/manifest.webmanifest">
+<!-- The theme engine first (it sets <html data-theme> before anything paints), then the palette. -->
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/theme.css">
 <style>
+    /* Colours: static/theme.css (both palettes, picked by static/theme.js). Sizes, type and safe areas here. */
     :root {
-        color-scheme: light;
-        --plane: #f4f6f8; --surface: #ffffff; --sunk: #eef1f4; --line: #dde3e9; --line-strong: #c5ced8;
-        --ink: #0f1d2b; --ink-2: #3c4b5a; --ink-3: #6b7a89;
-        --accent: #0b6e8a; --accent-ink: #ffffff; --accent-soft: #e2f1f5;
-        --good: #1b7f4b; --good-soft: #e3f4ea; --bad: #b42318; --bad-soft: #fde7e5; --warn: #9a5b00; --warn-soft: #fff1d6;
         --r-sm: 8px; --r-md: 12px; --r-lg: 18px;
         --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
         --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
         --sa-t: env(safe-area-inset-top, 0px); --sa-r: env(safe-area-inset-right, 0px);
         --sa-b: env(safe-area-inset-bottom, 0px); --sa-l: env(safe-area-inset-left, 0px);
-    }
-    @media (prefers-color-scheme: dark) {
-        :root { color-scheme: dark;
-            --plane: #0b141c; --surface: #111d27; --sunk: #0e1922; --line: #20303d; --line-strong: #2d4050;
-            --ink: #e6edf3; --ink-2: #b6c3cf; --ink-3: #8193a3; --accent: #2aa7c9; --accent-ink: #04202a; --accent-soft: #0f2f3a;
-            --good: #4cc38a; --good-soft: #0f2a1d; --bad: #f2786d; --bad-soft: #351513; --warn: #e8b04b; --warn-soft: #2e2309; }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     [hidden] { display: none !important; }          /* over every display rule below (.field is flex) */
@@ -65,9 +58,11 @@
     .points .pi { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,.12); }
     .brand-foot { font-size: 12.5px; color: rgba(234,246,250,.6); display: flex; gap: 8px; align-items: center; }
 
-    .pane { display: flex; align-items: center; justify-content: center;
+    .pane { position: relative; display: flex; align-items: center; justify-content: center;
             padding: calc(32px + var(--sa-t)) max(24px, var(--sa-r)) calc(32px + var(--sa-b)) 24px; }
     .card { width: 100%; max-width: 410px; }
+    .pane-theme { position: absolute; top: calc(14px + var(--sa-t)); right: max(14px, var(--sa-r)); }
+    @media (max-width: 820px) { .pane-theme { top: 12px; } .pane { padding-top: 62px !important; } }
     .card h2 { font-size: 26px; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 6px; }
     .sub { color: var(--ink-3); margin-bottom: 24px; }
     .steps { display: flex; gap: 6px; margin-bottom: 18px; }
@@ -174,6 +169,7 @@
     </section>
 
     <main class="pane">
+        <div class="pane-theme" id="theme-ctl"></div>
         <div class="card">
             <div class="alert" id="err" role="alert" hidden></div>
 
@@ -293,6 +289,7 @@
 </div>
 
 <script>
+document.getElementById('theme-ctl').appendChild(NWTheme.control({ compact: true }));
 'use strict';
 const $ = (id) => document.getElementById(id);
 const IC = {

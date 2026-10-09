@@ -6,8 +6,7 @@
 <!-- iPhone: no phone-number links on prices, IDs and counts; the colours of the status bar; added to the Home Screen it
      opens as its own app (standalone), with its own icon and name. -->
 <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111d27" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" data-light="#ffffff" data-dark="#111d27">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -16,27 +15,16 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <title>NiftyWhale guide</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<!-- The theme engine first (it sets <html data-theme> before anything paints), then the palette. -->
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/theme.css">
 <style>
+    /* Colours: static/theme.css. Sizes and type here. */
     :root {
-        color-scheme: light;
-        --plane: #f4f6f8; --surface: #ffffff; --sunk: #eef1f4;
-        --line: #dde3e9; --line-strong: #c5ced8;
-        --ink: #0f1d2b; --ink-2: #3a4a5a; --ink-3: #6b7b8c;
-        --accent: #0b6e8a; --accent-ink: #ffffff; --accent-soft: #e2f1f5;
         --r-sm: 6px; --r-md: 9px; --r-lg: 13px;
         --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
         --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
-    @media (prefers-color-scheme: dark) {
-        :root:not([data-theme="light"]) {
-            color-scheme: dark;
-            --plane: #0b141c; --surface: #111d27; --sunk: #0e1922;
-            --line: #213140; --line-strong: #2d4152;
-            --ink: #e6edf3; --ink-2: #b6c3cf; --ink-3: #7d8e9e;
-            --accent: #3fb5d4; --accent-ink: #04202a; --accent-soft: #11313d;
-        }
-    }
-    :root[data-theme="dark"] { color-scheme: dark; }
     * { box-sizing: border-box; }
     html { scroll-padding-top: 76px; }
     /* Stop iPhone Safari enlarging text in wide blocks (the README's tables). */
@@ -58,6 +46,8 @@
             background: var(--surface); color: var(--ink-2); border-radius: var(--r-md); padding: 7px 12px;
             font-size: 13px; font-weight: 600; text-decoration: none; }
     .back:hover { background: var(--sunk); }
+    .tb-right { display: flex; align-items: center; gap: 10px; }
+    @media (max-width: 420px) { .back { font-size: 0; gap: 0; padding: 7px 9px; } }
 
     /* The whole window: the contents on the left, the guide across the rest. */
     .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 28px;
@@ -141,7 +131,8 @@
         </span>
         <b>NiftyWhale</b><span class="brand-sub">Guide</span>
     </a>
-    <a class="back" href="/"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-0.1em"><path d="M13 8H3M7.5 3.5L3 8l4.5 4.5"/></svg> Dashboard</a>
+    <span class="tb-right"><span id="theme-ctl"></span>
+    <a class="back" href="/"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-0.1em"><path d="M13 8H3M7.5 3.5L3 8l4.5 4.5"/></svg> Dashboard</a></span>
 </header>
 
 <div class="layout">
@@ -153,6 +144,7 @@
 </div>
 
 <script>
+document.getElementById('theme-ctl').appendChild(NWTheme.control({ compact: true }));
     // Tables scroll on their own instead of widening the page on a phone.
     document.querySelectorAll('#doc table').forEach((t) => {
         const w = document.createElement('div');
