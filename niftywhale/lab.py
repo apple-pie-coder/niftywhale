@@ -359,8 +359,10 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
     current = current_thresholds(mode)
     progress(f'{mode}: walk-forward tuning over {first} – {lastday}')
     sp = specs(mode)
+    # Each fold as it starts: "swing: walk-forward 3/11 (testing 2024-07 to 2024-10)", which the job's
+    # progress bar and time left read (step_of).
     wf = autopilot.walk_forward(lambda thr: bench.run({**current, **thr}), {k: current[k] for k in sp}, sp, pol, mode,
-                                first, lastday)
+                                first, lastday, on_step=lambda n, total, what: progress(f'{mode}: walk-forward {n}/{total} ({what})'))
     st['last_tune'] = {'at': data.now_ist().isoformat(timespec='seconds'), 'oos_tuned': wf['oos_tuned'],
                        'oos_current': wf['oos_current'], 'gain_r': wf['gain_r'], 'reasons': wf['reasons'],
                        'folds': [{'test': f['test'], 'tuned': f['tuned'], 'current': f['current']} for f in wf['folds']]}
@@ -375,7 +377,14 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
         tg(f"🐋 <b>Autopilot · {mode}</b>: proposing {esc(st['challenger']['change'])}.\n{esc(st['challenger']['evidence'])}.\n"
            f"It now runs in shadow for {pol['shadow_days']} sessions before anything changes.")
     save_state(mode, st)
-    return {'proposal': bool(wf['proposal']), 'reasons': wf['reasons'], 'gain_r': wf['gain_r']}
+    proposal = {**current, **wf['proposal']} if wf['proposal'] else None
+    keep = ('trades', 'wins', 'win_rate', 'avg_r', 'total_r', 'max_drawdown', 'profit_factor')
+    return {'proposal': bool(wf['proposal']), 'reasons': wf['reasons'], 'gain_r': wf['gain_r'],
+            # What the job's detail shows, laid out (the job keeps it with its step).
+            'span': [str(first), str(lastday)], 'folds': len(wf['folds']), 'checks': wf.get('checks', []),
+            'oos_tuned': {k: wf['oos_tuned'].get(k) for k in keep}, 'oos_current': {k: wf['oos_current'].get(k) for k in keep},
+            'changes': {k: [current.get(k), v] for k, v in (proposal or {}).items()
+                        if k in sp and current.get(k) is not None and abs(float(v) - float(current[k])) > 1e-9}}
 
 
 def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
@@ -605,6 +614,11 @@ class JobLog:
             self.steps[self.cur].setdefault('notes', []).append(text[:300])
             self._save()
 
+    def result(self, key: str, data: Dict[str, Any]) -> None:
+        """A step's outcome as data (a tuning: verdict, numbers, checks), for the job's detail."""
+        self.steps.setdefault(key, {})['result'] = data
+        self._save()
+
     def skip(self, key: str, why: str) -> None:
         """A step the job passed over, and why."""
         self.steps[key] = {'skipped': True, 'notes': [why[:300]]}
@@ -668,7 +682,8 @@ def job_view(job: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, A
         else:                                          # finished before steps were recorded
             state = 'done' if status == 'done' else 'unknown'
         v = {'key': k, 'label': STEP_LABEL.get(k, k), 'state': state, 'n': st.get('n'), 'total': st.get('total'),
-             'notes': st.get('notes') or [], 'started': st.get('started'), 'finished': st.get('finished')}
+             'notes': st.get('notes') or [], 'started': st.get('started'), 'finished': st.get('finished'),
+             'result': st.get('result')}
         v['secs'] = _secs(st.get('started'), st.get('finished') or (now_s if state == 'running' else None))
         if state == 'running' and v['secs'] and v['n'] and v['total'] and v['n'] < v['total']:
             v['eta_secs'] = int(v['secs'] / v['n'] * (v['total'] - v['n']))
@@ -729,6 +744,7 @@ def run_job(job: Dict[str, Any]) -> str:
                     progress.skip('tune_' + mode, r['skipped'])
                 else:
                     say(f'{mode}: ' + ('proposal in shadow' if r.get('proposal') else '; '.join(r.get('reasons') or [])))
+                    progress.result('tune_' + mode, r)
         elif kind == 'report':
             progress('writing the weekly report')
             text = weekly_report()
