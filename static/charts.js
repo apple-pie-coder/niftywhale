@@ -6,6 +6,8 @@
  *   GET  candles?symbol=&tf=          [[t, o, h, l, c, v]] (t: seconds, already in IST) + levels
  *   GET  live?symbols=a,b&since=      ticks [[epoch, price]] since `since`, for every symbol
  *   POST layout                       [{symbol, tf, levels}]
+ *   POST drawings                     {symbol, drawings: [{id, type: trend|hline|rect, p1: {t, p}, p2}]}
+ *                                     (config carries them all as `drawings`; without the route they stay in this browser)
  *
  * One poll for all charts brings the new ticks; each chart folds them into its last candle or
  * starts the next one, so a 1-second chart moves every second and a weekly one updates its week.
@@ -59,6 +61,15 @@
 @container (max-width:400px){.ch-chg{display:none}}
 @container (max-width:330px){.ch-ib[data-a="fit"],.ch-ib[data-a="lv"]{display:none}}
 @media (max-width:700px){.ch-feed{margin-left:0}.ch-add input{width:120px}}
+.ch-tools{display:inline-flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px}
+.ch-tools button{border:0;background:none;color:var(--ink-3);width:30px;height:28px;border-radius:var(--r-pill);display:inline-grid;place-items:center;cursor:pointer}
+.ch-tools button:hover:not(:disabled){background:var(--sunk);color:var(--ink)}
+.ch-tools button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.ch-tools button:disabled{opacity:.35;cursor:default}
+.ch-tools .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.ch-body[data-draw="1"]{cursor:crosshair;touch-action:none}
+.ch-body[data-grab="1"]{cursor:move}
+@media (pointer:coarse){.ch-tools button{width:36px;height:34px}}
 `;
     const IC = {
         plus: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>',
@@ -67,6 +78,11 @@
         min: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"/></svg>',
         lv: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 8h12" stroke-dasharray="2 2"/><path d="M2 12h12"/></svg>',
         fit: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h12M5 5L2 8l3 3M11 5l3 3-3 3"/></svg>',
+        cursor: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 2.5l9 5.2-4 1-2 3.8z"/></svg>',
+        trend: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 13L13 3"/><circle cx="3" cy="13" r="1.6" fill="currentColor"/><circle cx="13" cy="3" r="1.6" fill="currentColor"/></svg>',
+        hline: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M1.5 8h13"/><path d="M4 4.5h8M4 11.5h8" stroke-width="1" opacity=".45"/></svg>',
+        rect: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="4" width="11" height="8" rx="1"/></svg>',
+        trash: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.2h11M6.2 4.2V2.8h3.6v1.4M3.9 4.2l.7 9h6.8l.7-9"/></svg>',
     };
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const getJSON = async (url, opt) => { const r = await fetch(url, opt); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText); return r.json(); };
@@ -117,6 +133,243 @@
         };
     }
     function levelColor(kind, T) { return kind === 'stop' ? T.bad : kind === 'target' ? T.good : kind === 'entry' ? T.accent : T.ob; }
+
+    // ------------------------------------------------------------ drawings
+    // Trend lines, horizontal lines and rectangles on any chart, kept per instrument and anchored in time and price,
+    // so they show on every timeframe of it. Pick a tool, then click: once for a horizontal line, twice for a trend
+    // line or a rectangle (a preview follows the pointer in between). With no tool, click a drawing to select it, drag
+    // it, or drag a handle to reshape it; Delete (or the bin) removes it, Esc lets go. Saved to the app (every device),
+    // or in this browser where the app has no drawings route.
+    const DRAW_COLOR = { trend: 'accent', hline: 'warn', rect: 'accent' };
+    let drawings = {}, tool = '', sel = null, placing = null, dragging = null, drawLocal = false;
+    const drawSaveT = {};
+
+    // A time as a (fractional) candle position on chart c, and back: between candles by interpolation, before the
+    // first and after the last by the timeframe, so a drawing made on one timeframe lands in the same place on another.
+    function tLogical(c, t) {
+        const b = c.bars, n = b.length;
+        if (!n) return null;
+        if (t <= b[0].time) return (t - b[0].time) / c.tf;
+        if (t >= b[n - 1].time) return n - 1 + (t - b[n - 1].time) / c.tf;
+        let lo = 0, hi = n - 1;
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; if (b[m].time <= t) lo = m; else hi = m; }
+        return lo + (t - b[lo].time) / (b[hi].time - b[lo].time);
+    }
+    function lTime(c, l) {
+        const b = c.bars, n = b.length;
+        if (!n) return null;
+        if (l <= 0) return Math.round(b[0].time + l * c.tf);
+        if (l >= n - 1) return Math.round(b[n - 1].time + (l - (n - 1)) * c.tf);
+        const i = Math.floor(l);
+        return Math.round(b[i].time + (l - i) * (b[i + 1].time - b[i].time));
+    }
+    const dX = (c, t) => { const l = tLogical(c, t); return l == null ? null : c.chart.timeScale().logicalToCoordinate(l); };
+    const dY = (c, p) => c.series.priceToCoordinate(p);
+    function pointAt(c, e) {
+        const r = c.body.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+        const l = c.chart.timeScale().coordinateToLogical(x), p = c.series.coordinateToPrice(y);
+        return l == null || p == null ? null : { t: lTime(c, l), l, p, x, y };
+    }
+    const segDist = (x, y, x1, y1, x2, y2) => {
+        const dx = x2 - x1, dy = y2 - y1, len = dx * dx + dy * dy;
+        const k = len ? Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / len)) : 0;
+        return Math.hypot(x - (x1 + k * dx), y - (y1 + k * dy));
+    };
+    const isSel = (c, d) => sel && sel.symbol === c.symbol && sel.id === d.id;
+    // The handles of a drawing on chart c: its two points, and a rectangle's other two corners.
+    function handles(c, d) {
+        if (d.type === 'hline') return [];
+        const x1 = dX(c, d.p1.t), y1 = dY(c, d.p1.p), x2 = dX(c, d.p2.t), y2 = dY(c, d.p2.p);
+        const hs = [['p1', x1, y1], ['p2', x2, y2]];
+        if (d.type === 'rect') hs.push(['c12', x1, y2], ['c21', x2, y1]);
+        return hs.filter((h) => h[1] != null && h[2] != null);
+    }
+    function hitTest(c, x, y) {
+        const list = drawings[c.symbol] || [];
+        if (sel && sel.symbol === c.symbol) {
+            const d = list.find((q) => q.id === sel.id);
+            const h = d && handles(c, d).find(([, hx, hy]) => Math.hypot(x - hx, y - hy) <= 9);
+            if (h) return { d, part: h[0] };
+        }
+        for (let i = list.length - 1; i >= 0; i--) {
+            const d = list[i], y1 = dY(c, d.p1.p);
+            if (d.type === 'hline') { if (y1 != null && Math.abs(y - y1) <= 6) return { d, part: 'body' }; continue; }
+            const x1 = dX(c, d.p1.t), x2 = dX(c, d.p2.t), y2 = dY(c, d.p2.p);
+            if ([x1, y1, x2, y2].some((v) => v == null)) continue;
+            if (d.type === 'trend' && segDist(x, y, x1, y1, x2, y2) <= 6) return { d, part: 'body' };
+            if (d.type === 'rect' && x >= Math.min(x1, x2) - 4 && x <= Math.max(x1, x2) + 4 && y >= Math.min(y1, y2) - 4 && y <= Math.max(y1, y2) + 4)
+                return { d, part: 'body' };
+        }
+        return null;
+    }
+
+    class DrawLayer {
+        constructor(c) { this.c = c; this.views = [{ zOrder: () => 'top', renderer: () => ({ draw: (t) => this.draw(t) }) }]; }
+        attached({ requestUpdate }) { this.req = requestUpdate; }
+        detached() { this.req = null; }
+        updateAllViews() {}
+        paneViews() { return this.views; }
+        update() { if (this.req) this.req(); }
+        draw(target) {
+            const c = this.c, list = (drawings[c.symbol] || []).slice();
+            if (placing && placing.c === c) list.push({ ...placing, id: '_new', preview: true });
+            if (!list.length || !c.bars.length) return;
+            const T = theme();
+            target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+                const W = mediaSize.width;
+                list.forEach((d) => {
+                    const col = T[DRAW_COLOR[d.type]] || T.accent, on = isSel(c, d);
+                    ctx.save();
+                    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = on ? 2 : 1.5;
+                    if (d.preview) ctx.globalAlpha = 0.75;
+                    const y1 = dY(c, d.p1.p);
+                    if (d.type === 'hline') {
+                        if (y1 == null) { ctx.restore(); return; }
+                        ctx.beginPath(); ctx.moveTo(0, Math.round(y1) + 0.5); ctx.lineTo(W, Math.round(y1) + 0.5); ctx.stroke();
+                        const txt = fmt(d.p1.p, c.dp);
+                        ctx.font = `600 11px ${T.font || 'sans-serif'}`;
+                        const tw = ctx.measureText(txt).width;
+                        ctx.fillRect(W - tw - 12, y1 - 9, tw + 8, 17);
+                        ctx.fillStyle = T.bg; ctx.fillText(txt, W - tw - 8, y1 + 4);
+                    } else {
+                        const x1 = dX(c, d.p1.t), x2 = dX(c, d.p2.t), y2 = dY(c, d.p2.p);
+                        if ([x1, y1, x2, y2].some((v) => v == null)) { ctx.restore(); return; }
+                        if (d.type === 'trend') { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+                        else {
+                            ctx.globalAlpha = (d.preview ? 0.75 : 1) * 0.13;
+                            ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+                            ctx.globalAlpha = d.preview ? 0.75 : 1;
+                            ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+                        }
+                    }
+                    if (on || d.preview) handles(c, d).forEach(([, hx, hy]) => {
+                        ctx.beginPath(); ctx.arc(hx, hy, 4.5, 0, Math.PI * 2);
+                        ctx.fillStyle = T.bg; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+                    });
+                    ctx.restore();
+                });
+            });
+        }
+    }
+
+    const redrawSym = (sym) => charts.forEach((c) => { if (!sym || c.symbol === sym) c.draw.update(); });
+    // While a tool is picked or a drawing is being dragged the chart must not pan under the pointer.
+    function freeze(c, on) {
+        c.chart.applyOptions({ handleScroll: !on, handleScale: !on });
+        c.body.dataset.draw = tool ? '1' : '';
+    }
+    function setTool(t) {
+        tool = t || '';
+        placing = null;
+        if (tool) sel = null;
+        charts.forEach((c) => freeze(c, !!tool));
+        toolState();
+        redrawSym();
+    }
+    function toolState() {
+        if (!root) return;
+        root.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === tool)));
+        const del = root.querySelector('[data-tool-del]');
+        if (del) del.disabled = !sel;
+    }
+    function saveDrawings(sym) {
+        clearTimeout(drawSaveT[sym]);
+        drawSaveT[sym] = setTimeout(async () => {
+            const list = drawings[sym] || [];
+            if (!drawLocal) {
+                try {
+                    const r = await fetch(`${API}/drawings`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ symbol: sym, drawings: list }) });
+                    if (r.ok) return;
+                    if (r.status !== 404 && r.status !== 405) return;
+                } catch (e) { return; }
+                drawLocal = true;                                       // an app without the route: this browser keeps them
+            }
+            try { localStorage.setItem('lc.drawings', JSON.stringify(drawings)); } catch (e) { /* private mode */ }
+        }, 400);
+    }
+    function addDrawing(c, d) {
+        d.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        (drawings[c.symbol] = drawings[c.symbol] || []).push(d);
+        sel = { symbol: c.symbol, id: d.id };
+        setTool('');
+        sel = { symbol: c.symbol, id: d.id };
+        toolState(); redrawSym(c.symbol);
+        saveDrawings(c.symbol);
+    }
+    function deleteSelected() {
+        if (!sel) return;
+        const sym = sel.symbol;
+        drawings[sym] = (drawings[sym] || []).filter((d) => d.id !== sel.id);
+        sel = null;
+        toolState(); redrawSym(sym); saveDrawings(sym);
+    }
+    function onPointerDown(c, e) {
+        if (e.button !== 0 || !c.bars.length) return;
+        const pt = pointAt(c, e);
+        if (!pt) return;
+        if (tool) {
+            e.preventDefault(); e.stopPropagation();
+            const at = { t: pt.t, p: pt.p };
+            if (tool === 'hline') { addDrawing(c, { type: 'hline', p1: at }); return; }
+            if (!placing || placing.c !== c) { placing = { c, type: tool, p1: at, p2: { ...at } }; redrawSym(c.symbol); return; }
+            placing.p2 = at;
+            const d = { type: placing.type, p1: placing.p1, p2: placing.p2 };
+            placing = null;
+            addDrawing(c, d);
+            return;
+        }
+        const h = hitTest(c, pt.x, pt.y);
+        if (!h) { if (sel) { sel = null; toolState(); redrawSym(); } return; }
+        e.preventDefault(); e.stopPropagation();
+        sel = { symbol: c.symbol, id: h.d.id };
+        toolState();
+        dragging = { c, d: h.d, part: h.part, start: pt, orig: JSON.parse(JSON.stringify(h.d)), moved: false, id: e.pointerId };
+        freeze(c, true);
+        redrawSym();
+    }
+    function onPointerMove(c, e) {
+        if (dragging) return;
+        if (placing && placing.c === c) {
+            const pt = pointAt(c, e);
+            if (pt) { placing.p2 = { t: pt.t, p: pt.p }; c.draw.update(); }
+            return;
+        }
+        if (!tool) {
+            const pt = pointAt(c, e), h = pt && hitTest(c, pt.x, pt.y);
+            c.body.dataset.grab = h ? '1' : '';
+        }
+    }
+    document.addEventListener('pointermove', (e) => {
+        const g = dragging;
+        if (!g || e.pointerId !== g.id) return;
+        const pt = pointAt(g.c, e);
+        if (!pt) return;
+        g.moved = true;
+        const d = g.d, o = g.orig, c = g.c;
+        // A move goes by candles (not seconds), so a drawing keeps its shape across nights and weekends.
+        const shift = (q) => ({ t: lTime(c, tLogical(c, q.t) + pt.l - g.start.l), p: q.p + pt.p - g.start.p });
+        if (g.part === 'body') { d.p1 = shift(o.p1); if (o.p2) d.p2 = shift(o.p2); }
+        else if (g.part === 'p1') d.p1 = { t: pt.t, p: pt.p };
+        else if (g.part === 'p2') d.p2 = { t: pt.t, p: pt.p };
+        else if (g.part === 'c12') { d.p1 = { ...d.p1, t: pt.t }; d.p2 = { ...d.p2, p: pt.p }; }
+        else if (g.part === 'c21') { d.p2 = { ...d.p2, t: pt.t }; d.p1 = { ...d.p1, p: pt.p }; }
+        redrawSym(c.symbol);
+    });
+    const endDrag = () => {
+        const g = dragging;
+        if (!g) return;
+        dragging = null;
+        freeze(g.c, !!tool);
+        if (g.moved) saveDrawings(g.c.symbol);
+    };
+    document.addEventListener('pointerup', endDrag);
+    document.addEventListener('pointercancel', endDrag);
+    document.addEventListener('keydown', (e) => {
+        if (!root || !visible() || e.target.closest('input, select, textarea')) return;
+        if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSelected(); }
+        else if (e.key === 'Escape' && (tool || sel || placing)) { sel = null; setTool(''); }
+    });
 
     // ------------------------------------------------------------ layout
     function dims(n) {
@@ -176,6 +429,12 @@
         c.vol = c.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
         c.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
         c.chart.subscribeCrosshairMove((p) => legend(c, p && p.time != null ? p.seriesData.get(c.series) : null));
+        c.body = body;
+        c.draw = new DrawLayer(c);
+        c.series.attachPrimitive(c.draw);
+        body.addEventListener('pointerdown', (e) => onPointerDown(c, e), true);
+        body.addEventListener('pointermove', (e) => onPointerMove(c, e));
+        if (tool) freeze(c, true);
         const inp = el.querySelector('input'), sel = el.querySelector('select');
         const fit = () => { inp.style.width = `${Math.min(18, inp.value.length * 1.2 + 1.5)}ch`; };
         fit();
@@ -186,7 +445,7 @@
             inp.value = hit.label;
             inp.title = hit.name;
             fit();
-            if (hit.symbol !== c.symbol) { c.symbol = hit.symbol; load(c, true); save(); }
+            if (hit.symbol !== c.symbol) { c.symbol = hit.symbol; placing = null; load(c, true); save(); }
         };
         inp.addEventListener('change', pick);
         inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { inp.blur(); } if (e.key === 'Escape') { inp.value = labelOf(c.symbol); fit(); inp.blur(); } });
@@ -208,6 +467,7 @@
     }
     function removeChart(c) {
         clearTimeout(c.refT);
+        if (placing && placing.c === c) placing = null;
         c.chart.remove();
         c.el.remove();
         charts = charts.filter((x) => x !== c);
@@ -454,6 +714,13 @@
                 <form class="ch-add" autocomplete="off"><input list="ch-syms" placeholder="Instrument" aria-label="Instrument to add" spellcheck="false">
                     <select aria-label="Timeframe">${tfOptions(900)}</select>
                     <button type="submit" class="ch-addbtn">${IC.plus}Add chart</button></form>
+                <div class="ch-tools" role="toolbar" aria-label="Drawing tools">
+                    <button type="button" data-tool="" aria-pressed="true" title="Pointer: select, move and reshape drawings (Esc)" aria-label="Pointer">${IC.cursor}</button>
+                    <button type="button" data-tool="trend" aria-pressed="false" title="Trend line: click its start, then its end" aria-label="Trend line">${IC.trend}</button>
+                    <button type="button" data-tool="hline" aria-pressed="false" title="Horizontal line: click a price" aria-label="Horizontal line">${IC.hline}</button>
+                    <button type="button" data-tool="rect" aria-pressed="false" title="Rectangle: click one corner, then the opposite one" aria-label="Rectangle">${IC.rect}</button>
+                    <span class="sep" aria-hidden="true"></span>
+                    <button type="button" data-tool-del disabled title="Delete the selected drawing (Delete)" aria-label="Delete the selected drawing">${IC.trash}</button></div>
                 <span class="ch-count"></span>
                 <span class="ch-feed"><i></i><span>${esc(cfg.note || '')}</span></span></div>
             <datalist id="ch-syms">${groups.map((g) => cfg.instruments.filter((i) => i.group === g)
@@ -461,6 +728,16 @@
             <div class="ch-grid"></div>
             <div class="ch-empty" hidden>No charts open. Pick an instrument and a timeframe above and press <b>Add chart</b>: they share the screen as you add more.</div>`;
         grid = root.querySelector('.ch-grid');
+        if (cfg.drawings && typeof cfg.drawings === 'object') drawings = cfg.drawings;
+        else {
+            drawLocal = true;
+            try { drawings = JSON.parse(localStorage.getItem('lc.drawings') || '{}') || {}; } catch (e) { drawings = {}; }
+        }
+        root.querySelector('.ch-tools').addEventListener('click', (e) => {
+            const t = e.target.closest('[data-tool]');
+            if (t) { setTool(t.dataset.tool === tool ? '' : t.dataset.tool); return; }
+            if (e.target.closest('[data-tool-del]')) deleteSelected();
+        });
         const form = root.querySelector('.ch-add');
         form.addEventListener('submit', (e) => {
             e.preventDefault();

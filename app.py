@@ -3797,6 +3797,36 @@ def _chart_layout(raw) -> list:
     return out[:CHART_MAX]
 
 
+# Drawings on the Charts tab (trend lines, horizontal lines, rectangles), per instrument, anchored in time and
+# price so they show on every timeframe; one list per instrument, every device.
+DRAW_TYPES = ('trend', 'hline', 'rect')
+DRAW_MAX = 60
+DRAW_ID = re.compile(r'^[A-Za-z0-9_-]{1,24}$')
+
+
+def _point(raw):
+    try:
+        t, pr = int(raw['t']), float(raw['p'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {'t': t, 'p': round(pr, 4)} if 0 < t < 4_102_444_800 and math.isfinite(pr) else None
+
+
+def _drawings(raw) -> list:
+    out = []
+    for d in raw if isinstance(raw, list) else []:
+        if not isinstance(d, dict) or d.get('type') not in DRAW_TYPES or not DRAW_ID.match(str(d.get('id', ''))):
+            continue
+        p1, p2 = _point(d.get('p1') or {}), _point(d.get('p2') or {})
+        if not p1 or (d['type'] != 'hline' and not p2):
+            continue
+        item = {'id': d['id'], 'type': d['type'], 'p1': p1}
+        if d['type'] != 'hline':
+            item['p2'] = p2
+        out.append(item)
+    return out[:DRAW_MAX]
+
+
 def chart_levels(sym: str) -> list:
     """The app's own levels for a chart: open zones (both edges), their targets and stops, and
     triggered trades' entry, stop and target."""
@@ -3834,7 +3864,26 @@ def api_charts_config():
     return jsonify(safe({'instruments': charts.instruments(), 'tfs': [{'s': s, 'label': l} for s, l in charts.TFS],
                          'layout': _chart_layout(saved) if saved is not None else CHART_DEFAULT,
                          'max': CHART_MAX, 'price': 'inr', 'tz': 'IST', 'shift': charts.SHIFT, 'day_shift': charts.SHIFT,
-                         'market_open': data.market_open(), **charts.live()}))
+                         'market_open': data.market_open(), 'drawings': store.get_json('charts:drawings', {}) or {},
+                         **charts.live()}))
+
+
+@app.route('/api/charts/drawings', methods=['POST'])
+def api_charts_drawings():
+    """One instrument's drawings, replaced: {"symbol": "IDX:13", "drawings": [{"id", "type": "trend" | "hline" | "rect",
+    "p1": {"t": seconds, "p": price}, "p2": {...}}]} (no p2 for a horizontal line). An empty list removes them."""
+    body = request.get_json(silent=True) or {}
+    sym = str(body.get('symbol') or '').upper()
+    if not charts.known(sym):
+        return jsonify({'error': 'unknown instrument'}), 400
+    drawings = _drawings(body.get('drawings'))
+    allm = store.get_json('charts:drawings', {}) or {}
+    if drawings:
+        allm[sym] = drawings
+    else:
+        allm.pop(sym, None)
+    store.set_json('charts:drawings', allm)
+    return jsonify({'ok': True, 'symbol': sym, 'drawings': drawings})
 
 
 @app.route('/api/charts/layout', methods=['POST'])

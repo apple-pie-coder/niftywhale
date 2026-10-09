@@ -482,20 +482,21 @@ Opens from any table row, funnel list, tuner result or search result. From top t
   letter (e.g. **H 337.40**), and the tooltip underlines it. Turn it off for a free crosshair
   that reads any price. On by default.
 - **Indicators** (gear): the indicator settings (4.11).
-- **Zoom, move and stretch** (every candle chart):
-  - **Drag the chart** to move it: sideways through time, up and down through price. A mostly sideways drag moves time only.
-  - **Drag the price scale** (the prices on the right) up to stretch the candles taller, down to squeeze them.
-  - **Drag the time axis** (the dates along the bottom) to show fewer or more candles.
-  - **Mouse wheel:** zooms time around the pointer, or the price over the price scale. In the stock panel it takes Ctrl (or a
-    trackpad pinch), so the wheel still scrolls the panel; in the expanded chart it always zooms.
+- **Zoom, move and stretch** (every chart, drawn with the Charts tab's library, TradingView's Lightweight Charts):
+  - **Mouse wheel** over a chart zooms it (around the pointer); elsewhere the wheel scrolls the page or the panel as usual.
+    A trackpad pinch zooms too.
+  - **Drag the chart** to move it through time; **drag the price scale** (right) to stretch or squeeze the candles, **drag the
+    time axis** (bottom) to show more or fewer candles.
   - **− / + / Fit** buttons, or the **−**, **+** and **0** keys. **Double-click** the chart (or **Fit**) to fit everything again.
-  - The price scale fits the visible candles until you move or stretch it. Overlays, markers and indicators follow the zoom;
-    cumulative delta is summed over the whole series, so a zoomed-in window doesn't restart it. A zoom pinned to the latest
-    candle stays pinned as new candles arrive, and resets when you open another stock, timeframe or range.
-  - On a phone, sideways swipes move the chart in the stock panel and up-and-down swipes scroll the panel; in the expanded
-    chart every gesture moves the chart.
-- **Price scale:** round prices on the right with faint gridlines, and the current price in a tag (green if the last candle closed
-  up, red if down) with a dashed line across the chart. Scale labels make way for the level labels (Target, Stop and the rest).
+  - The zoom stays while the same chart shows (a live price moves only the forming candle) and fits again when you open another
+    stock, timeframe or range.
+  - On a phone: pinch to zoom, sideways swipes move the chart, up-and-down swipes scroll the panel; in the expanded chart
+    every gesture moves the chart.
+  - The Performance curve, the Demo balance curve and an option chain's day lines zoom with the wheel too; drag to move,
+    double-click to see all of it again.
+- **Price scale:** prices on the right with faint gridlines, and the current price in a tag (green if the last candle closed
+  up, red if down) with a dotted line across the chart. Level labels (Target, Stop and the rest) sit at the right edge of the
+  chart.
 - **Expand** (or press **F**): the chart in a large window over the page, redrawn at its size (not stretched) and again whenever
   the window resizes or a phone rotates. All the chart controls come along. The **×**, **F**, **Esc** or a click outside closes it.
 
@@ -670,6 +671,18 @@ setup stronger; a pattern outside the zone means little.
 **Pattern alerts** (sidebar switch, **off** by default): sends a Telegram message for each new
 15-minute pattern that forms *inside a zone*. It needs Telegram alerts on. Patterns outside the
 zone are only logged, never sent.
+
+#### Charts tab: drawing
+
+The toolbar beside **Add chart** draws on any chart: **trend line** (click its start, then its end), **horizontal line** (click
+a price; its price shows in a tag at the right) and **rectangle** (click one corner, then the opposite one). A preview follows
+the pointer between the two clicks; the tool goes back to the pointer when the drawing is placed.
+
+- With the **pointer**, click a drawing to select it: drag it to move it, or drag a handle (a trend line's ends, a rectangle's
+  corners) to reshape it. **Delete** (or the bin) removes it; **Esc** lets go of it, or of a tool.
+- Drawings belong to the instrument and sit at their time and price, so they show on every timeframe of it and on every
+  chart of it at once.
+- They are saved with the app (`POST /api/charts/drawings`), so every device shows them.
 
 ### 4.10 Real-time data with Dhan
 
@@ -3446,6 +3459,36 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
     }
   ],
   "ok": true
+}
+```
+
+#### `POST /api/charts/drawings`
+
+Replaces one instrument's drawings on the Charts tab (an empty list removes them). Points are `{t, p}`: the chart's time in
+seconds (IST clock time) and a price; a horizontal line has no `p2`. Up to 60 an instrument; `GET /api/charts/config` carries
+them all as `drawings`.
+
+**Body:** `symbol`, `drawings`: a list of `{id, type: "trend" | "hline" | "rect", p1, p2}`
+
+```sh
+curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"symbol": "IDX:13", "drawings": [{"id": "a1", "type": "hline", "p1": {"t": 1791545100, "p": 22500}}]}' http://127.0.0.1:5058/api/charts/drawings
+```
+
+```json
+{
+  "drawings": [
+    {
+      "id": "a1",
+      "p1": {
+        "p": 22500.0,
+        "t": 1791545100
+      },
+      "type": "hline"
+    }
+  ],
+  "ok": true,
+  "symbol": "IDX:13"
 }
 ```
 
