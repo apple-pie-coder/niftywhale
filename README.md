@@ -1549,6 +1549,13 @@ Use backtests to compare rules, not as a forecast.
 
 The **Lab** panel shows what history is on disk and the latest jobs, with buttons for **Run backtest now**, **Tune now** and **Send weekly report**.
 
+**Telegram job alerts** (Lab settings → Job alerts, on by default):
+- 15 minutes before each scheduled run (the nightly update, Saturday's tuning): what runs, when, and when it should be done.
+- When a job starts (scheduled or started by you): when it should end, from the median of the last three runs of its kind
+  (a first run has no estimate yet), and whether its heavy work waits for the market to close.
+- When it ends: how long it took and what it found, one line each (or why it failed).
+The weekly report is its own message and gets no alerts.
+
 Its **Coming up** list shows what the lab runs next, soonest first, with the day, the time (IST) and a countdown:
 jobs already queued, then the nightly update, Saturday's tuning and the weekly report (when it is on). Each says
 what may change it:

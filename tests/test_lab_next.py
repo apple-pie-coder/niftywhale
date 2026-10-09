@@ -85,3 +85,56 @@ class Upcoming(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Alerts(unittest.TestCase):
+    """Telegram about the lab's jobs: a heads-up before a scheduled run, then start (with an estimate) and end."""
+    def setUp(self):
+        from niftywhale import store
+        self.store = store
+        store.init()
+        with store.connect() as c:
+            c.execute('DELETE FROM lab_jobs')
+        store.set_settings({'lab_alerts': '1'})
+        store.set_json('lab:headsup', {})
+        store.set_json('lab:schedule', {'nightly': '2026-10-09'})
+        store.set_json('lab:bootstrapped', True)
+        # Two nightly runs that took 40 and 50 minutes: the estimate is their middle.
+        for mins in (40, 50):
+            jid = store.add_job('nightly')
+            store.next_job()
+            store.update_job(jid, status='done', started='2026-10-08T20:30:00', finished=f'2026-10-08T{21 + (30 + mins) // 60 - 1:02d}:{(30 + mins) % 60:02d}:00')
+
+    def test_heads_up_once_before_the_run(self):
+        from unittest import mock
+        sent = []
+        with mock.patch.object(lab, 'tg', side_effect=lambda t: sent.append(t) or True):
+            self.assertEqual(lab.heads_up(at('2026-10-12T20:00')), [])          # 30 min early: not yet
+            keys = lab.heads_up(at('2026-10-12T20:20'))
+            self.assertEqual(keys, ['nightly:2026-10-12T20:30+05:30'])
+            self.assertEqual(lab.heads_up(at('2026-10-12T20:22')), [])          # once
+        self.assertIn('Nightly update starts at 20:30', sent[0])
+        self.assertIn('done around 21:15', sent[0])                             # 20:30 + 45 min
+
+    def test_start_and_end(self):
+        from unittest import mock
+        jid = self.store.add_job('nightly')
+        job = self.store.next_job()
+        sent = []
+        with mock.patch.object(lab, 'tg', side_effect=lambda t: sent.append(t) or True), \
+             mock.patch.object(lab.data, 'now_ist', return_value=at('2026-10-12T20:30')):
+            lab.job_alert(job, 'start')
+            lab.job_alert(job, 'done', 'history: 10 new candles · swing: 3 trades, -1.0R', 2700)
+            lab.job_alert(job, 'error', 'Dhan said no', 65)
+            self.assertIsNone(lab.job_alert({'id': jid, 'kind': 'report'}, 'start'))   # the report is its own message
+        self.assertIn('started', sent[0]); self.assertIn('done around 21:15', sent[0])
+        self.assertIn('finished in 45m', sent[1]); self.assertIn('· swing: 3 trades, -1.0R', sent[1])
+        self.assertIn('failed after 1m', sent[2])
+
+    def test_off(self):
+        from unittest import mock
+        self.store.set_settings({'lab_alerts': '0'})
+        with mock.patch.object(lab, 'tg') as tg:
+            self.assertEqual(lab.heads_up(at('2026-10-12T20:20')), [])
+            self.assertIsNone(lab.job_alert({'id': 1, 'kind': 'nightly'}, 'start'))
+        tg.assert_not_called()
