@@ -708,6 +708,8 @@
     .ac-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; background: var(--good); vertical-align: 1px; }
     .ac-dot[data-ok="0"] { background: var(--bad); }
     .ac-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .ac-inline .btn { width: auto; flex: none; padding: 9px 16px; font-size: 14px; }
+    .ac-confirm .apps-foot { margin-bottom: 8px; color: var(--warn); font-weight: 600; }
     .ac-inline select { font: inherit; font-size: 14px; padding: 8px 9px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
         background: var(--surface); color: var(--ink); }
     .ac-inline input { flex: 1 1 160px; min-width: 0; font: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--line-strong);
@@ -778,7 +780,10 @@
     .ask-scrim[hidden], .ask[hidden] { display: none; }
     .ask-title { font-size: 16px; font-weight: 700; line-height: 1.3; }
     .ask-body { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
-    .ask-pw { width: 100%; margin-top: 10px; }
+    .ask-pw { width: 100%; margin-top: 10px; font: inherit; font-size: 14px; padding: 10px 12px; color: var(--ink);
+              background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
+    .ask-pw:focus, .ac-inline input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    @media (max-width: 520px) { .ask-pw { font-size: 16px; } }
     .ask-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .ask-acts .btn { width: auto; min-width: 92px; }
     @keyframes ask-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } to { opacity: 1; transform: translate(-50%, -50%); } }
@@ -791,16 +796,55 @@
     .drop-list li:hover { background: var(--sunk); }
     .drop-list li span { color: var(--ink-3); }
 
-    /* ------------------------------------------------------------- tuner */
-    .tuner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 22px; }
-    @media (max-width: 860px) { .tuner { grid-template-columns: minmax(0, 1fr); } }
-    .knob { padding: 10px 0; border-bottom: 1px solid var(--line); }
-    .knob-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 620; }
-    .knob-val { font-variant-numeric: tabular-nums; color: var(--accent); }
-    .knob-val[data-changed="1"]::before { content: '● '; color: var(--warn); }
-    .knob input[type="range"] { width: 100%; accent-color: var(--accent); margin: 6px 0 2px; }
-    .knob small { color: var(--ink-3); font-size: 11.5px; }
-    .tuner-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    /* ------------------------------------------------------------- tuner
+       Settings in groups (a filter bar over them), each a card: its value, a reset when changed, a slider with the
+       saved value marked (or chips for a gate's few choices), its range and what it does. The result stays in view
+       beside them; the actions sit in a bar at the foot. */
+    .tz { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 20px; align-items: start; }
+    @media (max-width: 900px) { .tz { grid-template-columns: minmax(0, 1fr); } }
+    .tz-groups { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tz-groups button { font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: var(--r-pill); cursor: pointer;
+                        border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); }
+    .tz-groups button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .tz-groups button b { font-weight: 750; margin-left: 4px; color: var(--warn); }
+    .tz-groups button[aria-pressed="true"] b { color: inherit; }
+    .tz-group h3 { margin: 16px 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+    .tz-group:first-child h3 { margin-top: 0; }
+    .tz-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+    .knob { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 12px 12px 10px; display: grid; gap: 6px;
+            align-content: start; }
+    .knob[data-changed="1"] { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn) inset; }
+    .knob-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .knob-top label { font-size: 13px; font-weight: 650; color: var(--ink); line-height: 1.3; }
+    .knob-val { font-size: 15px; font-weight: 750; font-variant-numeric: tabular-nums; color: var(--accent); white-space: nowrap; }
+    .knob-val[data-off="1"] { color: var(--ink-3); font-weight: 600; }
+    .knob-reset { border: 0; background: none; color: var(--warn); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer; padding: 0; }
+    .knob-reset[hidden] { display: none; }
+    .knob-track { position: relative; padding: 2px 0; }
+    .knob input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; display: block; }
+    .knob-saved { position: absolute; top: -3px; width: 2px; height: 8px; margin-left: -1px; border-radius: 1px; background: var(--ink-3); pointer-events: none; }
+    .knob-range { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+    .knob-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .knob-chips button { font: inherit; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: var(--r-pill); cursor: pointer;
+                         border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); }
+    .knob-chips button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+    .knob-chips button[data-saved="1"]::after { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--ink-3); margin-left: 5px; vertical-align: 2px; }
+    .knob small { color: var(--ink-3); font-size: 11.5px; line-height: 1.4; }
+    .tz-side { position: sticky; top: 0; display: grid; gap: 12px; }
+    .tz-result { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); padding: 14px; display: grid; gap: 10px; }
+    .tz-big { display: flex; align-items: baseline; gap: 10px; }
+    .tz-big b { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .tz-big span { color: var(--ink-3); font-size: 13px; }
+    .tz-big .rx { font-size: 13px; font-weight: 700; }
+    .tz-side .bar-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 34px; }
+    .tz-side .bar-row > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tz-side .drop-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+    .tz-bar { position: sticky; bottom: -18px; margin: 16px -18px -18px; padding: 12px 18px; display: flex; gap: 8px; align-items: center;
+              flex-wrap: wrap; border-top: 1px solid var(--line); background: var(--surface); z-index: 2; }
+    .tz-bar .tz-n { font-size: 13px; color: var(--ink-2); margin-right: auto; }
+    .tz-bar .tz-n b { color: var(--warn); }
+    .tz-bar .btn { width: auto; }
+    @media (max-width: 1080px) { .tz-bar { bottom: -14px; margin: 14px -14px -14px; padding: 10px 14px; } }
     .bars { display: flex; flex-direction: column; gap: 5px; }
     .bar-row { display: grid; grid-template-columns: 150px 1fr 38px; gap: 8px; align-items: center; font-size: 12px; }
     .bar-row .track { height: 8px; background: var(--sunk); border-radius: 4px; overflow: hidden; }
@@ -811,6 +855,7 @@
     .diff .add { background: var(--good-soft); color: var(--good); }
     .diff .del { background: var(--bad-soft); color: var(--bad); text-decoration: line-through; }
     .tuner-status { font-size: 12px; color: var(--ink-3); min-height: 1.5em; }
+    .tz-links { font-size: 12.5px; }
 
     /* ------------------------------------------- drawer: chart + tools */
     .tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -8288,54 +8333,117 @@ function tunerCtx(intra) {
             whatif: '/api/whatif', save: '/api/rules', scan: '/api/scan', title: 'Rule tuner', guide: '/docs#47-rule-tuner',
             sub: `What-if on the ${uniLabel(S.settings.universe)} candles already downloaded. Nothing changes until you press Save.` };
 }
+// The tuner's groups (a key in no group lands in Other) and how a gate's few choices read.
+const TZ_GROUPS = [
+    ['screen', 'Screen', ['min_avg_volume', 'min_atr_pct']],
+    ['structure', 'Structure', ['swing_len', 'displacement_atr', 'bos_lookback']],
+    ['entry', 'Entry', ['max_discount', 'min_target_pct', 'pre_min_rr', 'min_rr', 'max_rr', 'min_zone_age']],
+    ['market', 'Market context', ['max_market_run', 'min_breadth', 'weekly_align', 'min_rs_nifty', 'min_rs_sector']],
+    ['trigger', 'Trigger and flows', ['min_choch_rvol', 'min_close_loc', 'oi_align', 'deliv_align', 'results_gap']],
+];
+const TZ_CHOICE = { weekly_align: { 1: 'On' }, deliv_align: { 1: 'On' }, oi_align: { 1: 'Not against', 2: 'Must agree' } };
+let tzGroup = 'all';
+const tzLabel = (k, v) => (TZ_CHOICE[k] && TZ_CHOICE[k][v]) || fmtRule(k, v, TU.tunable);
+const tzChanged = (k) => Math.abs(tunerVals[k] - TU.rules[k]) > 1e-9;
+
 function openTuner(intra) {
     TU = tunerCtx(!!intra);
     tunerVals = {};
+    tzGroup = 'all';
     Object.keys(TU.tunable).forEach((k) => { tunerVals[k] = TU.rules[k]; });
     openModal(TU.title, TU.sub,
-        `<div class="tuner"><div id="t-knobs"></div>
-            <div><div class="tuner-status" id="t-status"></div>
-                 <div class="bars" id="t-bars"></div>
-                 <div class="label" style="margin-top:16px">Setups under these rules</div>
-                 <div class="diff" id="t-diff"></div>
-                 <ul class="drop-list" id="t-setups"></ul></div></div>`, true);
-    renderKnobs();
-    runWhatIf();
-}
-
-function renderKnobs() {
-    const T = TU.tunable, keys = TU.order || Object.keys(T);
-    $('t-knobs').innerHTML = keys.map((k) => `<div class="knob">
-            <div class="knob-top"><label for="k-${k}">${esc(T[k].label)}</label>
-                <span class="knob-val" id="kv-${k}"></span></div>
-            <input type="range" id="k-${k}" data-k="${k}" min="${T[k].min}" max="${T[k].max}" step="${T[k].step}" value="${tunerVals[k]}">
-            <small>${esc(T[k].help)}</small></div>`).join('') +
-        `<div class="tuner-actions">
-            <button class="btn btn-primary" id="t-save" type="button" style="width:auto">Save as my rules</button>
-            <button class="btn" id="t-saverun" type="button">Save &amp; rescan</button>
+        `<div class="tz"><div><div class="tz-groups" id="t-groups" role="group" aria-label="Show"></div><div id="t-knobs"></div></div>
+            <aside class="tz-side"><div class="tz-result">
+                <div class="tz-big" id="t-big"><b>…</b></div>
+                <div class="tuner-status" id="t-status"></div>
+                <div class="bars" id="t-bars"></div>
+                <div><div class="label">Against the last scan</div><div class="diff" id="t-diff"></div></div></div>
+                <ul class="drop-list" id="t-setups"></ul>
+                <p class="tz-links"><a class="more" href="${TU.guide}" target="_blank" rel="noopener">How the tuner works</a> ·
+                    <a class="more" href="/docs#11-the-rules-in-detail" target="_blank" rel="noopener">Tuning tips</a></p></aside></div>
+        <div class="tz-bar"><span class="tz-n" id="t-n"></span>
             <button class="btn" id="t-saved" type="button">Back to saved</button>
-            <button class="btn" id="t-env" type="button">Protocol defaults</button></div>
-         <p style="margin-top:10px"><a class="more" href="${TU.guide}" target="_blank" rel="noopener">How the tuner works</a> ·
-            <a class="more" href="/docs#11-the-rules-in-detail" target="_blank" rel="noopener">Tuning tips</a></p>`;
-    Object.keys(T).forEach((k) => {
-        knobLabel(k);
-        $('k-' + k).addEventListener('input', (e) => {
-            tunerVals[k] = +e.target.value;
-            knobLabel(k);
-            clearTimeout(tunerTimer); tunerTimer = setTimeout(runWhatIf, 300);
-        });
-    });
-    const load = (src) => { Object.keys(T).forEach((k) => { tunerVals[k] = src[k]; }); renderKnobs(); runWhatIf(); };
+            <button class="btn" id="t-env" type="button">Protocol defaults</button>
+            <button class="btn" id="t-saverun" type="button">Save &amp; rescan</button>
+            <button class="btn btn-primary" id="t-save" type="button">Save as my rules</button></div>`, true);
+    const load = (src) => { Object.keys(TU.tunable).forEach((k) => { tunerVals[k] = src[k]; }); renderKnobs(); runWhatIf(); };
     $('t-saved').addEventListener('click', () => load(TU.rules));
     $('t-env').addEventListener('click', () => load(TU.env));
     $('t-save').addEventListener('click', () => saveRules(false));
     $('t-saverun').addEventListener('click', () => saveRules(true));
+    $('t-groups').addEventListener('click', (e) => {
+        const g = e.target.closest('[data-tzg]');
+        if (g) { tzGroup = g.dataset.tzg; renderKnobs(); }
+    });
+    renderKnobs();
+    runWhatIf();
+}
+
+function tzGroupsOf() {
+    const keys = TU.order || Object.keys(TU.tunable), placed = new Set();
+    const groups = TZ_GROUPS.map(([id, name, ks]) => { const mine = ks.filter((k) => keys.includes(k)); mine.forEach((k) => placed.add(k)); return [id, name, mine]; });
+    groups.push(['other', 'Other', keys.filter((k) => !placed.has(k))]);
+    return groups.filter((g) => g[2].length);
+}
+
+function knobHtml(k) {
+    const t = TU.tunable[k], v = tunerVals[k], saved = TU.rules[k], ch = tzChanged(k);
+    const top = `<div class="knob-top"><label for="k-${k}">${esc(t.label)}</label>
+        <span><span class="knob-val" id="kv-${k}" data-off="${t.off != null && +v === t.off ? 1 : 0}">${esc(tzLabel(k, v))}</span></span></div>`;
+    let ctl;
+    if (t.values && t.values.length <= 9) {
+        const vals = [...t.values].sort((a, b) => (a === t.off ? -1 : b === t.off ? 1 : 0));
+        ctl = `<div class="knob-chips" role="group" aria-label="${esc(t.label)}">${vals.map((x) =>
+            `<button type="button" data-kc="${k}" data-v="${x}" aria-pressed="${+x === +v}"${+x === +saved ? ' data-saved="1" title="Saved"' : ''}>${esc(tzLabel(k, x))}</button>`).join('')}</div>`;
+    } else {
+        const pos = Math.max(0, Math.min(100, (saved - t.min) / ((t.max - t.min) || 1) * 100));
+        ctl = `<div class="knob-track"><input type="range" id="k-${k}" data-k="${k}" min="${t.min}" max="${t.max}" step="${t.step}" value="${v}">
+            <i class="knob-saved" style="left:${pos}%" title="Saved: ${esc(fmtRule(k, saved, TU.tunable))}"></i></div>
+            <div class="knob-range"><span>${esc(fmtRule(k, t.min, TU.tunable))}</span><span>${esc(fmtRule(k, t.max, TU.tunable))}</span></div>`;
+    }
+    return `<div class="knob" data-changed="${ch ? 1 : 0}" id="kn-${k}">${top}${ctl}
+        <small>${esc(t.help)}</small><button class="knob-reset" type="button" data-kr="${k}"${ch ? '' : ' hidden'}>Back to ${esc(tzLabel(k, saved))}</button></div>`;
+}
+
+function renderKnobs() {
+    const groups = tzGroupsOf(), changed = Object.keys(TU.tunable).filter(tzChanged);
+    $('t-groups').innerHTML = [['all', 'All', Object.keys(TU.tunable)], ...groups].map(([id, name, ks]) => {
+        const n = ks.filter(tzChanged).length;
+        return `<button type="button" data-tzg="${id}" aria-pressed="${id === tzGroup}">${esc(name)}${n ? `<b>${n}</b>` : ''}</button>`;
+    }).join('');
+    $('t-knobs').innerHTML = groups.filter(([id]) => tzGroup === 'all' || id === tzGroup).map(([id, name, ks]) =>
+        `<div class="tz-group"><h3>${esc(name)}</h3><div class="tz-cards">${ks.map(knobHtml).join('')}</div></div>`).join('');
+    $('t-n').innerHTML = changed.length ? `<b>${changed.length}</b> change${changed.length === 1 ? '' : 's'} from your saved rules` : 'Your saved rules';
+    const box = $('t-knobs');
+    box.querySelectorAll('input[type="range"]').forEach((el) => el.addEventListener('input', (e) => tzSet(e.target.dataset.k, +e.target.value, false)));
+    box.querySelectorAll('[data-kc]').forEach((el) => el.addEventListener('click', () => tzSet(el.dataset.kc, +el.dataset.v, true)));
+    box.querySelectorAll('[data-kr]').forEach((el) => el.addEventListener('click', () => tzSet(el.dataset.kr, TU.rules[el.dataset.kr], true)));
+}
+
+// One value changed: the card (and the counts) update in place, so a dragged slider keeps its grip.
+function tzSet(k, v, redraw) {
+    tunerVals[k] = v;
+    if (redraw) renderKnobs();
+    else {
+        const t = TU.tunable[k], el = $('kv-' + k), card = $('kn-' + k), ch = tzChanged(k);
+        el.textContent = tzLabel(k, v);
+        el.dataset.off = t.off != null && +v === t.off ? '1' : '0';
+        card.dataset.changed = ch ? '1' : '0';
+        card.querySelector('[data-kr]').hidden = !ch;
+        const n = Object.keys(TU.tunable).filter(tzChanged).length;
+        $('t-n').innerHTML = n ? `<b>${n}</b> change${n === 1 ? '' : 's'} from your saved rules` : 'Your saved rules';
+        document.querySelectorAll('#t-groups [data-tzg]').forEach((b) => {
+            const ks = b.dataset.tzg === 'all' ? Object.keys(TU.tunable) : (tzGroupsOf().find((g) => g[0] === b.dataset.tzg) || [0, 0, []])[2];
+            const c = ks.filter(tzChanged).length, tag = b.querySelector('b');
+            if (c && tag) tag.textContent = c; else if (c) b.insertAdjacentHTML('beforeend', `<b>${c}</b>`); else if (tag) tag.remove();
+        });
+    }
+    clearTimeout(tunerTimer); tunerTimer = setTimeout(runWhatIf, 300);
 }
 
 function knobLabel(k) {
     const el = $('kv-' + k);
-    el.textContent = fmtRule(k, tunerVals[k], TU.tunable);
-    el.dataset.changed = Math.abs(tunerVals[k] - TU.rules[k]) > 1e-9 ? '1' : '0';
+    if (el) el.textContent = tzLabel(k, tunerVals[k]);
 }
 
 async function runWhatIf() {
@@ -8351,13 +8459,15 @@ async function runWhatIf() {
         const added = [...now].filter((x) => !was.has(x)), removed = [...was].filter((x) => !now.has(x));
         $('t-diff').innerHTML = (added.length || removed.length)
             ? added.map((x) => `<span class="add">+ ${esc(x)}</span>`).join('') + removed.map((x) => `<span class="del">${esc(x)}</span>`).join('')
-            : '<span class="muted">Same setups as the last scan.</span>';
+            : '<span class="muted">The same stocks.</span>';
         $('t-setups').innerHTML = r.setups.length ? r.setups.map((x) => `<li data-sym="${esc(x.symbol)}" data-whatif="1"${TU.intra ? ' data-intra="1"' : ''}>
             <b>${esc(x.symbol)}${sideTag(x.side)}</b><span>${x.in_zone ? 'in zone' : pct(x.distance_pct) + (x.side === 'short' ? ' below' : ' above') + ' zone'} · R:R ${rr(x.rr)}${
             x.target_label ? ' to ' + esc(x.target_label.toLowerCase()) : ''} · score ${x.score}</span></li>`).join('')
             : '<li style="cursor:default"><b>None</b><span>No stock passes every step under these rules.</span></li>';
-        $('t-status').textContent = `${r.setups.length} setup(s) from ${f.data} stocks · ${r.universe_label || r.universe}` +
-            (r.as_of ? ' · candles as of ' + tm(r.as_of) : '');
+        const d = r.setups.length - TU.candidates.length;
+        $('t-big').innerHTML = `<b>${r.setups.length}</b><span>setup${r.setups.length === 1 ? '' : 's'}</span>`
+            + (d ? `<span class="rx" data-dir="${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : '−'}${Math.abs(d)} vs the last scan</span>` : '<span>same as the last scan</span>');
+        $('t-status').textContent = `from ${f.data} stocks · ${r.universe_label || r.universe}` + (r.as_of ? ' · candles as of ' + tm(r.as_of) : '');
     } catch (e) {
         if (token === tunerToken) $('t-status').textContent = 'Could not re-screen: ' + e.message;
     }

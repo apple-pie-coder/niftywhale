@@ -308,6 +308,16 @@
 .tmgr-note { font-size: 12.5px; color: var(--ink-3); margin: 0; }
 :root[data-style="classic"] .tmgr-card, :root[data-style="classic"] .tmgr-prev { border-radius: 3px; }
 
+/* Scrollbars in the theme's colours on every page and in every palette: thin, the thumb a little stronger than
+   the lines (rounded in Glass, square in Classic). Firefox and today's Chrome read scrollbar-color; Safari reads
+   the ::-webkit-scrollbar rules. A bar a page hides (scrollbar-width: none) stays hidden. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background-color: var(--line-strong); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--ink-3); }
+:root[data-style="classic"] ::-webkit-scrollbar-thumb { border-radius: 2px; }
+
 /* The switch (NWTheme.control): three buttons in a pill, the chosen one raised. */
 .theme-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--line); }
 .theme-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: none;
