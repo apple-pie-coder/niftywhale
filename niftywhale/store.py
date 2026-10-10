@@ -7,12 +7,15 @@ watcher (Step 9): the screen writes it, the watcher reads it every 15
 minutes and moves it along watching -> tapped -> triggered / rejected.
 """
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from niftywhale import hub
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.getenv('DB_PATH', 'var/niftywhale.db')
 
@@ -248,6 +251,9 @@ def init() -> None:
         # Change counters for the page's WebSocket (hub.py): a trigger per shown table, so a write from
         # any process (the lab's container too) tells open pages which panel to load again.
         hub.install_triggers(c)
+    n = seal_stored()                                      # secrets kept before the key existed
+    if n:
+        logger.info(f'Encrypted {n} secret(s) stored in plain text')
 
 
 def _now() -> str:
@@ -296,15 +302,79 @@ def settings() -> Dict[str, str]:
     return out
 
 
+# ---------------------------------------------------------------- secrets at rest
+# The Dhan token, PIN and TOTP secret (which together open the broker account, orders included), the
+# Telegram bot token and the sign-in's own authenticator key are kept encrypted (Fernet) under a key
+# that lives outside the database: a Docker secret, mounted read-only (README, Secrets at rest). A copy
+# of the database or a backup then holds none of them. Without the key file they are kept as before.
+SEALED = 'enc1:'
+KEY_FILE = os.getenv('NIFTYWHALE_KEY_FILE', '/run/secrets/niftywhale_key')
+_key = {'loaded': False, 'fernet': None}
+
+
+def _fernet():
+    if not _key['loaded']:
+        _key['loaded'] = True
+        try:
+            with open(KEY_FILE, 'rb') as f:
+                raw = f.read().strip()
+            from cryptography.fernet import Fernet
+            _key['fernet'] = Fernet(raw)
+        except FileNotFoundError:
+            logger.warning(f'No key file at {KEY_FILE}: secrets are stored unencrypted')
+        except Exception as e:                      # a damaged key: say so, never crash the app over it
+            logger.error(f'Secrets key at {KEY_FILE} unusable ({type(e).__name__}): secrets are stored unencrypted')
+    return _key['fernet']
+
+
+def seal(value: Optional[str]) -> Optional[str]:
+    """`value` encrypted, if there is a key (and it is not empty or sealed already)."""
+    f = _fernet()
+    if not value or not f or value.startswith(SEALED):
+        return value
+    return SEALED + f.encrypt(value.encode()).decode()
+
+
+def unseal(value: Optional[str]) -> Optional[str]:
+    """A sealed value decrypted; a plain one as it is. None when it cannot be read (no key, or another
+    key): the secret has to be entered again, which beats using garbage."""
+    if not value or not value.startswith(SEALED):
+        return value
+    f = _fernet()
+    if not f:
+        logger.error('A secret is encrypted but there is no key file: enter it again')
+        return None
+    try:
+        return f.decrypt(value[len(SEALED):].encode()).decode()
+    except Exception:
+        logger.error('A secret could not be decrypted with this key: enter it again')
+        return None
+
+
+def seal_stored() -> int:
+    """Encrypt the secrets still stored in plain text (from before the key existed). Returns how many."""
+    if not _fernet():
+        return 0
+    with connect() as c:
+        rows = c.execute("SELECT key, value FROM settings WHERE key LIKE 'secret:%' AND value != '' AND value NOT LIKE ?",
+                         (SEALED + '%',)).fetchall()
+        for r in rows:
+            c.execute('UPDATE settings SET value = ? WHERE key = ?', (seal(r['value']), r['key']))
+    return len(rows)
+
+
 def get_kv(key: str) -> Optional[str]:
     """A raw value from the settings table, for keys the dashboard never reads
-    back (like the Dhan token)."""
+    back (like the Dhan token). A 'secret:' key is decrypted (unseal)."""
     with connect() as c:
         row = c.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
-    return row['value'] if row and row['value'] else None
+    value = row['value'] if row and row['value'] else None
+    return (unseal(value) or None) if key.startswith('secret:') else value
 
 
 def set_kv(key: str, value: str) -> None:
+    if key.startswith('secret:'):
+        value = seal(value)
     with connect() as c:
         c.execute('INSERT INTO settings (key, value) VALUES (?, ?) '
                   'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
@@ -1427,6 +1497,32 @@ def get_json(key: str, default: Any = None) -> Any:
 
 def set_json(key: str, value: Any) -> None:
     set_kv(key, json.dumps(value))
+
+
+def update_json(key: str, fn: Callable[[Any], Any], default: Any = None) -> Any:
+    """Read, change and write one JSON setting as one step, across processes (the app and the lab
+    write the autopilot's state): `fn` gets the current value and returns the new one. SQLite's
+    IMMEDIATE transaction holds the write lock from the read to the write, so a change made in
+    between cannot be lost. Returns the new value."""
+    c = sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
+    try:
+        c.execute('BEGIN IMMEDIATE')
+        row = c.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
+        try:
+            cur = json.loads(row[0]) if row and row[0] else default
+        except ValueError:
+            cur = default
+        new = fn(cur)
+        c.execute('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+                  (key, json.dumps(new)))
+        c.execute('COMMIT')
+        return new
+    except BaseException:
+        if c.in_transaction:
+            c.execute('ROLLBACK')
+        raise
+    finally:
+        c.close()
 
 
 def live_trades(mode: str) -> List[Dict[str, Any]]:

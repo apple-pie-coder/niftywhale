@@ -59,17 +59,57 @@ DEFAULT_POLICY: Dict[str, Any] = {
 }
 
 
+# What each policy value may be. These are the autopilot's safety gates (how much evidence a change
+# needs, how long it is tested, when it is rolled back or paused) and the size of its search: out of
+# range, one saved value could promote rules on no evidence, never roll back, or make the tuner's
+# grid() loop for hours. Anything outside is clamped; anything not a finite number keeps the default.
+POLICY_RANGES: Dict[str, Tuple[float, float]] = {
+    'max_steps': (1, 6), 'search_steps': (1, 12), 'fold_months': (1, 12), 'min_train_folds': (1, 8),
+    'min_gain_r': (0.0, 1.0), 'shadow_days': (5, 120), 'shadow_max_days': (5, 250), 'cooldown_days': (1, 90),
+    'pause_window': (5, 200),
+}
+POLICY_MODE_RANGES: Dict[str, Tuple[float, float]] = {
+    'min_oos_trades': (20, 2000), 'min_train_trades': (20, 5000), 'shadow_min_trades': (1, 200),
+    'rollback_r': (1.0, 50.0), 'pause_r': (1.0, 50.0),
+}
+
+
+def _bounded(v: Any, lo: float, hi: float, kind: type) -> Optional[float]:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return kind(min(hi, max(lo, v)))
+
+
+def clean_limits(limits: Any) -> Dict[str, Dict[str, List[float]]]:
+    """Your per-mode [min, max] bounds: finite numbers, min <= max, known modes only."""
+    out: Dict[str, Dict[str, List[float]]] = {}
+    for m, ps in (limits.items() if isinstance(limits, dict) else ()):
+        if m not in MODES or not isinstance(ps, dict):
+            continue
+        out[m] = {p: [float(v[0]), float(v[1])] for p, v in ps.items()
+                  if isinstance(p, str) and isinstance(v, list) and len(v) == 2
+                  and all(_bounded(x, -math.inf, math.inf, float) is not None for x in v) and v[0] <= v[1]}
+    return out
+
+
 def policy(saved: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The defaults with a saved policy on top, every value checked and clamped (POLICY_RANGES)."""
     out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in DEFAULT_POLICY.items()}
     for k, v in (saved or {}).items():
-        if k not in out:
-            continue
-        if isinstance(out[k], dict) and isinstance(v, dict):
-            out[k].update({kk: vv for kk, vv in v.items()})
-        elif k == 'mode' and v in ('auto', 'approve', 'off'):
+        if k == 'mode' and v in ('auto', 'approve', 'off'):
             out[k] = v
-        elif isinstance(out[k], (int, float)) and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
-            out[k] = type(out[k])(v)
+        elif k in POLICY_RANGES:
+            n = _bounded(v, *POLICY_RANGES[k], type(DEFAULT_POLICY[k]))
+            if n is not None:
+                out[k] = n
+        elif k in POLICY_MODE_RANGES and isinstance(v, dict):
+            for m, x in v.items():
+                n = _bounded(x, *POLICY_MODE_RANGES[k], type(DEFAULT_POLICY[k]['swing'])) if m in MODES else None
+                if n is not None:
+                    out[k][m] = n
+        elif k == 'limits':
+            out[k] = clean_limits(v)
+    out['shadow_max_days'] = max(out['shadow_max_days'], out['shadow_days'])
     return out
 
 

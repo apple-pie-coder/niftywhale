@@ -1681,6 +1681,19 @@ Saturday at 09:00, Telegram gets one message per mode:
 | Roll back after losing | per mode | Since the change |
 | Limits | the tuner ranges | Per threshold, the lowest and highest value the autopilot may ever use |
 
+Every policy value is kept inside a range, so a saved value can never switch a safeguard off or stall the lab: most
+steps per change 1-6, tuner search 1-12 steps either side, shadow run 5-120 sessions, days between changes 1-90, out-of-sample
+R a trade a change must add 0-1, trades needed out of sample 20-2,000 (in training 20-5,000), roll back and pause after losing
+1-50 R. Outside, a value is clamped; anything but a number keeps the default. The policy is saved only here
+(`POST /api/autopilot/policy`); `POST /api/settings` refuses it, and the rules, pauses and demo account, which have their own
+endpoints.
+
+The autopilot's state (a proposal in shadow or awaiting you, the last change, a pause) is written by the lab and by your
+clicks, each change as one step. A tuning or a shadow run takes minutes to hours: it adds its result only if what it worked
+on is still there, so a proposal you rejected while it ran stays rejected, and one you undid stays undone. **Apply now** and
+**Reject** name the proposal on your screen; if the lab replaced it since, nothing happens and the page asks you to reload.
+Applying a proposal that is still in its shadow run says so first: it skips the rest of that test.
+
 By default each mode is backtested and tuned on the universe it trades live, so rules are never tuned on
 large caps and then applied to smallcaps. To change what the lab uses, open **Performance → Lab settings**: a
 universe and a history length per mode (with an estimate of how long a full intraday replay takes on the Pi) and
@@ -1773,6 +1786,8 @@ Rejected triggers are never sent. The **Entry alerts** switch controls both mode
 | `NIFTYWHALE_SCHEDULER` | `1` | `0` disables the scheduler thread (for tests or a second copy of the app). |
 | `NIFTYWHALE_ORIGINS` | `https://pandorasbox.local:5443` | The addresses the app is served on (comma-separated). Passkeys are bound to the first one's host name; sign-in cookies are accepted only from these pages. Set in `docker-compose.yml`. |
 | `NIFTYWHALE_AUTH` | `1` | `0` switches sign-in off. **Tests only**: the app logs a warning, and anyone who can reach it can use it. |
+| `NIFTYWHALE_PROXIES` | (none) | The proxy whose `X-Forwarded-*` headers are believed (container names or addresses, comma-separated); from anywhere else they are dropped. `pi-observatory` in `docker-compose.yml`. Unset: every client is believed. |
+| `NIFTYWHALE_KEY_FILE` | `/run/secrets/niftywhale_key` | The key the secrets in the database are encrypted with (10.4, Secrets at rest). |
 
 Most of these can also be set in the app (sidebar → **App → Settings…**): a value saved there wins over `.env`.
 
@@ -1828,13 +1843,38 @@ new phone, make new recovery codes, add or remove passkeys, see and sign out sig
 and the sign-in history. Changes that matter ask for the password again when the sign-in is more than 10 minutes old.
 
 **API tokens** are for scripts and curl: create one in Account & security, then send `Authorization: Bearer <token>` (or
-`X-API-Key: <token>`). A token can do everything you can, so keep it private; revoking it stops it at once. On the Pi itself,
-`http://127.0.0.1:5058` with a token works too.
+`X-API-Key: <token>`). Each is **read only** (GET requests; the default) or **read and write**, and lasts 30 days, 90 days
+(the default), a year or until revoked. Neither can touch the account, where alerts go (Telegram) or the Dhan login: those
+need a signed-in browser. Revoking a token stops it at once. On the Pi itself, `http://127.0.0.1:5058` with a token works
+too. Tokens made before scopes existed keep full access and no end date; `python -m niftywhale.auth token <name>` makes a
+read-and-write one.
+
+**Alerts and the broker.** Changing the Telegram bot token or chat, the Dhan client ID, PIN or TOTP secret, or pasting a Dhan
+token needs a sign-in less than 10 minutes old, or the password (the page asks for it): a long-remembered session on a lost
+phone cannot redirect your alerts or the broker login.
 
 **Guards.** Passwords are stored as scrypt hashes; sessions and tokens only as SHA-256 hashes of random values (the database
-holds nothing that signs anyone in). A code from the authenticator is accepted once. After 8 failures in a row the account
-locks for 15 minutes; more than 20 failures from one address in 15 minutes and that address waits. A browser can only make
-changes from the app's own pages (cross-site requests are refused). A sign-in raises a notification in the bell.
+holds nothing that signs anyone in). A code from the authenticator is accepted once, even by two requests racing with it.
+After 8 failures in a row the password sign-in locks for 15 minutes; a **passkey still works then**, so failing passwords on
+purpose cannot keep you out. More than 20 failures from one address in 15 minutes and that address waits. A browser can only
+make changes (and sign out) from the app's own pages: cross-site requests are refused, and no other site may show the app in
+a frame. At most 1,000 sign-ins can be in progress at once (20 from one address), and a request body is at most 1 MB, so the
+pages that need no sign-in cannot fill the Pi's memory. Forwarded addresses are believed only from Caddy
+(`NIFTYWHALE_PROXIES`, its container name): a script or container reaching port 5058 directly cannot pose as another address
+or as HTTPS. A sign-in raises a notification in the bell.
+
+**Secrets at rest.** The Dhan token, PIN and TOTP secret (together they open the broker account, orders included), the Telegram
+bot token and your authenticator key are stored **encrypted** (Fernet) under a key outside the database:
+`secrets/niftywhale.key`, mounted into both containers as a Docker secret (`docker-compose.yml`). A copy of `var/` or a backup
+then holds none of them. Files the app writes are readable by its own account only. Make the key once, before the first start:
+
+```sh
+mkdir -p secrets && chmod 700 secrets && (umask 077; docker run --rm --entrypoint python niftywhale:latest \
+  -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > secrets/niftywhale.key)
+```
+
+**Back the key up separately from `var/`** (a password manager): without it, the secrets cannot be read and have to be entered
+again in App settings. Without a key file the app runs as before, with the secrets in plain text (and says so in the log).
 
 **Locked out?** On the Pi:
 
@@ -3480,7 +3520,7 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
 
 `approve` a proposal now, `reject` it, `undo` the last change, or `pause` / resume a mode's entry alerts.
 
-**Body:** `mode` (+ `"paused": false` to resume)
+**Body:** `mode`; for `approve` and `reject` the proposal's `since` (409 when that one is no longer open); `"paused": false` to resume
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
@@ -3742,7 +3782,7 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/config
 
 #### `POST /api/config`
 
-Saves App settings (all or none: one bad value refuses the lot). New Dhan login details start a login at once.
+Saves App settings (all or none: one bad value refuses the lot). New Dhan login details start a login at once. The Telegram and Dhan fields need a signed-in browser (not a token) signed in within 10 minutes, or `password` in the body.
 
 **Body:** `telegram_token`, `telegram_chat_id`, `dhan_client_id`, `dhan_pin`, `dhan_totp`, `data_source` (`auto` or `yfinance`), `watch_delay`, `live_watch_delay`, `log_level`, `intraday_square_off`, `nse_cts_end_fo`, `nse_closes_final`, `nse_fo_close` (HH:MM), `nse_cas_start` (YYYY-MM-DD); `""` clears one back to .env
 
@@ -3800,9 +3840,9 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/tele
 
 #### `POST /api/dhan/token`
 
-Connects Dhan with a token from web.dhan.co, after checking it with Dhan. The token is never sent back.
+Connects Dhan with a token from web.dhan.co, after checking it with Dhan. The token is never sent back. A signed-in browser only, signed in within 10 minutes or with `password`.
 
-**Body:** `access_token`, `client_id` (optional)
+**Body:** `access_token`, `client_id` (optional), `password` when needed
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
@@ -4232,9 +4272,9 @@ curl -X POST -c jar -b jar http://127.0.0.1:5058/api/auth/sessions/revoke-others
 
 #### `POST /api/auth/tokens`
 
-Creates an API token. The token is in this answer only; afterwards only its first characters are shown.
+Creates an API token. The token is in this answer only; afterwards only its first characters are shown. A read token may only GET.
 
-**Body:** `name`, `password` when needed
+**Body:** `name`, `scope` (`read`, the default, or `write`), `days` (30, 90 the default, 365, or 0: until revoked), `password` when needed
 
 ```sh
 curl -X POST -c jar -b jar -H 'Content-Type: application/json' \
@@ -4246,7 +4286,9 @@ curl -X POST -c jar -b jar -H 'Content-Type: application/json' \
   "id": 3,
   "name": "laptop scripts",
   "token": "nwt_Q2xA9pZk…",
-  "prefix": "nwt_Q2xA9pZk"
+  "prefix": "nwt_Q2xA9pZk",
+  "scope": "read",
+  "expires": 1799999999.0
 }
 ```
 

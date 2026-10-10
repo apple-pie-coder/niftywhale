@@ -95,7 +95,57 @@ app = Flask(__name__)
 # Behind Caddy (HTTPS on pandorasbox.local:5443): trust its X-Forwarded-For / -Proto / -Host, so the app
 # sees the real client address and knows the request came over HTTPS (secure cookies, passkey origin).
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+import socket  # noqa: E402
+
+
+class TrustedProxy:
+    """Forwarded headers are believed only from the proxy (NIFTYWHALE_PROXIES: Caddy's container name or
+    address). Anything else that reaches the port (a script on the Pi through the port mapping, another
+    container on the network) has them removed, so it cannot pose as another address (the sign-in
+    limits are per address) or as HTTPS. Unset: every client is believed, as before."""
+    REFRESH_S, RETRY_S = 60.0, 5.0
+
+    def __init__(self, inner, names):
+        self.inner, self.names = inner, [n.strip() for n in names.split(',') if n.strip()]
+        self.addrs, self.at = set(), 0.0
+        self.lock = threading.Lock()
+
+    def _trusted(self, addr: str) -> bool:
+        now = time.time()
+        stale = now - self.at > (self.RETRY_S if addr not in self.addrs else self.REFRESH_S)
+        if stale:                                    # containers change address when they restart
+            with self.lock:
+                got = set()
+                for n in self.names:
+                    try:
+                        got.update(socket.gethostbyname_ex(n)[2])
+                    except OSError:
+                        pass
+                self.addrs, self.at = got, now
+        return addr in self.addrs
+
+    def __call__(self, environ, start_response):
+        if self.names and not self._trusted(environ.get('REMOTE_ADDR', '')):
+            for k in [k for k in environ if k.startswith('HTTP_X_FORWARDED_')]:
+                del environ[k]
+        return self.inner(environ, start_response)
+
+
+app.wsgi_app = TrustedProxy(ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1),
+                            os.getenv('NIFTYWHALE_PROXIES', ''))
+# No request needs more (the largest are the chart drawings and lab settings); the sign-in routes need
+# no sign-in, and an unbounded body would let anyone on the network fill the Pi's memory.
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
+
+
+@app.after_request
+def security_headers(resp):
+    """No other site may frame the app (clickjacking), and responses are read only as their type."""
+    resp.headers.setdefault('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'")
+    resp.headers.setdefault('X-Frame-Options', 'DENY')
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('Referrer-Policy', 'same-origin')
+    return resp
 # Signing in (niftywhale/auth.py): its routes, and the gate every other request passes first.
 app.register_blueprint(auth.bp)
 app.before_request(auth.gate)
@@ -1331,6 +1381,9 @@ def api_config():
     return jsonify(safe({'fields': v, 'dhan': dhan.status(), 'telegram_configured': notify.configured()}))
 
 
+SENSITIVE_CONFIG = {'telegram_token', 'telegram_chat_id', 'dhan_client_id', 'dhan_pin', 'dhan_totp'}
+
+
 @app.route('/api/config', methods=['POST'])
 def api_config_save():
     """Save any of config.FIELDS; '' clears one back to .env or its default. New Dhan login
@@ -1338,6 +1391,15 @@ def api_config_save():
     in automatic mode, a login starts."""
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not body:
+        return jsonify({'error': 'send the settings as a JSON object'}), 400
+    # Where alerts go and how the broker is logged in to: a signed-in browser only (not an API
+    # token), signed in within 10 minutes or confirming with the password (auth._need_session).
+    if SENSITIVE_CONFIG & set(body):
+        bad = auth._need_session(fresh=True)
+        if bad:
+            return bad
+    body = {k: v for k, v in body.items() if k != 'password'}
+    if not body:
         return jsonify({'error': 'send the settings as a JSON object'}), 400
     errors = {k: e for k in body for e in [config.validate(k, body[k])] if e}
     if errors:
@@ -1664,6 +1726,14 @@ def demo_sync() -> dict:
             p.update(fields)
             got['closed'] += 1
             notice_demo_close(p)
+
+        # Positions whose trades closed since the last sync settle first. A new trade is sized from the
+        # account as of its entry (demo_account): with an earlier close not yet on the books, its margin
+        # still looked blocked and its P&L missing. A close after the entry still counts as open then.
+        for p in positions:
+            t = by_ref.get(p['ref'])
+            if p['status'] == 'open' and t and t['status'] != 'open' and t.get('exit') is not None:
+                settle(p, t)
 
         for t in new:
             at = _when(t['entry_time'])
@@ -2946,11 +3016,19 @@ def api_watch_check():
     return jsonify(check_zones('manual'))
 
 
+OWN_ENDPOINT = {'rules', 'intraday_rules', 'options_rules', 'autopilot_policy', 'paused_swing', 'paused_intraday',
+                'paused_options', 'demo', 'demo_since'}
+
+
 @app.route('/api/settings', methods=['POST'])
 def api_settings():
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):
         return jsonify({'error': 'send the settings as a JSON object'}), 400
+    # These have their own endpoints, which check them and log the change: never written here.
+    own = sorted(k for k in body if k in OWN_ENDPOINT)
+    if own:
+        return jsonify({'error': f"{', '.join(own)}: set with their own endpoints (the tuners, the autopilot, the demo account)"}), 400
     for k in ('universe', 'intraday_universe', 'lab_swing_universe', 'lab_intraday_universe'):
         if k in body and not (k.startswith('lab_') and body[k] == '') and not universe.valid(body[k]):
             return jsonify({'error': 'unknown universe'}), 400
@@ -3313,13 +3391,16 @@ def api_demo_funds():
         return jsonify({'error': 'amount must be a number'}), 400
     if kind not in ('deposit', 'withdraw') or not (0 < amount <= 1e10):
         return jsonify({'error': 'send kind deposit or withdraw and an amount above 0'}), 400
-    if kind == 'withdraw':
-        free = demo_account()['free']
-        if amount > free + 1e-6:
-            return jsonify({'error': f'only ₹{free:,.2f} is free to withdraw (the rest is in open positions)'}), 409
-    if not store.settings().get('demo_since'):
-        store.set_settings({'demo_since': data.now_ist().isoformat(timespec='seconds')})
-    store.add_demo_ledger(kind, amount, str(body.get('note') or '')[:200], data.now_ist().isoformat(timespec='seconds'))
+    # The check and the entry as one step: two withdrawals at once (or one while a sync opens
+    # positions) must not both pass on the same free money.
+    with DEMO_LOCK:
+        if kind == 'withdraw':
+            free = demo_account()['free']
+            if amount > free + 1e-6:
+                return jsonify({'error': f'only ₹{free:,.2f} is free to withdraw (the rest is in open positions)'}), 409
+        if not store.settings().get('demo_since'):
+            store.set_settings({'demo_since': data.now_ist().isoformat(timespec='seconds')})
+        store.add_demo_ledger(kind, amount, str(body.get('note') or '')[:200], data.now_ist().isoformat(timespec='seconds'))
     return jsonify(safe(_demo_view()))
 
 
@@ -3470,7 +3551,11 @@ def api_news_refresh():
 @app.route('/api/dhan/token', methods=['POST'])
 def api_dhan_token():
     """Connect Dhan with a token from web.dhan.co. Checked against the profile
-    endpoint before it is kept; never sent back to the browser."""
+    endpoint before it is kept; never sent back to the browser. A signed-in browser only, as for the
+    other broker settings (SENSITIVE_CONFIG)."""
+    bad = auth._need_session(fresh=True)
+    if bad:
+        return bad
     body = request.get_json(silent=True) or {}
     tok = str(body.get('access_token') or '').strip()
     cid = str(body.get('client_id') or '').strip() or None
@@ -3840,14 +3925,8 @@ def api_autopilot_policy():
     saved = {k: v for k, v in merged.items() if v != autopilot.DEFAULT_POLICY.get(k)}
     limits = body.get('limits')
     if isinstance(limits, dict):
-        clean = {}
-        for m, ps in limits.items():
-            if m in autopilot.MODES and isinstance(ps, dict):
-                sp = lab.specs(m)
-                clean[m] = {p: [float(v[0]), float(v[1])] for p, v in ps.items()
-                            if p in sp and isinstance(v, list) and len(v) == 2 and all(isinstance(x, (int, float)) for x in v)
-                            and v[0] <= v[1]}
-        saved['limits'] = clean
+        saved['limits'] = {m: {p: v for p, v in ps.items() if p in lab.specs(m)}
+                           for m, ps in autopilot.clean_limits(limits).items()}
     store.set_settings({'autopilot_policy': saved})
     store.log_autopilot('all', 'policy', current, saved, 'changed on the Performance tab', 'you')
     return jsonify({'policy': lab.policy()})
@@ -3860,36 +3939,50 @@ def api_autopilot_action(action):
     mode = _ap_mode(body)
     if not mode:
         return jsonify({'error': 'mode must be swing, intraday or options'}), 400
+    # Approve and reject name the proposal the page showed (`since`, the day it was made): the lab may
+    # have replaced it since the page loaded, and a click must never act on one you did not see.
+    since = str(body.get('since') or '')
+    if action in ('approve', 'reject') and not since:
+        return jsonify({'error': "send the proposal's since"}), 400
     st = lab.state(mode)
     if action == 'approve':
-        aw = st.get('awaiting') or st.get('challenger')
+        aw = next((p for p in (st.get('awaiting'), st.get('challenger')) if p and p.get('since') == since), None)
         if not aw:
-            return jsonify({'error': 'nothing to approve'}), 409
+            return jsonify({'error': 'that proposal is no longer open: reload to see the current one'}), 409
+        # apply_thresholds changes only what is not in force yet, and clears the proposal as it records
+        # the change: racing the lab's own promotion of the same one, the second does nothing.
         lab.apply_thresholds(mode, aw['params'], f"approved by you: {aw.get('evidence', '')}", by='you', base=aw.get('base'))
     elif action == 'reject':
-        if not (st.get('awaiting') or st.get('challenger')):
-            return jsonify({'error': 'nothing to reject'}), 409
-        prop = st.pop('awaiting', None) or st.pop('challenger', None)
-        lab.save_state(mode, st)
-        store.log_autopilot(mode, 'reject', None, prop.get('params'), 'rejected on the Performance tab', 'you')
+        got = {}
+
+        def drop(s):
+            for k in ('awaiting', 'challenger'):
+                if (s.get(k) or {}).get('since') == since:
+                    got['p'] = s.pop(k)
+                    return
+        lab.update_state(mode, drop)
+        if not got:
+            return jsonify({'error': 'that proposal is no longer open: reload to see the current one'}), 409
+        store.log_autopilot(mode, 'reject', None, got['p'].get('params'), 'rejected on the Performance tab', 'you')
     elif action == 'undo':
         lc = st.get('last_change')
-        if not lc or lc.get('reverted'):
+        if not lc or lc.get('reverted') or not lab.claim_revert(mode, lc):
             return jsonify({'error': 'no change to undo'}), 409
         lab.revert_change(mode, lc)
-        lc['reverted'] = data.now_ist().isoformat(timespec='seconds')
-        lab.save_state(mode, st)
         store.log_autopilot(mode, 'undo', {k: a for k, (_, a) in (lc.get('changed') or {}).items()},
                             {k: b for k, (b, _) in (lc.get('changed') or {}).items()}, 'undone on the Performance tab', 'you')
     elif action == 'pause':
         on = body.get('paused') is not False
         store.set_settings({f'paused_{mode}': on})
-        if on:
-            st['paused_at'] = data.now_ist().isoformat(timespec='seconds')
-        else:
-            st.pop('paused_at', None)
-            st['watch_from'] = data.now_ist().isoformat(timespec='seconds')     # the old streak no longer counts
-        lab.save_state(mode, st)
+        at = data.now_ist().isoformat(timespec='seconds')
+
+        def flip(s):
+            if on:
+                s['paused_at'] = at
+            else:
+                s.pop('paused_at', None)
+                s['watch_from'] = at                     # the old streak no longer counts
+        lab.update_state(mode, flip)
         store.log_autopilot(mode, 'pause' if on else 'resume', None, None, 'on the Performance tab', 'you')
     else:
         return jsonify({'error': 'unknown action'}), 404

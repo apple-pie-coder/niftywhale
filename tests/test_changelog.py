@@ -71,8 +71,9 @@ class ChangeLog(unittest.TestCase):
         self.assertEqual((r['mode'], r['action'], r['before'], r['after']),
                          ('app', 'settings', {'intraday_square_off': '15:10'}, {'intraday_square_off': '15:05'}))
         token = '123456789:' + 'A' * 35
-        call(app.api_config_save, '/api/config', {'telegram_token': token})
-        call(app.api_config_save, '/api/config', {'telegram_token': token[:-1] + 'B'})
+        with mock.patch.object(app.auth, '_need_session', return_value=None):     # a fresh browser sign-in
+            call(app.api_config_save, '/api/config', {'telegram_token': token})
+            call(app.api_config_save, '/api/config', {'telegram_token': token[:-1] + 'B'})
         got = [(r['before'], r['after']) for r in store.autopilot_log()[:2]]
         self.assertEqual(got, [({'telegram_token': 'set'}, {'telegram_token': 'replaced'}),
                                ({'telegram_token': 'not set'}, {'telegram_token': 'set'})])

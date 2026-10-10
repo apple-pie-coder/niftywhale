@@ -148,7 +148,7 @@ class SignIn(Base):
         self.assertEqual(self.post('/api/notices/read', {}).status_code, 200)
 
     def test_api_tokens(self):
-        r = self.post('/api/auth/tokens', {'name': 'laptop'})
+        r = self.post('/api/auth/tokens', {'name': 'laptop', 'scope': 'write', 'days': 30})
         tok = r.get_json()['token']
         self.assertTrue(tok.startswith('nwt_'))
         anon = app.app.test_client()
@@ -176,6 +176,89 @@ class SignIn(Base):
         self.assertEqual((r.status_code, r.get_json().get('need_password')), (403, True))
         r = self.post('/api/auth/recovery/new', {'password': PW})
         self.assertEqual(len(r.get_json()['recovery_codes']), 10)
+
+
+class Hardening(SignIn):
+    """The review's fixes: token scopes and expiry, the account lock not shutting out passkeys, the
+    caps on sign-ins in progress, one-use codes under a race, cross-site sign-out, fresh sign-in
+    for alert and broker settings, response headers, the body limit and the trusted proxy."""
+    def bearer(self, tok):
+        return {'Authorization': f'Bearer {tok}'}
+
+    def test_read_tokens_only_read_and_tokens_expire(self):
+        tok = self.post('/api/auth/tokens', {'name': 'dashboard'}).get_json()['token']        # read, 90 days by default
+        anon = app.app.test_client()
+        self.assertEqual(self.get('/api/glossary', client=anon, headers=self.bearer(tok)).status_code, 200)
+        self.assertEqual(anon.post('/api/notices/read', json={}, base_url=BASE, headers=self.bearer(tok)).status_code, 403)
+        self.assertEqual(self.post('/api/auth/tokens', {'name': 'x', 'scope': 'admin'}).status_code, 400)
+        self.assertEqual(self.post('/api/auth/tokens', {'name': 'x', 'days': 7}).status_code, 400)
+        with auth._db() as c:
+            c.execute('UPDATE api_tokens SET expires = ?', (time.time() - 1,))
+        self.assertEqual(self.get('/api/glossary', client=anon, headers=self.bearer(tok)).status_code, 401)
+        self.assertEqual(self.get('/api/auth/account').get_json()['tokens'], [])            # an ended one is not listed
+        self.assertEqual(auth.create_token('cli')['scope'], 'write')                        # the Pi's command line: as before
+
+    def test_the_account_lock_does_not_shut_out_passkeys(self):
+        cl = app.app.test_client()
+        for _ in range(auth.LOCK_AFTER):
+            self.post('/api/auth/login', {'username': 'owner', 'password': 'wrong password!'}, client=cl)
+        self.assertEqual(self.post('/api/auth/login', {'username': 'owner', 'password': PW}, client=cl).status_code, 423)
+        # No passkey here, so 409 ("add one first"): the point is that it is not the lock's 423.
+        self.assertEqual(self.post('/api/auth/passkey/login/options', client=cl).status_code, 409)
+
+    def test_sign_ins_in_progress_are_capped(self):
+        with mock.patch.object(auth, 'PENDING_PER_IP', 2):
+            codes = [self.post('/api/auth/login', {'username': 'owner', 'password': PW}, client=app.app.test_client()).status_code
+                     for _ in range(3)]
+        self.assertEqual(codes, [200, 200, 429])
+
+    def test_a_code_claimed_by_a_racing_request_is_refused(self):
+        cl = app.app.test_client()
+        self.post('/api/auth/login', {'username': 'owner', 'password': PW}, client=cl)
+        last = auth.owner()['totp_last_step']
+        with mock.patch.object(auth, 'totp_check', return_value=last):    # read before the other request wrote its step
+            self.assertEqual(self.post('/api/auth/mfa', {'code': '123456'}, client=cl).status_code, 401)
+
+    def test_another_site_cannot_sign_you_out(self):
+        self.assertEqual(self.post('/api/auth/logout', headers={'Origin': 'https://evil.example'}).status_code, 403)
+        self.assertEqual(self.get('/api/glossary').status_code, 200)
+
+    def test_alert_and_broker_settings_need_a_fresh_sign_in(self):
+        with auth._db() as c:
+            c.execute("UPDATE auth_sessions SET created = '2020-01-01T00:00:00'")
+        r = self.post('/api/config', {'telegram_chat_id': '123456789'})
+        self.assertEqual((r.status_code, r.get_json().get('need_password')), (403, True))
+        self.assertEqual(self.post('/api/config', {'telegram_chat_id': '123456789', 'password': PW}).status_code, 200)
+        self.assertEqual(self.post('/api/dhan/token', {'access_token': 'y' * 40}).get_json().get('need_password'), True)
+        self.assertEqual(self.post('/api/config', {'log_level': 'INFO'}).status_code, 200)    # not sensitive
+        tok = self.post('/api/auth/tokens', {'name': 's', 'scope': 'write', 'password': PW}).get_json()['token']
+        anon = app.app.test_client()
+        r = anon.post('/api/config', json={'telegram_chat_id': '1'}, base_url=BASE, headers=self.bearer(tok))
+        self.assertEqual(r.status_code, 401)                                                 # a browser sign-in only
+        self.post('/api/config', {'telegram_chat_id': '', 'password': PW})
+
+    def test_headers_and_body_limit(self):
+        r = self.get('/login')
+        self.assertIn("frame-ancestors 'none'", r.headers['Content-Security-Policy'])
+        self.assertEqual((r.headers['X-Frame-Options'], r.headers['X-Content-Type-Options']), ('DENY', 'nosniff'))
+        big = app.app.test_client().post('/api/auth/login', data='x' * (2 * 1024 * 1024), base_url=BASE,
+                                          headers={**H, 'Content-Type': 'application/json'})
+        self.assertEqual(big.status_code, 413)
+
+    def test_forwarded_headers_only_from_the_proxy(self):
+        seen = {}
+
+        def inner(environ, start):
+            seen.update(environ)
+            return []
+        mw = app.TrustedProxy(inner, 'caddy')
+        with mock.patch.object(app.socket, 'gethostbyname_ex', return_value=('caddy', [], ['10.0.0.9'])):
+            mw({'REMOTE_ADDR': '10.0.0.9', 'HTTP_X_FORWARDED_FOR': '1.2.3.4'}, None)
+            self.assertEqual(seen.get('HTTP_X_FORWARDED_FOR'), '1.2.3.4')
+            seen.clear()
+            mw({'REMOTE_ADDR': '10.0.0.1', 'HTTP_X_FORWARDED_FOR': '1.2.3.4', 'HTTP_X_FORWARDED_PROTO': 'https'}, None)
+            self.assertNotIn('HTTP_X_FORWARDED_FOR', seen)
+            self.assertNotIn('HTTP_X_FORWARDED_PROTO', seen)
 
 
 class Passkeys(Base):

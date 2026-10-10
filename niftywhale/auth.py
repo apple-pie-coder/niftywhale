@@ -58,7 +58,10 @@ MIN_PASSWORD = 10
 LOCK_AFTER, LOCK_S = 8, 900           # failures in a row before the account locks, and for how long
 IP_WINDOW_S, IP_MAX_FAILS = 900, 20   # failures from one address within the window before it is refused
 RECOVERY_CODES = 10
+PENDING_MAX, PENDING_PER_IP = 1000, 20   # sign-ins in progress at once (memory on a Pi), and from one address
 TOKEN_PREFIX = 'nwt_'
+TOKEN_SCOPES = ('read', 'write')      # read: GET only; write: everything a signed-in page can do (not the account)
+TOKEN_DAYS = (30, 90, 365, 0)         # how long a new token lasts; 0: until revoked
 PUBLIC_PATHS = ('/healthz', '/login', '/trust', '/favicon.ico', '/static/', '/api/auth/')
 COMMON = {'password', 'password1', 'password123', '1234567890', 'qwertyuiop', 'niftywhale', 'letmein123', 'iloveyou12'}
 
@@ -97,6 +100,17 @@ def _db():
             );
             CREATE INDEX IF NOT EXISTS idx_auth_events ON auth_events(id);
         ''')
+        # API tokens made before scopes and expiry: they keep full access and never expire, as made.
+        have = {r[1] for r in c.execute('PRAGMA table_info(api_tokens)')}
+        if 'scope' not in have:
+            c.execute("ALTER TABLE api_tokens ADD COLUMN scope TEXT DEFAULT 'write'")
+        if 'expires' not in have:
+            c.execute('ALTER TABLE api_tokens ADD COLUMN expires REAL')
+        # The authenticator key, kept encrypted like the other secrets (store.seal) once there is a key file.
+        row = c.execute('SELECT totp_secret FROM auth_user WHERE id = 1').fetchone()
+        if row and row[0] and store.seal(row[0]) != row[0]:
+            c.execute('UPDATE auth_user SET totp_secret = ? WHERE id = 1', (store.seal(row[0]),))
+        c.commit()
         _schema_ready = True
     return c
 
@@ -117,7 +131,10 @@ def _sha(s: str) -> str:
 def owner() -> Optional[Dict[str, Any]]:
     with _db() as c:
         rows = _rows(c.execute('SELECT * FROM auth_user WHERE id = 1'))
-    return rows[0] if rows else None
+    if not rows:
+        return None
+    rows[0]['totp_secret'] = store.unseal(rows[0]['totp_secret'])
+    return rows[0]
 
 
 def _event(kind: str, ok: bool = True, detail: str = '') -> None:
@@ -258,20 +275,38 @@ def _refuse() -> Optional[tuple]:
     return None
 
 
+def _ip_refuse() -> Optional[tuple]:
+    """The per-address limit alone: a passkey sign-in is not refused by the account lock, which
+    anyone who can reach the page could otherwise keep on by failing passwords."""
+    wait = _ip_blocked()
+    if wait:
+        return jsonify({'error': f'Too many attempts from this address. Try again in {wait // 60 + 1} min.', 'retry_after': wait}), 429
+    return None
+
+
 def _clear_fails() -> None:
     with _db() as c:
         c.execute('UPDATE auth_user SET failed = 0, locked_until = 0 WHERE id = 1')
 
 
 # ---------------------------------------------------------------- short-lived state (setup, MFA, challenges)
-def _pend_new(kind: str, **data) -> str:
+def _pend_new(kind: str, **data) -> Optional[str]:
+    """A new short-lived state, or None when too many are open (in all, or from this address): each
+    is kept in memory, and the routes that make them need no sign-in."""
     pid = secrets.token_urlsafe(24)
+    ip, _ = _client()
     with _lock:
         now = time.time()
         for k in [k for k, v in _pending.items() if v['until'] < now]:
             del _pending[k]
-        _pending[pid] = {'kind': kind, 'until': now + PRE_S, **data}
+        if len(_pending) >= PENDING_MAX or sum(1 for v in _pending.values() if v.get('ip') == ip) >= PENDING_PER_IP:
+            return None
+        _pending[pid] = {'kind': kind, 'until': now + PRE_S, 'ip': ip, **data}
     return pid
+
+
+def _busy():
+    return jsonify({'error': 'too many sign-ins in progress: try again in a few minutes'}), 429
 
 
 def _pend_get(kind: str) -> Optional[Dict[str, Any]]:
@@ -288,7 +323,9 @@ def _pend_drop() -> None:
         _pending.pop(request.cookies.get(PRE_COOKIE) or '', None)
 
 
-def _with_pre(resp, pid: str):
+def _with_pre(resp, pid: Optional[str]):
+    if pid is None:
+        return _busy()
     resp.set_cookie(PRE_COOKIE, pid, max_age=PRE_S, httponly=True, secure=request.is_secure, samesite='Strict', path='/')
     return resp
 
@@ -355,18 +392,22 @@ def _token() -> Optional[Dict[str, Any]]:
         if not rows:
             return None
         t = rows[0]
+        if t.get('expires') and time.time() > t['expires']:
+            return None
         if not t['last_used'] or t['last_used'][:16] != _now()[:16]:
             c.execute('UPDATE api_tokens SET last_used = ? WHERE id = ?', (_now(), t['id']))
     return t
 
 
-def create_token(name: str) -> Dict[str, Any]:
+def create_token(name: str, scope: str = 'write', days: int = 0) -> Dict[str, Any]:
+    """A new API token: `scope` read (GET requests only) or write; it ends after `days` (0: never)."""
     tok = TOKEN_PREFIX + secrets.token_urlsafe(30)
+    expires = time.time() + days * 86400 if days else None
     with _db() as c:
-        tid = c.execute('INSERT INTO api_tokens (name, token_hash, prefix, created) VALUES (?, ?, ?, ?)',
-                        (name[:60], _sha(tok), tok[:12], _now())).lastrowid
-    _event('token_created', True, name)
-    return {'id': tid, 'name': name, 'token': tok, 'prefix': tok[:12]}
+        tid = c.execute('INSERT INTO api_tokens (name, token_hash, prefix, created, scope, expires) VALUES (?, ?, ?, ?, ?, ?)',
+                        (name[:60], _sha(tok), tok[:12], _now(), scope, expires)).lastrowid
+    _event('token_created', True, f'{name} ({scope}{f", {days} days" if days else ""})')
+    return {'id': tid, 'name': name, 'token': tok, 'prefix': tok[:12], 'scope': scope, 'expires': expires}
 
 
 def _safe_next(n) -> str:
@@ -397,7 +438,9 @@ def gate():
         return None
     tok = _token()
     if tok:
-        g.auth = {'via': 'token', 'token': tok['id']}
+        if (tok.get('scope') or 'write') == 'read' and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+            return jsonify({'error': 'this API token can only read (GET): make a write token for changes'}), 403
+        g.auth = {'via': 'token', 'token': tok['id'], 'scope': tok.get('scope') or 'write'}
         return None
     s = _session()
     if s:
@@ -423,7 +466,8 @@ def still_valid(info: Optional[Dict[str, Any]]) -> bool:
         return False
     with _db() as c:
         if info.get('via') == 'token':
-            return bool(c.execute('SELECT 1 FROM api_tokens WHERE id = ? AND revoked = 0', (info.get('token'),)).fetchone())
+            return bool(c.execute('SELECT 1 FROM api_tokens WHERE id = ? AND revoked = 0 AND (expires IS NULL OR expires > ?)',
+                                  (info.get('token'), time.time())).fetchone())
         sid = (info.get('session') or {}).get('id')
         rows = _rows(c.execute('SELECT * FROM auth_sessions WHERE id = ? AND revoked = 0', (sid,)))
         if not rows:
@@ -539,7 +583,7 @@ def api_setup_finish():
         return jsonify({'error': 'that code does not match: check the phone\'s clock, then try the next code'}), 400
     with _db() as c:
         c.execute('INSERT INTO auth_user (id, username, password_hash, totp_secret, totp_last_step, user_handle, created, updated) '
-                  'VALUES (1, ?, ?, ?, ?, ?, ?, ?)', (p['username'], p['pw_hash'], p['secret'], step, _b64u(secrets.token_bytes(32)), _now(), _now()))
+                  'VALUES (1, ?, ?, ?, ?, ?, ?, ?)', (p['username'], p['pw_hash'], store.seal(p['secret']), step, _b64u(secrets.token_bytes(32)), _now(), _now()))
     store.set_kv('secret:auth_setup_code', '')
     codes = _new_recovery()
     _event('account_created', True, p['username'])
@@ -591,14 +635,17 @@ def api_mfa():
     if step is None:
         _fail('totp', 'wrong authenticator code')
         return jsonify({'error': 'that code is not right (or was already used): wait for the next one'}), 401
-    with _db() as c:
-        c.execute('UPDATE auth_user SET totp_last_step = ? WHERE id = 1', (step,))
+    with _db() as c:                       # claimed in one step: two requests racing with one code, one wins
+        won = c.execute('UPDATE auth_user SET totp_last_step = ? WHERE id = 1 AND totp_last_step < ?', (step, step)).rowcount
+    if won != 1:
+        _fail('totp', 'authenticator code already used')
+        return jsonify({'error': 'that code is not right (or was already used): wait for the next one'}), 401
     return _start_session('password + authenticator', p['remember'])
 
 
 @bp.route('/api/auth/passkey/login/options', methods=['POST'])
 def api_passkey_login_options():
-    bad = _refuse()
+    bad = _ip_refuse()
     if bad:
         return bad
     if not owner() or not passkeys():
@@ -614,7 +661,7 @@ def api_passkey_login_options():
 
 @bp.route('/api/auth/passkey/login/verify', methods=['POST'])
 def api_passkey_login_verify():
-    bad = _refuse()
+    bad = _ip_refuse()
     if bad:
         return bad
     p = _pend_get('passkey_login')
@@ -643,6 +690,8 @@ def api_passkey_login_verify():
 
 @bp.route('/api/auth/logout', methods=['POST'])
 def api_logout():
+    if ENABLED and not _same_origin():      # another site must not sign you out
+        return jsonify({'error': 'cross-site request refused'}), 403
     tok = request.cookies.get(SESSION_COOKIE)
     if tok:
         with _db() as c:
@@ -664,7 +713,8 @@ def api_account():
     with _db() as c:
         sessions = _rows(c.execute('SELECT id, created, last_seen, expires, remember, method, ip, user_agent FROM auth_sessions '
                                    'WHERE revoked = 0 AND expires > ? ORDER BY last_seen DESC', (time.time(),)))
-        tokens = _rows(c.execute('SELECT id, name, prefix, created, last_used FROM api_tokens WHERE revoked = 0 ORDER BY id DESC'))
+        tokens = _rows(c.execute('SELECT id, name, prefix, created, last_used, scope, expires FROM api_tokens '
+                                 'WHERE revoked = 0 AND (expires IS NULL OR expires > ?) ORDER BY id DESC', (time.time(),)))
         events = _rows(c.execute('SELECT ts, kind, ok, ip, user_agent, detail FROM auth_events ORDER BY id DESC LIMIT 40'))
     for s in sessions:
         s['device'] = _device(s['user_agent'])
@@ -720,7 +770,7 @@ def api_totp_finish():
     if step is None:
         return jsonify({'error': 'that code does not match the new key'}), 400
     with _db() as c:
-        c.execute('UPDATE auth_user SET totp_secret = ?, totp_last_step = ?, updated = ? WHERE id = 1', (p['secret'], step, _now()))
+        c.execute('UPDATE auth_user SET totp_secret = ?, totp_last_step = ?, updated = ? WHERE id = 1', (store.seal(p['secret']), step, _now()))
     _pend_drop()
     _event('authenticator_changed', True)
     return jsonify({'ok': True})
@@ -820,10 +870,20 @@ def api_token_create():
     bad = _need_session(fresh=True)
     if bad:
         return bad
-    name = str((request.get_json(silent=True) or {}).get('name') or '').strip()
+    b = request.get_json(silent=True) or {}
+    name = str(b.get('name') or '').strip()
     if not 1 <= len(name) <= 60:
         return jsonify({'error': 'give the token a name, up to 60 characters'}), 400
-    return jsonify(create_token(name))
+    scope = b.get('scope', 'read')
+    if scope not in TOKEN_SCOPES:
+        return jsonify({'error': 'scope is read or write'}), 400
+    try:
+        days = int(b.get('days', 90))
+    except (TypeError, ValueError):
+        days = -1
+    if days not in TOKEN_DAYS:
+        return jsonify({'error': f'days is one of {", ".join(map(str, TOKEN_DAYS))} (0: until revoked)'}), 400
+    return jsonify(create_token(name, scope, days))
 
 
 @bp.route('/api/auth/tokens/<int:tid>/revoke', methods=['POST'])

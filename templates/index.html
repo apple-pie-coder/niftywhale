@@ -684,8 +684,10 @@
     .ac-tag { font-size: 10.5px; font-weight: 650; padding: 1px 7px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); margin-left: 6px; }
     .ac-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; background: var(--good); vertical-align: 1px; }
     .ac-dot[data-ok="0"] { background: var(--bad); }
-    .ac-inline { display: flex; gap: 8px; align-items: center; }
-    .ac-inline input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--line-strong);
+    .ac-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .ac-inline select { font: inherit; font-size: 14px; padding: 8px 9px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+        background: var(--surface); color: var(--ink); }
+    .ac-inline input { flex: 1 1 160px; min-width: 0; font: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid var(--line-strong);
                        border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
     .ac-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 12px; border: 1px dashed var(--line-strong);
                 border-radius: var(--r-md); background: var(--sunk); font-family: var(--mono); font-size: 13.5px; text-align: center; overflow-wrap: anywhere; }
@@ -753,6 +755,7 @@
     .ask-scrim[hidden], .ask[hidden] { display: none; }
     .ask-title { font-size: 16px; font-weight: 700; line-height: 1.3; }
     .ask-body { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+    .ask-pw { width: 100%; margin-top: 10px; }
     .ask-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .ask-acts .btn { width: auto; min-width: 92px; }
     @keyframes ask-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } to { opacity: 1; transform: translate(-50%, -50%); } }
@@ -2154,6 +2157,7 @@
 <div class="ask-scrim" id="ask-scrim" hidden></div>
 <div class="ask" id="ask" role="alertdialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-body" hidden>
     <div class="ask-title" id="ask-title"></div><div class="ask-body" id="ask-body"></div>
+    <input type="password" class="ask-pw" id="ask-pw" autocomplete="current-password" placeholder="Password" aria-label="Password" hidden>
     <div class="ask-acts"><button class="btn" type="button" id="ask-no">Cancel</button><button class="btn btn-primary" type="button" id="ask-yes">OK</button></div>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -2771,7 +2775,7 @@ function openDhan() {
         $('dh-save').disabled = true;
         $('dh-save').textContent = 'Checking with Dhan…';
         try {
-            const st = await api('/api/dhan/token', { access_token: $('dh-tok').value, client_id: $('dh-cid').value });
+            const st = await apiConfirmed('/api/dhan/token', { access_token: $('dh-tok').value, client_id: $('dh-cid').value });
             closeModal();
             toast(st.live ? 'Dhan connected — prices are now real-time' : 'Token saved. Dhan says: ' + st.message);
             refresh(); loadBoard();
@@ -4014,7 +4018,8 @@ function ago(iso) {
 }
 
 function newsItemHtml(i, showSym) {
-    const link = i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">${esc(i.title)}</a>` : esc(i.title);
+    // A web address only: a javascript: link from a feed would run here (items kept before the server checked).
+    const link = /^https?:\/\//i.test(i.url || '') ? `<a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">${esc(i.title)}</a>` : esc(i.title);
     return `<li class="nitem" data-kind="${esc(i.kind)}" data-routine="${i.routine ? 1 : 0}">
         <div class="nmeta">${showSym ? `<button type="button" class="nsym" data-sym="${esc(i.symbol)}">${esc(i.symbol)}</button>` : ''}
             <span class="nsrc">${esc(i.kind === 'filing' ? 'NSE filing' : i.publisher || 'news')}</span>
@@ -5011,7 +5016,7 @@ async function appSettingsModal(focus) {
         const err = $('apps-err');
         err.hidden = true;
         try {
-            await api('/api/config', body);
+            await apiConfirmed('/api/config', body);
             toast(msg);
             closeModal();
             refresh();
@@ -5072,7 +5077,9 @@ async function accountModal(tab) {
         s.current ? '' : `<button class="btn-link" type="button" data-ac-revoke="${s.id}">Sign out</button>`)).join('');
     const pks = A.passkeys.map((k) => row(esc(k.name), `added ${acWhen(k.created)} · ${k.last_used ? 'last used ' + acWhen(k.last_used) : 'not used yet'}${k.backed_up ? ' · synced (iCloud Keychain or similar)' : ''}`,
         `<button class="btn-link" type="button" data-ac-pkdel="${k.id}">Remove</button>`)).join('');
-    const toks = A.tokens.map((k) => row(esc(k.name), `<span class="mono">${esc(k.prefix)}…</span> · created ${acWhen(k.created)} · ${k.last_used ? 'last used ' + acWhen(k.last_used) : 'never used'}`,
+    const toks = A.tokens.map((k) => row(esc(k.name), `<span class="mono">${esc(k.prefix)}…</span> · ${k.scope === 'read' ? 'read only' : 'read and write'}`
+        + ` · created ${acWhen(k.created)} · ${k.expires ? 'ends ' + acWhen(new Date(k.expires * 1000).toISOString()) : 'no end date'}`
+        + ` · ${k.last_used ? 'last used ' + acWhen(k.last_used) : 'never used'}`,
         `<button class="btn-link" type="button" data-ac-tokdel="${k.id}">Revoke</button>`)).join('');
     const evs = A.events.map((e) => `<div class="ac-row"><div><div class="ac-main"><span class="ac-dot" data-ok="${e.ok}"></span>${esc(AC_EVENTS[e.kind] || e.kind)}${e.detail ? ` <span class="muted">· ${esc(e.detail)}</span>` : ''}</div>
         <div class="ac-sub">${acWhen(e.ts)} · ${esc(e.device || '')} · ${esc(e.ip || '')}</div></div></div>`).join('');
@@ -5105,9 +5112,14 @@ async function accountModal(tab) {
             ${A.sessions.length > 1 ? '<button class="btn" type="button" id="ac-revoke-others">Sign out every other device</button>' : ''}
         </div>
         <div class="apps-pane" data-ac="tokens" hidden>
-            <p class="apps-foot">For scripts and curl: send <span class="mono">Authorization: Bearer &lt;token&gt;</span>. A token can do everything you can, so keep it private.</p>
+            <p class="apps-foot">For scripts and curl: send <span class="mono">Authorization: Bearer &lt;token&gt;</span>. A read-only token can only
+            look (GET); a read-and-write one can change anything but your account, Telegram and Dhan settings. Keep both private.</p>
             ${toks || '<p class="apps-foot">No API tokens.</p>'}
-            <div class="ac-inline"><input type="text" id="ac-tok-name" placeholder="Name, e.g. my laptop" maxlength="60"><button class="btn" type="button" id="ac-tok-new">Create</button></div>
+            <div class="ac-inline"><input type="text" id="ac-tok-name" placeholder="Name, e.g. my laptop" maxlength="60">
+                <select id="ac-tok-scope" aria-label="What the token may do"><option value="read" selected>Read only</option><option value="write">Read and write</option></select>
+                <select id="ac-tok-days" aria-label="How long it lasts"><option value="30">30 days</option><option value="90" selected>90 days</option>
+                    <option value="365">1 year</option><option value="0">Until revoked</option></select>
+                <button class="btn" type="button" id="ac-tok-new">Create</button></div>
             <div id="ac-tok-out"></div>
         </div>
         <div class="apps-pane" data-ac="activity" hidden>${evs || '<p class="apps-foot">Nothing yet.</p>'}</div>
@@ -5163,7 +5175,7 @@ async function accountModal(tab) {
             } else if (id === 'ac-revoke-others') {
                 const d = await api('/api/auth/sessions/revoke-others', {}); toast(`${d.revoked} device(s) signed out`); accountModal('devices');
             } else if (id === 'ac-tok-new') {
-                const d = await secure('/api/auth/tokens', { name: $('ac-tok-name').value });
+                const d = await secure('/api/auth/tokens', { name: $('ac-tok-name').value, scope: $('ac-tok-scope').value, days: +$('ac-tok-days').value });
                 $('ac-tok-out').innerHTML = `<div class="ac-codes" style="grid-template-columns:1fr"><span class="mono">${esc(d.token)}</span></div>
                     <p class="apps-foot">Copy it now: it is not shown again. Example: <span class="mono">curl -H "Authorization: Bearer ${esc(d.token.slice(0, 12))}…" ${esc(location.origin)}/api/board</span></p>`;
             } else if (e.target.dataset.acTokdel) {
@@ -7423,10 +7435,15 @@ $('perf-view').addEventListener('click', async (e) => {
     const ap = e.target.closest('[data-ap]');
     if (ap) {
         const action = ap.dataset.ap;
+        // Approve and reject name the proposal shown (its `since`): the server refuses if the lab replaced it.
+        const a = LAB.modes[pfMode] || {}, prop = a.awaiting || a.challenger, inShadow = !a.awaiting && !!a.challenger;
+        const sh = (prop && prop.shadow) || {}, need = (LAB.policy || {}).shadow_days;
         if (['undo', 'approve'].includes(action) && !await ask(action === 'undo'
             ? { title: 'Put the previous rules back?', body: 'The last change is undone; the next scan uses the rules from before it.', ok: 'Put them back' }
-            : { title: 'Apply the proposed rules now?', body: 'The next scan uses them; the change log keeps the old ones, so you can undo it.', ok: 'Apply' })) return;
-        try { await api('/api/autopilot/' + action, { mode: pfMode, paused: ap.dataset.on === '1' }); toast('Done'); refresh(); loadPerf(); }
+            : { title: 'Apply the proposed rules now?', body: (inShadow
+                ? `It is still in its shadow run (${sh.days || 0}${need ? ` of ${need}` : ''} sessions): applying now skips the rest of that test. `
+                : '') + 'The next scan uses them; the change log keeps the old ones, so you can undo it.', ok: 'Apply' })) return;
+        try { await api('/api/autopilot/' + action, { mode: pfMode, paused: ap.dataset.on === '1', since: prop ? prop.since : undefined }); toast('Done'); refresh(); loadPerf(); }
         catch (er) { toast(er.message); }
         return;
     }
@@ -7621,23 +7638,40 @@ let modalReturn = null;
 // ask(): the app's own confirm dialog in place of the browser's. Resolves true (the action) or false
 // (Cancel, Esc, a tap outside). `danger` makes the action button red.
 let askDone = null;
-function ask({ title, body = '', ok = 'OK', cancel = 'Cancel', danger = false }) {
+// With `password`, it asks for the password too and answers with it (or false).
+function ask({ title, body = '', ok = 'OK', cancel = 'Cancel', danger = false, password = false }) {
     if (askDone) askDone(false);                                   // one at a time: a new question cancels the last
     const back = document.activeElement;
     $('ask-title').textContent = title;
     $('ask-body').textContent = body; $('ask-body').hidden = !body;
     $('ask-yes').textContent = ok; $('ask-no').textContent = cancel;
     $('ask-yes').className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+    $('ask-pw').value = ''; $('ask-pw').hidden = !password;
     $('ask').hidden = $('ask-scrim').hidden = false;
-    (danger ? $('ask-no') : $('ask-yes')).focus();                 // a destructive action is never one Enter away by accident
+    (password ? $('ask-pw') : danger ? $('ask-no') : $('ask-yes')).focus();    // a destructive action is never one Enter away by accident
     return new Promise((resolve) => {
         askDone = (v) => {
             askDone = null;
+            const pw = $('ask-pw').value;
+            $('ask-pw').value = ''; $('ask-pw').hidden = true;
             $('ask').hidden = $('ask-scrim').hidden = true;
             if (back && back.focus && document.contains(back)) back.focus();
-            resolve(v);
+            resolve(password ? (v && pw ? pw : false) : v);
         };
     });
+}
+$('ask-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter' && askDone) { e.preventDefault(); askDone(true); } });
+// A change the server wants a recent sign-in for (need_password: signed in over 10 minutes ago, on
+// where alerts go and how Dhan is logged in to): ask for the password, then send it once more with it.
+async function apiConfirmed(path, body) {
+    try { return await api(path, body); }
+    catch (e) {
+        if (!(e.data && e.data.need_password)) throw e;
+        const pw = await ask({ title: 'Enter your password to confirm', ok: 'Confirm', password: true,
+            body: 'Where alerts go and how Dhan is logged in to change only with a recent sign-in.' });
+        if (!pw) throw new Error('Not changed: confirm with your password');
+        return api(path, { ...body, password: pw });
+    }
 }
 $('ask-yes').addEventListener('click', () => askDone && askDone(true));
 $('ask-no').addEventListener('click', () => askDone && askDone(false));
@@ -7648,7 +7682,8 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); askDone(false); }
     else if (e.key === 'Tab') {
         e.preventDefault();
-        (document.activeElement === $('ask-yes') ? $('ask-no') : $('ask-yes')).focus();
+        const ring = [$('ask-pw'), $('ask-no'), $('ask-yes')].filter((x) => !x.hidden);
+        ring[(ring.indexOf(document.activeElement) + (e.shiftKey ? ring.length - 1 : 1)) % ring.length].focus();
     }
 }, true);
 

@@ -137,6 +137,13 @@ def _iso(dt: datetime) -> str:
 
 
 # ---------------------------------------------------------------- parsing
+def web_url(u: Any) -> Optional[str]:
+    """A link from a feed, only if it is a web address: the page opens it on a click, and a
+    javascript: or data: link there would run in the app."""
+    u = str(u or '').strip()
+    return u if re.match(r'https?://', u, re.I) else None
+
+
 def parse_filings(rows: Any, symbol: str) -> List[Dict[str, Any]]:
     """NSE corporate-announcements JSON (a list) -> news items."""
     out = []
@@ -151,7 +158,7 @@ def parse_filings(rows: Any, symbol: str) -> List[Dict[str, Any]]:
             'symbol': symbol, 'kind': 'filing', 'source': 'nse', 'publisher': 'NSE filing',
             'uid': 'nse:' + str(r.get('seq_id') or _uid(category, r['an_dt'])),
             'title': category or text[:120], 'detail': text[:400],
-            'url': r.get('attchmntFile') or None, 'published': _iso(when),
+            'url': web_url(r.get('attchmntFile')), 'published': _iso(when),
             'routine': is_routine(category), 'tags': tags_for(category + ' ' + text),
         })
     return out
@@ -183,7 +190,7 @@ def parse_media(xml_text: str, symbol: str, name: str) -> List[Dict[str, Any]]:
             continue
         out.append({
             'symbol': symbol, 'kind': 'media', 'source': 'gnews', 'publisher': publisher or 'news',
-            'uid': 'gn:' + _uid(key), 'title': title, 'detail': '', 'url': item.findtext('link') or None,
+            'uid': 'gn:' + _uid(key), 'title': title, 'detail': '', 'url': web_url(item.findtext('link')),
             'published': _iso(when), 'routine': False, 'tags': tags_for(title),
         })
     return out

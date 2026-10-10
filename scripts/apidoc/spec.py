@@ -161,8 +161,9 @@ E = [
      'Queues a lab job; heavy work waits for the market to close.'),
     ('lab', 'POST', '/api/autopilot/policy', '/api/autopilot/policy', '{policy}',
      '`mode`, `max_steps`, `shadow_days`, `cooldown_days`, `pause_r`, `rollback_r`, `limits` (`{mode: {threshold: [min, max]}}`)',
-     'Saves the autopilot settings.'),
-    ('lab', 'POST', '/api/autopilot/<action>', '/api/autopilot/pause', {'mode': 'options'}, '`mode` (+ `"paused": false` to resume)',
+     'Saves the autopilot settings, each value clamped to its range (README 7.6).'),
+    ('lab', 'POST', '/api/autopilot/<action>', '/api/autopilot/pause', {'mode': 'options'},
+     '`mode`; for `approve` and `reject` the proposal\'s `since` (409 when that one is no longer open); `"paused": false` to resume',
      '`approve` a proposal now, `reject` it, `undo` the last change, or `pause` / resume a mode\'s entry alerts.'),
 
     ('charts', 'GET', '/api/charts/config', '/api/charts/config', None, '',
@@ -192,10 +193,12 @@ E = [
      '`telegram_token`, `telegram_chat_id`, `dhan_client_id`, `dhan_pin`, `dhan_totp`, `data_source` (`auto` or `yfinance`), '
      '`watch_delay`, `live_watch_delay`, `log_level`, `intraday_square_off`, `nse_cts_end_fo`, `nse_closes_final`, `nse_fo_close` (HH:MM), '
      '`nse_cas_start` (YYYY-MM-DD); `""` clears one back to .env',
-     'Saves App settings (all or none: one bad value refuses the lot). New Dhan login details start a login at once.'),
+     'Saves App settings (all or none: one bad value refuses the lot). New Dhan login details start a login at once. The Telegram '
+     'and Dhan fields need a signed-in browser (not a token) signed in within 10 minutes, or `password` in the body.'),
     ('settings', 'POST', '/api/telegram/test', '/api/telegram/test', {}, '', 'Sends a test message to the configured chat.'),
     ('settings', 'POST', '/api/dhan/token', '/api/dhan/token', {'access_token': 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJkaGFuQ2xpZW50SWQiOiIxMTAwMDEyMzQ1In0.signature', 'client_id': '1100012345'},
-     '`access_token`, `client_id` (optional)', 'Connects Dhan with a token from web.dhan.co, after checking it with Dhan. The token is never sent back.'),
+     '`access_token`, `client_id` (optional), `password` when needed', 'Connects Dhan with a token from web.dhan.co, after checking it with '
+     'Dhan. The token is never sent back. A signed-in browser only, signed in within 10 minutes or with `password`.'),
     ('settings', 'POST', '/api/dhan/disconnect', '/api/dhan/disconnect', {}, '', 'Forgets the Dhan token; back to yfinance.'),
     ('settings', 'POST', '/api/universe/refresh', '/api/universe/refresh', {}, '', 'Re-downloads every NSE list (28 indices + F&O) now; it answers when done (up to a minute). An index that fails keeps its previous members.'),
 ]
@@ -236,8 +239,9 @@ E += [
     ('auth', 'POST', '/api/auth/passkey/<id>/delete', '/api/auth/passkey/2/delete', {}, '`password` when needed', 'Removes a passkey.'),
     ('auth', 'POST', '/api/auth/sessions/<id>/revoke', '/api/auth/sessions/7/revoke', {}, '', 'Signs one device out.'),
     ('auth', 'POST', '/api/auth/sessions/revoke-others', '/api/auth/sessions/revoke-others', {}, '', 'Signs every other device out.'),
-    ('auth', 'POST', '/api/auth/tokens', '/api/auth/tokens', {'name': 'laptop scripts'}, '`name`, `password` when needed',
-     'Creates an API token. The token is in this answer only; afterwards only its first characters are shown.'),
+    ('auth', 'POST', '/api/auth/tokens', '/api/auth/tokens', {'name': 'laptop scripts'},
+     '`name`, `scope` (`read`, the default, or `write`), `days` (30, 90 the default, 365, or 0: until revoked), `password` when needed',
+     'Creates an API token. The token is in this answer only; afterwards only its first characters are shown. A read token may only GET.'),
     ('auth', 'POST', '/api/auth/tokens/<id>/revoke', '/api/auth/tokens/3/revoke', {}, '', 'Revokes an API token at once.'),
 ]
 
@@ -279,6 +283,7 @@ STATIC = {
     '/api/auth/passkey/<id>/delete': (200, {'ok': True, 'passkeys': []}),
     '/api/auth/sessions/<id>/revoke': (200, {'ok': True}),
     '/api/auth/sessions/revoke-others': (200, {'ok': True, 'revoked': 2}),
-    '/api/auth/tokens': (200, {'id': 3, 'name': 'laptop scripts', 'token': 'nwt_Q2xA9pZk…', 'prefix': 'nwt_Q2xA9pZk'}),
+    '/api/auth/tokens': (200, {'id': 3, 'name': 'laptop scripts', 'token': 'nwt_Q2xA9pZk…', 'prefix': 'nwt_Q2xA9pZk', 'scope': 'read',
+                               'expires': 1799999999.0}),
     '/api/auth/tokens/<id>/revoke': (200, {'ok': True}),
 }

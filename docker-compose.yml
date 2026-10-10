@@ -15,10 +15,17 @@ services:
       # The addresses NiftyWhale is served on (through Pi Observatory's Caddy). Passkeys are bound to the
       # first one's host name; sign-in cookies are accepted only from these pages.
       NIFTYWHALE_ORIGINS: "https://pandorasbox.local:5443,https://192.168.1.50:5443"
+      # The proxy whose X-Forwarded-For / -Proto / -Host are believed: Caddy, in Pi Observatory's container on
+      # this network. A request from anywhere else (the 127.0.0.1 port mapping, another container) has them dropped.
+      NIFTYWHALE_PROXIES: "pi-observatory"
     volumes:
       - ./var:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
+    # The key the secrets in the database are encrypted with (store.seal), kept outside ./var so a
+    # copy of the data is no use without it. Back it up separately: without it, the Dhan and Telegram
+    # secrets have to be entered again.
+    secrets: [niftywhale_key]
     # Loopback only: other devices come in over HTTPS on pandorasbox.local:5443 (Caddy, on this
     # compose network). Plain http from the network is closed; scripts on the Pi itself can still use
     # http://127.0.0.1:5058 with an API token.
@@ -46,6 +53,7 @@ services:
       - ./var:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
+    secrets: [niftywhale_key]
     # The live app always wins the CPU: a quarter of its share, and one core left free.
     cpu_shares: 256
     cpus: 3
@@ -69,3 +77,7 @@ services:
     cpu_shares: 256
     cpus: 1
     mem_limit: 700m
+
+secrets:
+  niftywhale_key:
+    file: ./secrets/niftywhale.key       # chmod 600; made once: see README, Secrets at rest

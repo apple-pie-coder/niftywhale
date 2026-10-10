@@ -285,6 +285,23 @@ def save_state(mode: str, st: Dict[str, Any]) -> None:
     store.set_json(f'autopilot:{mode}', st)
 
 
+def update_state(mode: str, fn: Callable[[Dict[str, Any]], Any]) -> Dict[str, Any]:
+    """Change a mode's autopilot state in one step (store.update_json): the app (your approve,
+    reject, undo, pause) and the lab (tuning, shadow, rollback, which take minutes to hours to
+    decide) both write it, and a copy read before a long run must never overwrite what changed
+    meanwhile. `fn` changes the state it is given in place."""
+    def step(st):
+        st = st if isinstance(st, dict) else {}
+        fn(st)
+        return st
+    return store.update_json(f'autopilot:{mode}', step, {})
+
+
+def same_proposal(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> bool:
+    """Whether two proposals are the same one (it was made on `since`, with these `params`)."""
+    return bool(a and b) and a.get('since') == b.get('since') and a.get('params') == b.get('params')
+
+
 def apply_thresholds(mode: str, thr: Dict[str, float], why: str, by: str = 'autopilot',
                      base: Optional[Dict[str, float]] = None) -> Dict[str, list]:
     """Write new thresholds into the rule overrides the live app reads at its next scan.
@@ -299,18 +316,24 @@ def apply_thresholds(mode: str, thr: Dict[str, float], why: str, by: str = 'auto
     sp = specs(mode)
     base = base or current_thresholds(mode)
     cast = lambda k, v: int(v) if k in ('min_avg_volume', 'max_per_day', 'min_zone_age') else v
+    # A value already in force is no change: applied twice (your approve racing the lab's own
+    # promotion), the second would record it as its own 'before', and Undo would put back nothing.
     changed = {k: [saved.get(k), cast(k, v)] for k, v in thr.items()
-               if k in sp and (base.get(k) is None or abs(float(v) - float(base[k])) > 1e-9)}
+               if k in sp and (base.get(k) is None or abs(float(v) - float(base[k])) > 1e-9)
+               and saved.get(k) != cast(k, v)}
+    if not changed:
+        return {}
     new = {**saved, **{k: after for k, (_, after) in changed.items()}}
     store.set_settings({key: new})
     store.log_autopilot(mode, 'promote', {k: b for k, (b, _) in changed.items()}, {k: a for k, (_, a) in changed.items()}, why, by)
-    st = state(mode)
-    st['last_change'] = {'at': data.now_ist().isoformat(timespec='seconds'), 'changed': changed, 'why': why,
-                         'session': data.now_ist().date().isoformat()}
-    st.pop('challenger', None)
-    st.pop('awaiting', None)
-    st['watch_from'] = st['last_change']['at']           # the pause rule starts counting afresh
-    save_state(mode, st)
+    at = data.now_ist().isoformat(timespec='seconds')
+
+    def record(st):
+        st['last_change'] = {'at': at, 'changed': changed, 'why': why, 'session': data.now_ist().date().isoformat()}
+        st.pop('challenger', None)
+        st.pop('awaiting', None)
+        st['watch_from'] = at                             # the pause rule starts counting afresh
+    update_state(mode, record)
     if store.settings().get(f'paused_{mode}') == '1':
         store.set_settings({f'paused_{mode}': '0'})
         store.log_autopilot(mode, 'resume', None, None, 'new rules promoted', by)
@@ -364,20 +387,32 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
     # progress bar and time left read (step_of).
     wf = autopilot.walk_forward(lambda thr: bench.run({**current, **thr}), {k: current[k] for k in sp}, sp, pol, mode,
                                 first, lastday, on_step=lambda n, total, what: progress(f'{mode}: walk-forward {n}/{total} ({what})'))
-    st['last_tune'] = {'at': data.now_ist().isoformat(timespec='seconds'), 'oos_tuned': wf['oos_tuned'],
-                       'oos_current': wf['oos_current'], 'gain_r': wf['gain_r'], 'reasons': wf['reasons'],
-                       'folds': [{'test': f['test'], 'tuned': f['tuned'], 'current': f['current']} for f in wf['folds']]}
+    last_tune = {'at': data.now_ist().isoformat(timespec='seconds'), 'oos_tuned': wf['oos_tuned'],
+                 'oos_current': wf['oos_current'], 'gain_r': wf['gain_r'], 'reasons': wf['reasons'],
+                 'folds': [{'test': f['test'], 'tuned': f['tuned'], 'current': f['current']} for f in wf['folds']]}
+    challenger = None
     if wf['proposal']:
         proposal = {**current, **wf['proposal']}
-        st['challenger'] = {'params': proposal, 'base': current, 'since': data.now_ist().date().isoformat(),
-                            'proposed_at': data.now_ist().isoformat(timespec='seconds'),
-                            'change': describe(proposal, current),
-                            'evidence': f"out of sample {wf['oos_tuned'].get('avg_r')}R/trade over {wf['oos_tuned'].get('trades')} trades "
-                                        f"against {wf['oos_current'].get('avg_r')}R for the current rules"}
-        store.log_autopilot(mode, 'propose', current, proposal, st['challenger']['evidence'])
-        tg(f"🐋 <b>Autopilot · {mode}</b>: proposing {esc(st['challenger']['change'])}.\n{esc(st['challenger']['evidence'])}.\n"
+        challenger = {'params': proposal, 'base': current, 'since': data.now_ist().date().isoformat(),
+                      'proposed_at': data.now_ist().isoformat(timespec='seconds'),
+                      'change': describe(proposal, current),
+                      'evidence': f"out of sample {wf['oos_tuned'].get('avg_r')}R/trade over {wf['oos_tuned'].get('trades')} trades "
+                                  f"against {wf['oos_current'].get('avg_r')}R for the current rules"}
+    taken = {}
+
+    # The tuning ran for hours on the state as it was: only its own result goes in, and a proposal
+    # only if none appeared (and no change was made) meanwhile.
+    def record(st):
+        st['last_tune'] = last_tune
+        if challenger and not (st.get('challenger') or st.get('awaiting')) and \
+                (st.get('last_change') or {}).get('at') == last:
+            st['challenger'] = challenger
+            taken['ok'] = True
+    update_state(mode, record)
+    if taken:
+        store.log_autopilot(mode, 'propose', current, challenger['params'], challenger['evidence'])
+        tg(f"🐋 <b>Autopilot · {mode}</b>: proposing {esc(challenger['change'])}.\n{esc(challenger['evidence'])}.\n"
            f"It now runs in shadow for {pol['shadow_days']} sessions before anything changes.")
-    save_state(mode, st)
     proposal = {**current, **wf['proposal']} if wf['proposal'] else None
     keep = ('trades', 'wins', 'win_rate', 'avg_r', 'total_r', 'max_drawdown', 'profit_factor')
     return {'proposal': bool(wf['proposal']), 'reasons': wf['reasons'], 'gain_r': wf['gain_r'],
@@ -389,7 +424,11 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
 
 
 def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
-    """Nightly: move a shadow proposal along, check for a rollback, pause or resume."""
+    """Nightly: move a shadow proposal along, check for a rollback, pause or resume.
+
+    Each decision is worked out on the state as it was (simulations take minutes), then claimed
+    in one step (update_state) only if what it was about is still there: a proposal you rejected
+    or approved meanwhile, or a change you undid, is left as you left it."""
     pol = policy()
     notes = []
     st = state(mode)
@@ -403,26 +442,37 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
         old = [t for t in bench.run(current) if t['entry_time'][:10] >= ch['since']]
         days = len(pd.bdate_range(since, today)) - 1
         verdict, why = autopilot.shadow_decision(new, old, days, pol, mode)
-        ch['shadow'] = {'days': days, 'challenger': perf.summary(new), 'current': perf.summary(old), 'verdict': verdict, 'why': why}
-        if verdict == 'promote':
+        shadow = {'days': days, 'challenger': perf.summary(new), 'current': perf.summary(old), 'verdict': verdict, 'why': why}
+        claimed = {}
+
+        def decide(s):
+            live = s.get('challenger')
+            if not same_proposal(live, ch):
+                return                                   # rejected, approved or replaced meanwhile
+            live['shadow'] = shadow
+            claimed['ok'] = True
+            if verdict == 'promote' and pol['mode'] == 'approve':
+                s['awaiting'] = live
+                s.pop('challenger', None)
+            elif verdict == 'drop':
+                s.pop('challenger', None)
+            # promote in auto mode: apply_thresholds clears it as it records the change
+        update_state(mode, decide)
+        if claimed and verdict == 'promote':
             if pol['mode'] == 'approve':
-                st['awaiting'] = ch
-                st.pop('challenger', None)
                 store.log_autopilot(mode, 'awaiting', current, ch['params'], why)
                 tg(f"🐋 <b>Autopilot · {mode}</b>: {esc(ch['change'])} passed its shadow run ({esc(why)}). "
                    'Approve it on the Performance tab.')
-            else:
-                save_state(mode, st)
-                apply_thresholds(mode, ch['params'], f"{ch['evidence']}; shadow: {why}", base=ch.get('base'))
+            elif apply_thresholds(mode, ch['params'], f"{ch['evidence']}; shadow: {why}", base=ch.get('base')):
                 tg(f"🐋 <b>Autopilot · {mode}</b>: changed {esc(ch['change'])}.\nWhy: {esc(ch['evidence'])}; shadow run: {esc(why)}.\n"
                    'Undo it on the Performance tab if you disagree.')
                 notes.append(f'promoted: {ch["change"]}')
-                st = state(mode)
-        elif verdict == 'drop':
+            else:                                        # its values are in force already: nothing left to test
+                update_state(mode, lambda s: s.pop('challenger', None) if same_proposal(s.get('challenger'), ch) else None)
+        elif claimed and verdict == 'drop':
             store.log_autopilot(mode, 'drop', current, ch['params'], why)
-            st.pop('challenger', None)
             notes.append(f'dropped proposal: {why}')
-        save_state(mode, st)
+        st = state(mode)
 
     # Rollback: live trades since the last change lost, and the old rules would have done better.
     lc = st.get('last_change')
@@ -432,14 +482,13 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
         newr = [t for t in bench.run(current_thresholds(mode)) if t['entry_time'][:10] >= lc['session']]
         oldr = [t for t in bench.run(prev) if t['entry_time'][:10] >= lc['session']]
         why = autopilot.rollback_due(live, newr, oldr, pol, mode)
-        if why:
+        if why and claim_revert(mode, lc):
             revert_change(mode, lc)
             store.log_autopilot(mode, 'rollback', {k: a for k, (_, a) in (lc.get('changed') or {}).items()},
                                 {k: b for k, (b, _) in (lc.get('changed') or {}).items()}, why)
-            lc['reverted'] = data.now_ist().isoformat(timespec='seconds')
-            save_state(mode, st)
             tg(f'🐋 <b>Autopilot · {mode}</b>: rolled back the last change. {esc(why)}.')
             notes.append('rolled back')
+        st = state(mode)
 
     # Pause / resume the Telegram entry alerts.
     trades = store.live_trades(mode)
@@ -451,8 +500,8 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
         why = autopilot.pause_due(fresh, pol, mode)
         if why:
             store.set_settings({f'paused_{mode}': '1'})
-            st['paused_at'] = data.now_ist().isoformat(timespec='seconds')
-            save_state(mode, st)
+            at = data.now_ist().isoformat(timespec='seconds')
+            update_state(mode, lambda s: s.__setitem__('paused_at', at))
             store.log_autopilot(mode, 'pause', None, None, why)
             tg(f'🐋 <b>Autopilot · {mode}</b>: entry alerts paused — {esc(why)}. Trades are still recorded on the dashboard.')
             notes.append('paused')
@@ -461,13 +510,30 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
         why = autopilot.resume_due(during)
         if why:
             store.set_settings({f'paused_{mode}': '0'})
-            st.pop('paused_at', None)
-            st['watch_from'] = data.now_ist().isoformat(timespec='seconds')
-            save_state(mode, st)
+            at = data.now_ist().isoformat(timespec='seconds')
+
+            def resume(s):
+                s.pop('paused_at', None)
+                s['watch_from'] = at
+            update_state(mode, resume)
             store.log_autopilot(mode, 'resume', None, None, why)
             tg(f'🐋 <b>Autopilot · {mode}</b>: entry alerts back on — {esc(why)}.')
             notes.append('resumed')
     return notes
+
+
+def claim_revert(mode: str, lc: Dict[str, Any]) -> bool:
+    """Mark the change `lc` reverted, in one step, if it is still the last change and not reverted
+    yet (by you, or by an earlier rollback): only the one who claims it puts the rules back."""
+    got = {}
+
+    def mark(s):
+        cur = s.get('last_change')
+        if cur and cur.get('at') == lc.get('at') and not cur.get('reverted'):
+            cur['reverted'] = data.now_ist().isoformat(timespec='seconds')
+            got['ok'] = True
+    update_state(mode, mark)
+    return bool(got)
 
 
 # ---------------------------------------------------------------- options candidates

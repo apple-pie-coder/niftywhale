@@ -9,3 +9,4 @@ qrcode==8.2
 flask-sock==0.7.0
 simple-websocket==1.1.0
 websockets>=13.0,<18
+cryptography>=50.0.2
