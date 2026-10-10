@@ -1,13 +1,16 @@
-/* NiftyWhale's palette, light and dark: the one place colours are defined. static/theme.js sets
-   <html data-theme> before the page paints (Light, Dark, or System: the device's setting), and every
-   page builds on these tokens. Sizes, radii and fonts stay with each page. */
+/* NiftyWhale's palette and its two styles: the one place colours are defined. static/theme.js sets, before the
+   page paints, <html data-theme> (Light, Dark, or System: the device's setting) and <html data-style>:
+     glass    (the default) translucent panels with blur, specular edges and glossy controls over a tinted plane;
+     classic  solid flat surfaces, square corners, no gradients, blur or shadows; the same layout.
+   Every page builds on these tokens. Sizes and fonts stay with each page; the styles set the corner radii. */
 :root {
     color-scheme: light;
-    --plane: #f4f6f8;
-    --surface: #ffffff;
-    --sunk: #eef1f4;
-    --line: #dde3e9;
-    --line-strong: #c5ced8;
+    --plane: #eaf0f6;
+    --surface: #f8fafc;              /* solid: charts, sticky headers and menus paint with it */
+    --glass: rgba(255, 255, 255, 0.68);   /* the glass panels below: about --surface over --plane */
+    --sunk: rgba(107, 133, 160, 0.10);
+    --line: rgba(125, 149, 174, 0.20);
+    --line-strong: rgba(127, 149, 173, 0.38);
     --ink: #0f1d2b;
     --ink-2: #3a4a5a;
     --ink-3: #6b7b8c;
@@ -20,13 +23,23 @@
     --ob: rgba(11, 110, 138, 0.20);  --ob-line: rgba(11, 110, 138, 0.7);
     --fvg: rgba(214, 158, 46, 0.22); --fvg-line: rgba(176, 120, 20, 0.7);
     --up: #1a7f4b; --down: #c0392b;
+    /* Gain / loss in charts (teal-green against orange-red): validated for colour-blind separation on this
+       surface (deutan/protan ΔE 10.6), where the green / red of --good / --bad sits at the 6.0 floor. */
+    --gain: #0b8a74; --loss: #d0532a;
     --vwap: #7c3aed; --bb: #64748b; --bb-fill: rgba(100, 116, 139, 0.08); --orb: rgba(37, 99, 235, 0.07); --orb-line: #2563eb;
-    --shadow: 0 1px 2px rgba(15, 29, 43, 0.06), 0 1px 1px rgba(15, 29, 43, 0.04);
+    --shadow: 0 14px 38px rgba(33, 57, 82, 0.10), 0 2px 8px rgba(33, 57, 82, 0.05);
+    /* Glass: the sheen across a panel's top, its specular top edge, the rim inside its border, its edge. */
+    --sheen: rgba(255, 255, 255, 0.55); --spec: rgba(255, 255, 255, 0.95);
+    --rim: rgba(255, 255, 255, 0.42); --rim-low: rgba(255, 255, 255, 0.20); --glass-edge: rgba(255, 255, 255, 0.70);
+    --gloss: rgba(255, 255, 255, 0.40);   /* the highlight on a solid (accent) control */
+    /* The glass style's backdrop: four soft glows over the plane (each palette sets its own). */
+    --amb-1: rgba(120, 190, 224, 0.30); --amb-2: rgba(185, 174, 239, 0.26);
+    --amb-3: rgba(255, 214, 186, 0.16); --amb-4: rgba(126, 199, 191, 0.20);
 }
 :root[data-theme="dark"] {
     color-scheme: dark;
-    --plane: #0b141c; --surface: #111d27; --sunk: #0e1922;
-    --line: #213140; --line-strong: #2d4152;
+    --plane: #09131e; --surface: #13202e; --glass: rgba(22, 36, 51, 0.76); --sunk: rgba(2, 8, 15, 0.26);
+    --line: rgba(195, 220, 243, 0.12); --line-strong: rgba(195, 220, 243, 0.22);
     --ink: #e6edf3; --ink-2: #b6c3cf; --ink-3: #7d8e9e;
     --accent: #3fb5d4; --accent-ink: #04202a; --accent-soft: #11313d;
     --good: #4cc38a; --good-soft: #10301f;
@@ -35,9 +48,265 @@
     --ob: rgba(63, 181, 212, 0.20); --ob-line: rgba(63, 181, 212, 0.75);
     --fvg: rgba(224, 168, 58, 0.20); --fvg-line: rgba(224, 168, 58, 0.75);
     --up: #4cc38a; --down: #f0857a;
+    --gain: #2ea597; --loss: #dd6b3d;     /* validated on this surface: ΔE 12.8 under deutan (--good / --bad fail at 3.1) */
     --vwap: #b794f6; --bb: #94a3b8; --bb-fill: rgba(148, 163, 184, 0.09); --orb: rgba(96, 165, 250, 0.09); --orb-line: #60a5fa;
-    --shadow: none;
+    --shadow: 0 18px 48px rgba(0, 0, 0, 0.30), 0 2px 10px rgba(0, 0, 0, 0.18);
+    --sheen: rgba(255, 255, 255, 0.075); --spec: rgba(255, 255, 255, 0.20);
+    --rim: rgba(255, 255, 255, 0.06); --rim-low: rgba(255, 255, 255, 0.03); --glass-edge: rgba(195, 220, 243, 0.16);
+    --gloss: rgba(255, 255, 255, 0.30);
+    --amb-1: rgba(31, 104, 139, 0.30); --amb-2: rgba(87, 62, 137, 0.26);
+    --amb-3: rgba(120, 66, 40, 0.10); --amb-4: rgba(21, 111, 106, 0.18);
 }
+
+/* ------------------------------------------------------------------ glass (the default style)
+   Panels of --glass over a tinted plane: blur and saturation behind, a sheen across the top, a specular top
+   edge and a rim inside the border. Controls are capsules with the same highlights; solid (accent) controls
+   carry a gloss. --surface stays solid for whatever paints on top of something else (chart canvases, sticky
+   headers, menus). Only named panels get the glass: a bare section or article is often layout (the dashboard's
+   blocks, the sign-in page's dark brand panel), so pages' own panels are listed (docs #doc, trust section[data-for]).
+   The market's mood (index.html, applyMood) glows behind all of it in both styles. */
+:root:not([data-style="classic"]) { --r-sm: 8px; --r-md: 11px; --r-lg: 18px; }
+:root body {
+    background:
+        radial-gradient(ellipse at 8% 0%, var(--amb-1), transparent 44%),
+        radial-gradient(ellipse at 94% 8%, var(--amb-2), transparent 40%),
+        radial-gradient(ellipse at 70% 62%, var(--amb-3), transparent 42%),
+        radial-gradient(ellipse at 50% 100%, var(--amb-4), transparent 50%),
+        var(--plane);
+    background-attachment: fixed;
+}
+
+/* The bars: glass, the mood's wash (the page's own background-image) left alone. */
+:root .topbar,
+:root .ticker {
+    background-color: var(--glass);
+    border-color: var(--glass-edge);
+    box-shadow: 0 10px 30px rgba(38, 60, 84, 0.08), inset 0 1px 0 var(--spec), inset 0 -1px 0 var(--rim-low);
+    -webkit-backdrop-filter: blur(30px) saturate(190%);
+    backdrop-filter: blur(30px) saturate(190%);
+}
+:root .card,
+:root #doc,
+:root section[data-for],
+:root .table-wrap,
+:root .smf-card,
+:root .box,
+:root .fullchart,
+:root .modal,
+:root .ask,
+:root .drawer,
+:root .nb-panel,
+:root .ch-pal,
+:root .tm-menu,
+:root .pane .card {
+    background-color: var(--glass);
+    background-image:
+        linear-gradient(180deg, var(--sheen) 0, transparent 120px),
+        linear-gradient(135deg, var(--rim) 0%, transparent 42%);
+    border-color: var(--glass-edge);
+    box-shadow: var(--shadow), inset 0 1px 0 var(--spec), inset 0 0 0 1px var(--rim), inset 0 -1px 1px var(--rim-low);
+    -webkit-backdrop-filter: blur(30px) saturate(190%);
+    backdrop-filter: blur(30px) saturate(190%);
+}
+:root .pane .card {
+    border: 1px solid var(--glass-edge);
+    border-radius: 26px;
+    padding: 30px;
+}
+
+/* Capsule controls: a sheen and a specular edge on whatever colour the page gives them. */
+:root .btn,
+:root .back,
+:root .tabs button,
+:root .cbtn,
+:root .ovl button,
+:root .fchip,
+:root .tchip,
+:root .smp-chip,
+:root .seg,
+:root .modes,
+:root .theme-seg {
+    border-color: var(--glass-edge);
+    background-image: linear-gradient(180deg, var(--sheen), transparent 70%);
+    box-shadow: 0 1px 2px rgba(15, 29, 43, 0.06), inset 0 1px 0 var(--spec), inset 0 -1px 0 var(--rim-low);
+    -webkit-backdrop-filter: blur(16px) saturate(170%);
+    backdrop-filter: blur(16px) saturate(170%);
+}
+:root .btn:hover:not(:disabled),
+:root .fchip:hover,
+:root .tchip:hover { background-image: linear-gradient(180deg, var(--spec), var(--sheen) 60%, transparent); }
+/* Solid controls (accent, danger): a gloss over the top half and a glow in their own colour. */
+:root .btn-primary,
+:root .btn-danger,
+:root .dl,
+:root .brand-mark,
+:root .logo span,
+:root .mode-thumb,
+:root .seg button[aria-pressed="true"],
+:root .tabs button[aria-pressed="true"] {
+    background-image: linear-gradient(180deg, var(--gloss) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0) 51%, rgba(0, 0, 0, 0.06) 100%);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.55),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+}
+:root .btn-danger,
+:root .btn-primary[data-role="stop"] { box-shadow: 0 6px 20px color-mix(in srgb, var(--bad) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
+:root input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+:root select,
+:root textarea {
+    border-color: var(--line-strong);
+    background-color: var(--surface);
+    box-shadow: inset 0 1px 2px rgba(15, 29, 43, 0.06);
+}
+:root .theme-seg button[aria-checked="true"] {
+    background: color-mix(in srgb, var(--surface) 82%, white);
+    background-image: linear-gradient(180deg, var(--spec), transparent 80%);
+    box-shadow: 0 3px 10px rgba(35, 57, 80, 0.14), inset 0 1px 0 var(--spec);
+}
+:root[data-theme="dark"] .theme-seg button[aria-checked="true"] {
+    background: color-mix(in srgb, var(--surface) 84%, white 10%);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.30), inset 0 1px 0 var(--spec);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root .topbar, :root .ticker, :root .card, :root #doc, :root section[data-for], :root .table-wrap, :root .smf-card,
+    :root .box, :root .fullchart, :root .modal, :root .ask, :root .drawer, :root .nb-panel, :root .ch-pal, :root .tm-menu,
+    :root .pane .card { background-color: var(--surface); }
+}
+
+/* ------------------------------------------------------------------ classic
+   Everything above taken off: solid surfaces, plain borders, square corners, no gradients, blur, gloss or
+   shadows, controls as plain boxes. The layout is the pages' own and stays. The mood stays too, quieter: the
+   glows at the plane's edges and the wash and line on the top bar. NiftyWhale's own palette turns system grey;
+   a chosen palette (theme.js) keeps its colours, flat. */
+:root[data-style="classic"] { --glass: var(--surface); --shadow: none; --r-sm: 2px; --r-md: 3px; --r-lg: 4px; --r-pill: 3px; }
+:root[data-style="classic"][data-palette="niftywhale"] {
+    --plane: #ececec; --surface: #ffffff; --glass: #ffffff; --sunk: #f3f3f3;
+    --line: #d4d4d4; --line-strong: #b4b4b4; --accent-soft: #e4eff2;
+}
+:root[data-style="classic"][data-palette="niftywhale"][data-theme="dark"] {
+    --plane: #1c1c1e; --surface: #252527; --glass: #252527; --sunk: #2d2d30;
+    --line: #3a3a3d; --line-strong: #55555a; --accent-soft: #15323b;
+}
+:root[data-style="classic"] body { background: var(--plane); }
+:root[data-style="classic"] body::before { opacity: 0.6; animation: none; }
+:root[data-style="classic"] .topbar,
+:root[data-style="classic"] .ticker {
+    background-color: var(--surface);
+    border-color: var(--line);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+:root[data-style="classic"] .card,
+:root[data-style="classic"] #doc,
+:root[data-style="classic"] section[data-for],
+:root[data-style="classic"] .table-wrap,
+:root[data-style="classic"] .smf-card,
+:root[data-style="classic"] .box,
+:root[data-style="classic"] .fullchart,
+:root[data-style="classic"] .modal,
+:root[data-style="classic"] .ask,
+:root[data-style="classic"] .drawer,
+:root[data-style="classic"] .nb-panel,
+:root[data-style="classic"] .ch-pal,
+:root[data-style="classic"] .tm-menu,
+:root[data-style="classic"] .pane .card,
+:root[data-style="classic"] .btn,
+:root[data-style="classic"] .back,
+:root[data-style="classic"] .tabs button,
+:root[data-style="classic"] .cbtn,
+:root[data-style="classic"] .ovl button,
+:root[data-style="classic"] .fchip,
+:root[data-style="classic"] .tchip,
+:root[data-style="classic"] .smp-chip,
+:root[data-style="classic"] .seg,
+:root[data-style="classic"] .modes,
+:root[data-style="classic"] .theme-seg,
+:root[data-style="classic"] .btn-primary,
+:root[data-style="classic"] .btn-danger,
+:root[data-style="classic"] .dl,
+:root[data-style="classic"] .brand-mark,
+:root[data-style="classic"] .logo span,
+:root[data-style="classic"] .mode-thumb,
+:root[data-style="classic"] .seg button[aria-pressed="true"],
+:root[data-style="classic"] .tabs button[aria-pressed="true"],
+:root[data-style="classic"] .theme-seg button[aria-checked="true"],
+:root[data-style="classic"] input,
+:root[data-style="classic"] select,
+:root[data-style="classic"] textarea {
+    background-image: none;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+:root[data-style="classic"] .card,
+:root[data-style="classic"] #doc,
+:root[data-style="classic"] section[data-for],
+:root[data-style="classic"] .table-wrap,
+:root[data-style="classic"] .smf-card,
+:root[data-style="classic"] .box,
+:root[data-style="classic"] .fullchart,
+:root[data-style="classic"] .modal,
+:root[data-style="classic"] .ask,
+:root[data-style="classic"] .drawer,
+:root[data-style="classic"] .nb-panel,
+:root[data-style="classic"] .ch-pal,
+:root[data-style="classic"] .tm-menu,
+:root[data-style="classic"] .pane .card { background-color: var(--surface); border-color: var(--line-strong); }
+/* Menus and windows that float keep one plain edge so they still read as above the page. */
+:root[data-style="classic"] .modal,
+:root[data-style="classic"] .ask,
+:root[data-style="classic"] .drawer,
+:root[data-style="classic"] .nb-panel,
+:root[data-style="classic"] .tm-menu,
+:root[data-style="classic"] .fullchart { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
+:root[data-style="classic"] .pane .card { border-radius: 4px; }
+/* Pills and capsules become plain boxes (dots and round icon buttons stay round). */
+:root[data-style="classic"] .pill, :root[data-style="classic"] .switch, :root[data-style="classic"] .tag,
+:root[data-style="classic"] .fchip, :root[data-style="classic"] .tchip, :root[data-style="classic"] .pchip,
+:root[data-style="classic"] .ctype, :root[data-style="classic"] .nsent, :root[data-style="classic"] .dread,
+:root[data-style="classic"] .ntags span, :root[data-style="classic"] .gl-jump button, :root[data-style="classic"] .ac-tag,
+:root[data-style="classic"] .diff span, :root[data-style="classic"] .ovl button, :root[data-style="classic"] .cmdk-chip,
+:root[data-style="classic"] .mode-thumb, :root[data-style="classic"] .modes, :root[data-style="classic"] .modes button,
+:root[data-style="classic"] .pf-sig, :root[data-style="classic"] .tc-chg span, :root[data-style="classic"] .smp-chip,
+:root[data-style="classic"] .theme-seg, :root[data-style="classic"] .theme-seg button, :root[data-style="classic"] .tabs button,
+:root[data-style="classic"] .dl, :root[data-style="classic"] .logo span, :root[data-style="classic"] .brand-mark { border-radius: 3px; }
+:root[data-style="classic"] .switch::after { border-radius: 2px; }
+
+/* ------------------------------------------------------------------ Terminal (a palette in theme.js)
+   A phosphor screen: monospace everywhere (the palette sets --font), a faint glow on the text and the
+   lines of a CRT over the plane. */
+:root[data-palette="terminal"] body { text-shadow: 0 0 6px rgba(57, 255, 106, 0.22); letter-spacing: 0; }
+:root[data-palette="terminal"] body::after {
+    content: ""; position: fixed; inset: 0; z-index: 2147483000; pointer-events: none;
+    background: repeating-linear-gradient(180deg, rgba(0, 0, 0, 0) 0, rgba(0, 0, 0, 0) 2px, rgba(0, 0, 0, 0.16) 3px);
+}
+:root[data-palette="terminal"] ::selection { background: #39ff6a; color: #001a08; text-shadow: none; }
+:root[data-palette="terminal"] canvas, :root[data-palette="terminal"] svg { text-shadow: none; }
+@media (prefers-reduced-transparency: reduce) { :root[data-palette="terminal"] body::after { display: none; } }
+
+/* The theme manager (NWTheme.manager): mode, style, and a card for each palette. */
+.tmgr { display: grid; gap: 12px; }
+.tmgr-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 12px; }
+.tmgr-row .theme-seg { width: 100%; }
+.tmgr-k { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.tmgr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tmgr-card { display: grid; gap: 7px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-lg, 12px); background: var(--surface);
+    color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.tmgr-card:hover { border-color: var(--line-strong); }
+.tmgr-card[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.tmgr-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tmgr-prev { position: relative; display: block; height: 78px; border-radius: calc(var(--r-lg, 12px) - 4px); overflow: hidden; }
+.tmgr-panel { position: absolute; left: 10px; top: 10px; right: 30px; bottom: 10px; border: 1px solid; border-radius: 6px; }
+.tmgr-t { position: absolute; left: 8px; top: 8px; width: 46%; height: 5px; border-radius: 3px; }
+.tmgr-t.s { top: 17px; width: 30%; opacity: .9; }
+.tmgr-bars { position: absolute; left: 8px; right: 8px; bottom: 7px; height: 26px; display: flex; align-items: flex-end; gap: 4px; }
+.tmgr-bars i { flex: 1; border-radius: 2px 2px 0 0; }
+.tmgr-pill { position: absolute; right: 8px; top: 7px; width: 22px; height: 9px; border-radius: 5px; }
+.tmgr-aa { position: absolute; right: 8px; bottom: 6px; font-size: 13px; font-weight: 700; }
+.tmgr-name { display: grid; font-size: 13px; font-weight: 650; padding: 0 2px 2px; }
+.tmgr-name small { font-size: 11.5px; font-weight: 500; color: var(--ink-3); line-height: 1.35; }
+.tmgr-note { font-size: 12.5px; color: var(--ink-3); margin: 0; }
+:root[data-style="classic"] .tmgr-card, :root[data-style="classic"] .tmgr-prev { border-radius: 3px; }
 
 /* The switch (NWTheme.control): three buttons in a pill, the chosen one raised. */
 .theme-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--line); }

@@ -6,7 +6,7 @@
 <!-- iPhone: no phone-number links on prices, IDs and counts; the colours of the status bar; added to the Home Screen it
      opens as its own app (standalone), with its own icon and name. -->
 <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
-<meta name="theme-color" content="#ffffff" data-light="#ffffff" data-dark="#111d27">
+<meta name="theme-color" content="#eaf0f6" data-light="#eaf0f6" data-dark="#09131e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -47,6 +47,7 @@
             font-size: 13px; font-weight: 600; text-decoration: none; }
     .back:hover { background: var(--sunk); }
     .tb-right { display: flex; align-items: center; gap: 10px; }
+    #theme-ctl { display: inline-flex; gap: 6px; }
     @media (max-width: 420px) { .back { font-size: 0; gap: 0; padding: 7px 9px; } }
 
     /* The whole window: the contents on the left, the guide across the rest. */
@@ -145,6 +146,7 @@
 
 <script>
 document.getElementById('theme-ctl').appendChild(NWTheme.control({ compact: true }));
+document.getElementById('theme-ctl').appendChild(NWTheme.styleControl({ compact: true }));
     // Tables scroll on their own instead of widening the page on a phone.
     document.querySelectorAll('#doc table').forEach((t) => {
         const w = document.createElement('div');

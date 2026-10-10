@@ -108,6 +108,15 @@ class Rules:
     max_market_run: float = 10.0          # Nifty's 20-day return the trade's way, % (10 = off)
     min_zone_age: int = 0                 # days from the zone being set to the CHoCH (0 = off)
     max_rr: float = 30.0                  # the 15m R:R at most (30 = off)
+    min_breadth: float = 0.0              # % of stocks above their 50-day average, the trade's way (0 = off)
+    weekly_align: int = 0                 # 1: skip a trade against the stock's weekly trend (0 = off)
+    min_rs_nifty: float = -20.0           # the stock's 20-day return against Nifty's, the trade's way (-20 = off)
+    min_rs_sector: float = -20.0          # ...against its own sector's (-20 = off)
+    min_choch_rvol: float = 0.0           # the CHoCH candle's volume against its time slot's average (0 = off)
+    min_close_loc: float = 0.0            # where the CHoCH candle closed in its range, the trade's way (0 = off)
+    oi_align: int = 0                     # stock futures OI: 1 skip against the trade, 2 need it with the trade (0 = off)
+    results_gap: int = 0                  # skip an entry this many days or fewer before the stock's results (0 = off)
+    deliv_align: int = 0                  # 1: skip a long after distribution, a short after accumulation (0 = off)
 
     @classmethod
     def from_env(cls) -> 'Rules':
@@ -165,8 +174,44 @@ TUNABLE: Dict[str, Dict[str, Any]] = {
                          'values': [30, 15, 12, 10, 8, 6],
                          'help': 'Entry gate. Skip a CHoCH whose target is more than this many risks away: a stop that '
                                  'tight is usually noise. 30 = off.'},
+    'min_breadth':      {'label': 'Min market breadth', 'step': 5, 'min': 0, 'max': 80, 'unit': '%', 'off': 0,
+                         'values': [0, 30, 40, 50, 60],
+                         'help': 'Entry gate. Skip a long when fewer than this share of stocks close above their 50-day '
+                                 'average (a short: when more than 100 minus it do). 0 = off.'},
+    'weekly_align':     {'label': 'Weekly trend must agree', 'step': 1, 'min': 0, 'max': 1, 'unit': '(1 = on)', 'off': 0,
+                         'values': [0, 1],
+                         'help': "Entry gate. 1: skip a long while the stock's weekly trend is down, a short while it is "
+                                 'up (weekly close against its 10-week average). 0 = off.'},
+    'min_rs_nifty':     {'label': 'Min strength vs Nifty (20 days)', 'step': 1, 'min': -20, 'max': 10, 'unit': 'pts', 'off': -20,
+                         'values': [-20, -5, -2, 0, 2, 5],
+                         'help': "Entry gate. Skip a long whose 20-day return trails Nifty's by more than this (a short: "
+                                 'beats it). -20 = off.'},
+    'min_rs_sector':    {'label': 'Min strength vs its sector', 'step': 1, 'min': -20, 'max': 10, 'unit': 'pts', 'off': -20,
+                         'values': [-20, -5, -2, 0, 2, 5],
+                         'help': "Entry gate. The same against the stock's own sector index (equal-weighted). -20 = off."},
+    'min_choch_rvol':   {'label': 'Min CHoCH candle volume', 'step': 0.25, 'min': 0, 'max': 4, 'unit': '× usual', 'off': 0,
+                         'values': [0, 1, 1.25, 1.5, 2],
+                         'help': "Entry gate. Skip a CHoCH whose candle traded less than this many times that time "
+                                 "slot's average volume. 0 = off."},
+    'min_close_loc':    {'label': 'Min CHoCH candle close', 'step': 0.05, 'min': 0, 'max': 0.9, 'unit': 'of range', 'off': 0,
+                         'values': [0, 0.5, 0.6, 0.75],
+                         'help': "Entry gate. Skip a CHoCH whose candle closed less than this far the trade's way through "
+                                 'its range (0.75: the top quarter for a long). 0 = off.'},
+    'oi_align':         {'label': 'Futures OI must agree', 'step': 1, 'min': 0, 'max': 2, 'unit': '(0 off, 1, 2)', 'off': 0,
+                         'values': [0, 1, 2],
+                         'help': "Entry gate, F&O stocks. Over 5 sessions: 1 skips a long in a short buildup or long "
+                                 'unwinding (a short: the mirror); 2 takes a long only in a long buildup or short covering. 0 = off.'},
+    'results_gap':      {'label': 'Days clear of results', 'step': 1, 'min': 0, 'max': 30, 'unit': 'days', 'off': 0,
+                         'values': [0, 3, 7, 14],
+                         'help': "Entry gate. Skip an entry this many days or fewer before the stock's results board "
+                                 'meeting (results gaps blow through stops). 0 = off.'},
+    'deliv_align':      {'label': 'Delivery must agree', 'step': 1, 'min': 0, 'max': 1, 'unit': '(1 = on)', 'off': 0,
+                         'values': [0, 1],
+                         'help': 'Entry gate. 1: skip a long the session after distribution (heavy volume, high delivery, '
+                                 'a down day), a short after accumulation. 0 = off.'},
 }
-GATES = ('max_market_run', 'min_zone_age', 'max_rr')
+GATES = ('max_market_run', 'min_zone_age', 'max_rr', 'min_breadth', 'weekly_align', 'min_rs_nifty', 'min_rs_sector',
+         'min_choch_rvol', 'min_close_loc', 'oi_align', 'results_gap', 'deliv_align')
 
 
 # Ordered as the protocol runs them. A stock's `failed_at` is the first of
@@ -602,7 +647,8 @@ def trigger_reason(rr: float, min_rr: float) -> str:
     return f'CHoCH, but R:R 1:{rr:.1f} is under 1:{min_rr:g}'
 
 
-def context_gate(ctx: Dict[str, Any], side: str, rules: Dict[str, Any]) -> Optional[str]:
+def context_gate(ctx: Dict[str, Any], side: str, rules: Dict[str, Any],
+                 tunable: Optional[Dict[str, Dict[str, Any]]] = None) -> Optional[str]:
     """
     Why a valid entry is skipped by the context gates, or None to take it.
     `ctx` is the entry's context (features.trade_context / market_context:
@@ -611,9 +657,11 @@ def context_gate(ctx: Dict[str, Any], side: str, rules: Dict[str, Any]) -> Optio
     gate only acts on what it can see. The backtester and the live watcher
     both call this, so a gate the autopilot learns means the same in both.
     """
+    spec = tunable or TUNABLE
+
     def on(k):
         v = rules.get(k)
-        return v is not None and v != TUNABLE[k]['off']
+        return k in spec and v is not None and v != spec[k]['off']
 
     rr = ctx.get('rr')
     if on('max_rr') and rr is not None and rr > rules['max_rr'] + 1e-9:
@@ -627,6 +675,38 @@ def context_gate(ctx: Dict[str, Any], side: str, rules: Dict[str, Any]) -> Optio
         if run > rules['max_market_run'] + 1e-9:
             return (f"Nifty moved {run:+.1f}% the trade's way in 20 days "
                     f"(gate: at most {rules['max_market_run']:+g}%): the market is already extended")
+    long_ = side != 'short'
+    br = ctx.get('breadth50')
+    if on('min_breadth') and br is not None and (br if long_ else 100 - br) < rules['min_breadth'] - 1e-9:
+        need = rules['min_breadth'] if long_ else 100 - rules['min_breadth']
+        return (f"{br:.0f}% of stocks are above their 50-day average "
+                f"(gate: {'at least' if long_ else 'at most'} {need:g}% for a {'long' if long_ else 'short'})")
+    wk = ctx.get('weekly_trend')
+    if on('weekly_align') and rules['weekly_align'] >= 1 and wk == ('down' if long_ else 'up'):
+        return f"the stock's weekly trend is {wk}, against the trade (gate: the weekly trend must agree)"
+    for key, field, what in (('min_rs_nifty', 'rs_nifty20', 'Nifty'), ('min_rs_sector', 'rs_sector20', 'its sector')):
+        v = ctx.get(field)
+        if on(key) and v is not None and (v if long_ else -v) < rules[key] - 1e-9:
+            return f"20-day return {v:+.1f} pts against {what} (gate: at least {rules[key]:+g} the trade's way)"
+    rv = ctx.get('choch_rvol')
+    if on('min_choch_rvol') and rv is not None and rv < rules['min_choch_rvol'] - 1e-9:
+        return f"the CHoCH candle traded {rv:.2f}× its time slot's usual volume (gate: at least {rules['min_choch_rvol']:g}×)"
+    fb = ctx.get('fut_buildup')
+    if on('oi_align') and fb:
+        good = ('long buildup', 'short covering') if long_ else ('short buildup', 'long unwinding')
+        bad = ('short buildup', 'long unwinding') if long_ else ('long buildup', 'short covering')
+        if fb in bad or (rules['oi_align'] >= 2 and fb not in good):
+            return f"stock futures show {fb} over 5 sessions (gate: {'with the trade' if rules['oi_align'] >= 2 else 'not against it'})"
+    due = ctx.get('days_to_results')
+    if on('results_gap') and due is not None and due <= rules['results_gap']:
+        return f"results due in {due} day(s) (gate: no entry within {rules['results_gap']:g})"
+    dr = ctx.get('deliv_read')
+    if on('deliv_align') and rules['deliv_align'] >= 1 and dr == ('distribution' if long_ else 'accumulation'):
+        return f"{dr} the session before (gate: delivery must agree)"
+    cl = ctx.get('choch_close_loc')
+    if on('min_close_loc') and cl is not None and cl < rules['min_close_loc'] - 1e-9:
+        return (f"the CHoCH candle closed {cl:.0%} of the way the trade's way through its range "
+                f"(gate: at least {rules['min_close_loc']:.0%})")
     return None
 
 

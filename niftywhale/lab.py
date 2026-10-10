@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import autopilot, backtest, config, costs, data, dhan, history, intraday, notify, options, perf, smc, store, universe
+from niftywhale import autopilot, backfill, backtest, config, costs, data, dhan, history, intraday, notify, options, perf, smc, store, universe
 
 logger = logging.getLogger('niftywhale.lab')
 
@@ -57,7 +57,7 @@ def specs(mode: str) -> Dict[str, Dict[str, Any]]:
     if mode == 'swing':
         return {k: smc.TUNABLE[k] for k in backtest.FILTERS + backtest.GATES['swing']}
     if mode == 'intraday':
-        return {k: intraday.TUNABLE[k] for k in backtest.FILTERS}
+        return {k: intraday.TUNABLE[k] for k in backtest.FILTERS + backtest.GATES['intraday']}
     out = {k: {'step': options.TUNABLE[k][3], 'min': options.TUNABLE[k][1], 'max': options.TUNABLE[k][2]}
            for k in options.LEARN_FILTERS}
     out.update({k: {'values': list(v), 'step': 5, 'min': min(v), 'max': max(v)} for k, v in options.EXIT_GRID.items()})
@@ -136,6 +136,10 @@ def update_history(job: Dict[str, Any], progress: Callable[[str], None]) -> Dict
     allsym = sorted(set(swing) | set(intra))
     progress(f'daily candles for {len(allsym)} stocks')
     history.update_daily(allsym, max(years('swing'), years('intraday')) + 1.2)
+    try:
+        history.update_context()                    # breadth and sector series, from the daily candles just updated
+    except Exception as e:
+        logger.warning(f'breadth and sector series not rebuilt: {e}')
     new = 0
     for i, s in enumerate(swing):
         wait_for_close(job)
@@ -232,10 +236,11 @@ class Bench:
         key = backtest.structural_key(mode, self.rules)
         self.records = {s: r for s, r in self.records.items() if r and r.get('key') == key}
         self.lots = {s: dhan.lot_size(s) for s in self.records} if mode == 'swing' else {}     # swing shorts are futures
-        self.market = history.load('market', 'NIFTY_VIX')
+        self.market = history.load_market()
         self.dailies = {s: history.load('1d', s) for s in self.records}
         self.d15 = backtest.Data('15m')
         self.d5 = backtest.Data('5m') if mode == 'intraday' else None
+        self.nse = backfill.NseHistory(list(self.records))      # delivery, FII, futures OI, results dates
 
     def ready(self) -> bool:
         return bool(self.cands) if self.mode == 'options' else bool(self.records)
@@ -250,7 +255,7 @@ class Bench:
                 trades = options.simulate_candidates(self.cands, thr)
             else:
                 trades = backtest.simulate(self.mode, list(self.records), thr, self.rules, self.memo, self.d15,
-                                           self.d5, self.records, self.market, self.dailies)
+                                           self.d5, self.records, self.market, self.dailies, nse=self.nse)
             # After costs (costs.py): every rule set is judged on what a trade would have kept.
             self.cache[fp] = costs.apply(trades, self.mode, self.slippage_bps, thr.get('stop_pct'), self.lots) \
                 if self.costs else trades
@@ -631,13 +636,14 @@ def weekly_report() -> str:
 
 # ---------------------------------------------------------------- job steps
 KIND_LABEL = {'bootstrap': 'First-time setup', 'nightly': 'Nightly update', 'backtest': 'Backtest',
-              'tune': 'Tuning', 'report': 'Weekly report'}
+              'tune': 'Tuning', 'report': 'Weekly report', 'backfill': 'NSE history'}
 STEP_LABEL = {
     'market': 'Market context (Nifty, VIX)', 'daily': 'Daily candles', 'm15': '15-minute candles',
     'm5': '5-minute candles', 'swing_records': 'Swing records', 'swing_sim': 'Swing: simulate the current rules',
     'intraday_records': 'Intraday records', 'intraday_sim': 'Intraday: simulate the current rules',
     'options': 'Options: candidate outcomes', 'tune_swing': 'Tune swing', 'tune_intraday': 'Tune intraday',
     'tune_options': 'Tune options', 'report': 'Write and send the report',
+    'nse': 'NSE history: delivery, positioning, futures OI, results dates',
 }
 # The progress line names the step it belongs to, so even a job started by older
 # code (no step record) shows where it is.
@@ -651,6 +657,7 @@ _STEP_RE = [
     (re.compile(r'^(swing|intraday|options): walk-forward'), lambda m: 'tune_' + m.group(1)),
     (re.compile(r'^options:'), lambda m: 'options'),
     (re.compile(r'^writing the weekly report'), lambda m: 'report'),
+    (re.compile(r'^NSE (files|results calendar)'), lambda m: 'nse'),
 ]
 _COUNT_RE = re.compile(r'(\d+)/(\d+)')
 
@@ -669,7 +676,10 @@ def plan(kind: str, args: Dict[str, Any]) -> List[str]:
     """The steps a job goes through, in order."""
     if kind in ('bootstrap', 'nightly', 'backtest'):
         hist = ['market', 'daily', 'm15', 'm5'] if kind != 'backtest' or args.get('download', True) else []
-        return hist + ['swing_records', 'swing_sim', 'intraday_records', 'intraday_sim', 'options']
+        nse = ['nse'] if kind != 'backtest' else []
+        return hist + nse + ['swing_records', 'swing_sim', 'intraday_records', 'intraday_sim', 'options']
+    if kind == 'backfill':
+        return ['nse']
     if kind == 'tune':
         return ['tune_' + m for m in args.get('modes', ['swing', 'intraday', 'options'])]
     if kind == 'report':
@@ -813,6 +823,19 @@ def job_view(job: Dict[str, Any], now: Optional[datetime] = None,
 
 
 # ---------------------------------------------------------------- jobs
+def nse_history(progress: Callable[[str], None], say: Callable[[str], None]) -> None:
+    """NSE's dated files for the lab's history (backfill.py): the days still missing, then the
+    results calendar. A refusal from NSE never fails the job; the next run carries on."""
+    try:
+        stocks = sorted({m['symbol'] for m in universe_for('swing')} | {m['symbol'] for m in universe_for('intraday')})
+        got = backfill.run(progress, max(years('swing'), years('intraday')) + 0.2, lambda: STOP['flag'], stocks)
+        say(f"NSE history: {got['delivery']} delivery days, {got['positioning']} positioning, "
+            f"{got['futures']} futures OI, {got['events']} board meetings added")
+    except Exception as e:
+        logger.warning(f'NSE history: {e}')
+        say(f'NSE history not updated ({str(e)[:120]})')
+
+
 def run_job(job: Dict[str, Any]) -> str:
     kind = job['kind']
     msgs: List[str] = []
@@ -832,6 +855,8 @@ def run_job(job: Dict[str, Any]) -> str:
                 except Exception as e:             # Dhan down: carry on with the history already on disk
                     logger.warning(f'history update failed: {dhan._redact(e)}')
                     say(f'history not updated ({dhan._redact(e)[:120]})')
+            if kind != 'backtest':
+                nse_history(progress, say)
             for mode in ('swing', 'intraday'):
                 wait_for_close(job)
                 build_records(mode, job, progress)
@@ -864,6 +889,8 @@ def run_job(job: Dict[str, Any]) -> str:
                 else:
                     say(f'{mode}: ' + ('proposal in shadow' if r.get('proposal') else '; '.join(r.get('reasons') or [])))
                     progress.result('tune_' + mode, r)
+        elif kind == 'backfill':
+            nse_history(progress, say)
         elif kind == 'report':
             progress('writing the weekly report')
             text = weekly_report()

@@ -591,9 +591,9 @@ _MARKET = {'at': 0.0, 'frame': None}
 
 
 def market_frame():
-    """Nifty / VIX daily closes, kept by the lab; re-read hourly."""
+    """Nifty / VIX daily closes with breadth and the sector series, kept by the lab; re-read hourly."""
     if time.time() - _MARKET['at'] > 3600:
-        _MARKET.update(at=time.time(), frame=history.load('market', 'NIFTY_VIX'))
+        _MARKET.update(at=time.time(), frame=history.load_market())
     return _MARKET['frame']
 
 
@@ -634,8 +634,15 @@ def live_context(z: dict, t: dict, frame, mode: str) -> str:
         if frame is not None and len(frame):
             today = frame[[ix.date() == day for ix in frame.index]]
             open_today = float(today['Open'].iloc[0]) if len(today) else None
+        daily = history.load('1d', z['symbol'])
+        side = z.get('side') or 'long'
         ctx = features.combine(features.trade_context(t, setup), features.market_context(market_frame(), day),
-                               features.stock_day_context(history.load('1d', z['symbol']), day, open_today),
+                               features.stock_day_context(daily, day, open_today),
+                               # strength against Nifty and the sector, the weekly trend (swing), the CHoCH candle:
+                               # as the backtester records them (backtest._extra_context)
+                               features.relative_context(daily, market_frame(), universe.sectors().get(z['symbol']), day),
+                               features.weekly_context(daily, day) if mode == 'swing' else {},
+                               features.candle_context(frame, t, side),
                                news_context(z['symbol'], t['choch_time']), smart_context(z['symbol'], t['choch_time']))
         return json.dumps(ctx)
     except Exception as e:
@@ -1003,6 +1010,10 @@ def smart_context(symbol: str, at) -> dict:
     fl = [r for r in store.flows(10) if r['day'] < day and r['category'] == 'FII']
     if fl:
         out['fii_cash_cr'] = fl[-1]['net']
+    # Futures open interest and results timing (backfill.py keeps them nightly), as the backtester records them.
+    fut = store.series('sm_futoi', [symbol], 'oi, oi_chg, close', until=day, sessions=features.FUT_DAYS + 1).get(symbol, [])
+    out.update(features.futures_context(fut))
+    out.update(features.results_context(store.results_dates([symbol]).get(symbol, []), pd.Timestamp(day).date()))
     return out
 
 
@@ -2169,9 +2180,15 @@ def check_intraday(origin: str = 'schedule') -> dict:
                 fields['status'] = 'tapped'
             if t.get('triggered') and not t.get('invalid'):
                 ok = t['valid']
-                fields.update(status='triggered' if ok else 'rejected', trigger=t)
                 if ok:
                     fields['ctx'] = live_context(z, t, frame, 'intraday')
+                    # The context gates the autopilot learns (off by default), as the backtester applies them.
+                    gate = smc.context_gate(json.loads(fields['ctx']), z.get('side') or 'long', irules().as_dict(), intraday.TUNABLE)
+                    if gate:
+                        t.update(valid=False, gated=True, reason=f'CHoCH, but skipped: {gate}')
+                        fields['note'] = t['reason']
+                        ok = False
+                fields.update(status='triggered' if ok else 'rejected', trigger=t)
                 # Claim it first: a zone dismissed since it was read gets no alert.
                 if not store.update_zone(z['id'], only_if=store.INTRADAY_OPEN, **fields):
                     continue
@@ -3992,7 +4009,7 @@ def api_perf():
         return jsonify(safe({'source': 'backtest', 'mode': mode, 'runs': listed, 'latest': run['id'] == kept[0]['id'],
                              'run': {k: run[k] for k in (
             'id', 'created', 'params', 'period_from', 'period_to', 'universe')}, 'summary': run['summary'],
-            'breakdown': run['breakdown'], 'equity': run['equity'], 'highlights': extra.get('highlights', []),
+            'breakdown': [perf.arrange(b) for b in run['breakdown'] or []], 'equity': run['equity'], 'highlights': extra.get('highlights', []),
             'by_symbol': extra.get('by_symbol'), 'symbols': extra.get('symbols'), 'costs': extra.get('costs')}))
     trades = store.live_trades(mode)
     bd = perf.breakdown(trades)
@@ -4043,8 +4060,8 @@ def api_lab():
 def api_lab_job():
     body = request.get_json(silent=True) or {}
     kind = body.get('kind') if isinstance(body, dict) else None
-    if kind not in ('backtest', 'tune', 'report', 'nightly'):
-        return jsonify({'error': 'kind must be backtest, tune, report or nightly'}), 400
+    if kind not in ('backtest', 'tune', 'report', 'nightly', 'backfill'):
+        return jsonify({'error': 'kind must be backtest, tune, report, nightly or backfill'}), 400
     args = {}
     if kind == 'backtest':
         args['download'] = body.get('download', True) is not False

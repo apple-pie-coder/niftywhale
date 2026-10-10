@@ -56,6 +56,14 @@ class IntradayRules:
     stop_buffer_pct: float = 0.05         # stop this % under the 5m sweep low
     min_rr: float = 2.0
 
+    # Context gates on the entry (smc.context_gate): off at their defaults; the autopilot learns them
+    min_breadth: float = 0.0              # % of stocks above their 50-day average, the trade's way (0 = off)
+    min_rs_nifty: float = -20.0           # the stock's 20-day return against Nifty's, the trade's way (-20 = off)
+    min_choch_rvol: float = 0.0           # the 5m CHoCH candle's volume against its time slot's average (0 = off)
+    min_close_loc: float = 0.0            # where the CHoCH candle closed in its range, the trade's way (0 = off)
+    oi_align: int = 0                     # stock futures OI over 5 sessions (0 off, 1 not against, 2 with the trade)
+    deliv_align: int = 0                  # 1: skip a long after distribution, a short after accumulation (0 = off)
+
     # The clock (IST)
     start: str = '09:30'                  # first scan, once the first 15m candle has closed
     no_entry_after: str = '14:30'
@@ -129,7 +137,16 @@ TUNABLE: Dict[str, Dict[str, Any]] = {
                          'help': 'Stop beyond the 15m leg origin. Filters hopeless setups early.'},
     'min_rr':           {'label': 'Final R:R (5m)', 'step': 0.5, 'min': 1, 'max': 5, 'unit': ': 1',
                          'help': 'Step 12, on the tight stop beyond the 5m sweep.'},
+    # The context gates (smc.context_gate): checked at the entry, so they never change the screen or the zones.
+    **{k: smc.TUNABLE[k] for k in ('min_breadth', 'min_rs_nifty', 'oi_align', 'deliv_align')},
+    'min_choch_rvol':   {**smc.TUNABLE['min_choch_rvol'],
+                         'help': "Entry gate. Skip a CHoCH whose 5m candle traded less than this many times that time "
+                                 "slot's average volume (the same 5 minutes of earlier sessions). 0 = off."},
+    'min_close_loc':    {**smc.TUNABLE['min_close_loc'],
+                         'help': "Entry gate. Skip a CHoCH whose 5m candle closed less than this far the trade's way "
+                                 'through its range. 0 = off.'},
 }
+GATES = ('min_breadth', 'min_rs_nifty', 'min_choch_rvol', 'min_close_loc', 'oi_align', 'deliv_align')
 
 
 

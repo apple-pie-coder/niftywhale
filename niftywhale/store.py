@@ -194,6 +194,13 @@ def init() -> None:
                 turnover_cr REAL, PRIMARY KEY (day, symbol)
             );
             CREATE INDEX IF NOT EXISTS idx_sm_delivery_symbol ON sm_delivery(symbol, day);
+            -- Stock futures, from NSE's F&O bhavcopy (backfill.py): open interest summed over the expiries,
+            -- its change that day, and the nearest expiry's close.
+            CREATE TABLE IF NOT EXISTS sm_futoi (day TEXT, symbol TEXT, oi INTEGER, oi_chg INTEGER, close REAL,
+                                                 PRIMARY KEY (day, symbol));
+            CREATE INDEX IF NOT EXISTS idx_sm_futoi_symbol ON sm_futoi(symbol, day);
+            -- Board meetings from NSE's event calendar (backfill.py): results dates, past and coming.
+            CREATE TABLE IF NOT EXISTS sm_events (symbol TEXT, day TEXT, purpose TEXT, PRIMARY KEY (symbol, day, purpose));
             -- Demo funds (demo.py): money in and out, and a position for every trade the app takes.
             CREATE TABLE IF NOT EXISTS demo_ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, kind TEXT, amount REAL, note TEXT);
             CREATE TABLE IF NOT EXISTS demo_positions (
@@ -1384,10 +1391,61 @@ def add_delivery(day: str, rows: Dict[str, Dict[str, Any]]) -> int:
 
 def smart_days(table: str) -> List[str]:
     """The sessions held in one of the smart-money tables, oldest first."""
-    if table not in ('sm_delivery', 'sm_poi', 'sm_flows', 'sm_deals'):
+    if table not in ('sm_delivery', 'sm_poi', 'sm_flows', 'sm_deals', 'sm_futoi'):
         raise ValueError(table)
     with connect() as c:
         return [r[0] for r in c.execute(f'SELECT DISTINCT day FROM {table} ORDER BY day')]
+
+
+def add_futoi(day: str, rows: Dict[str, Dict[str, Any]]) -> int:
+    with connect() as c:
+        c.executemany('INSERT OR REPLACE INTO sm_futoi (day, symbol, oi, oi_chg, close) VALUES (?, ?, ?, ?, ?)',
+                      [(day, sym, r.get('oi'), r.get('oi_chg'), r.get('close')) for sym, r in rows.items()])
+    return len(rows)
+
+
+def add_events(rows: List[Dict[str, Any]]) -> int:
+    with connect() as c:
+        return c.executemany('INSERT OR IGNORE INTO sm_events (symbol, day, purpose) VALUES (?, ?, ?)',
+                             [(r['symbol'], r['day'], r['purpose']) for r in rows]).rowcount
+
+
+def event_months() -> List[str]:
+    """The months ('YYYY-MM') the event calendar has been read for (backfill.py keeps them)."""
+    return get_json('backfill:event_months', []) or []
+
+
+def series(table: str, symbols: List[str], fields: str, until: Optional[str] = None, sessions: Optional[int] = None
+           ) -> Dict[str, List[Dict[str, Any]]]:
+    """Each stock's rows of a per-stock daily table (sm_delivery, sm_futoi), oldest first: all of them
+    (the backtester loads them once), or the last `sessions` before `until` (a live entry)."""
+    if table not in ('sm_delivery', 'sm_futoi') or not symbols:
+        return {}
+    q = f"SELECT day, symbol, {fields} FROM {table} WHERE symbol IN ({','.join('?' * len(symbols))})"
+    args: List[Any] = list(symbols)
+    if until:
+        q += ' AND day < ?'
+        args.append(until)
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    with connect() as c:
+        for r in _rows(c.execute(q + ' ORDER BY symbol, day', args)):
+            out.setdefault(r['symbol'], []).append(r)
+    if sessions:
+        out = {k: v[-sessions:] for k, v in out.items()}
+    return out
+
+
+def results_dates(symbols: Optional[List[str]] = None) -> Dict[str, List[str]]:
+    """Each stock's results board meetings (ISO days, oldest first), from the event calendar."""
+    q, args = "SELECT symbol, day FROM sm_events WHERE purpose LIKE '%Result%'", []
+    if symbols:
+        q += f" AND symbol IN ({','.join('?' * len(symbols))})"
+        args = list(symbols)
+    out: Dict[str, List[str]] = {}
+    with connect() as c:
+        for sym, day in c.execute(q + ' ORDER BY symbol, day', args):
+            out.setdefault(sym, []).append(day)
+    return out
 
 
 def delivery_history(symbols: List[str], sessions: int = 26, until: Optional[str] = None) -> Dict[str, List[Dict[str, Any]]]:

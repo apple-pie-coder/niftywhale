@@ -49,7 +49,7 @@ ZONE_LIFETIME_DAYS = 10
 DAILY_BARS = 250                    # the live scan reads one year of daily candles
 FILTERS = ('min_avg_volume', 'min_atr_pct', 'max_discount', 'pre_min_rr', 'min_rr')
 # Context gates (smc.context_gate), checked at the trigger: like the filters, they never change the records.
-GATES = {'swing': smc.GATES, 'intraday': ()}
+GATES = {'swing': smc.GATES, 'intraday': intraday.GATES}
 LOOSE = {
     'swing': {'min_avg_volume': 0, 'min_atr_pct': 0.0, 'max_discount': 0.8, 'pre_min_rr': 0.5, 'min_rr': 1.0},
     'intraday': {'min_avg_volume': 0, 'min_atr_pct': 0.0, 'max_discount': 0.8, 'pre_min_rr': 0.3, 'min_rr': 1.0},
@@ -65,7 +65,7 @@ def ts(day: date, t: dtime) -> pd.Timestamp:
 def structural_key(mode: str, rules) -> str:
     """Records depend on every rule except the filter thresholds and the gates; a change
     to those (swing length, displacement, ...) makes the stored records stale."""
-    d = {k: v for k, v in rules.as_dict().items() if k not in FILTERS and k not in smc.GATES}
+    d = {k: v for k, v in rules.as_dict().items() if k not in FILTERS and k not in GATES['swing'] and k not in GATES['intraday']}
     return hashlib.sha1(json.dumps([RECORDS_VERSION, mode, d], sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
@@ -177,6 +177,23 @@ def intraday_records(symbol: str, f15: pd.DataFrame, daily: pd.DataFrame, rules:
 
 
 # ---------------------------------------------------------------- stage 2: simulation
+def _extra_context(symbol: str, t: Dict[str, Any], side: str, d: date, data: 'Data', market, daily, sector,
+                   swing: bool, nse=None) -> List[Dict[str, Any]]:
+    """The context the gates and breakdowns added later read: strength against Nifty and the sector,
+    the weekly trend (swing), and the CHoCH candle against the same time slot of earlier sessions. Cached
+    per trigger, since most rule sets see the same ones."""
+    key = ('ctx', symbol, t['choch_time'])
+    hit = _CTX.get(key)
+    if hit is None:
+        recent = data.sessions(symbol, d - timedelta(days=21), d)          # ~14 sessions for the slot average
+        hit = [features.relative_context(daily, market, sector, d), features.weekly_context(daily, d) if swing else {},
+               features.candle_context(recent, t, side),
+               nse.context(symbol, d) if nse is not None else {}]          # backfill.NseHistory: delivery, FII, futures, results
+        _CTX[key] = hit
+    return hit
+
+
+_CTX: Dict[tuple, List[Dict[str, Any]]] = {}
 def passes(s: Dict[str, Any], thr: Dict[str, float]) -> bool:
     return (s['vol'] >= thr['min_avg_volume'] and s['atr'] > thr['min_atr_pct']
             and s['pos'] <= thr['max_discount'] + 1e-9 and s['prr'] >= thr['pre_min_rr'] - 1e-9)
@@ -223,7 +240,7 @@ def _same(z: Dict[str, Any], side: str, s: Dict[str, Any]) -> bool:
 
 def simulate_swing(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f15: Data, rules: smc.Rules,
                    memo: Dict, market: Optional[pd.DataFrame] = None, daily: Optional[pd.DataFrame] = None,
-                   end: Optional[pd.Timestamp] = None) -> List[Dict[str, Any]]:
+                   end: Optional[pd.Timestamp] = None, sector: Optional[str] = None, nse=None) -> List[Dict[str, Any]]:
     trig_rules = replace(rules, min_rr=LOOSE['swing']['min_rr'])
     days = [date.fromisoformat(d) for d in rec['days']]
     zone = None          # the open zone: side, levels, created (date), since (ts), setup numbers
@@ -250,7 +267,8 @@ def simulate_swing(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f15:
                             'position': setup['pos'], 'pre_rr': setup['prr'], 'atr_pct': setup['atr'],
                             'avg_volume': setup['vol'], 'score': setup['sc'], 'in_zone': setup['iz'],
                             'zone_age_days': setup['zone_age_days']}),
-                            features.market_context(market, d), features.stock_day_context(daily, d))
+                            features.market_context(market, d), features.stock_day_context(daily, d),
+                            *_extra_context(symbol, t, zone['side'], d, f15, market, daily, sector, swing=True, nse=nse))
                         ok = smc.context_gate(f, zone['side'], thr) is None    # gated: spent, as live
                     if ok:
                         okey = ('so', symbol, t['choch_time'], t['entry'], t['stop'], t['target'])
@@ -293,7 +311,7 @@ def simulate_swing(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f15:
 
 def simulate_intraday(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f5: Data, rules: intraday.IntradayRules,
                       memo: Dict, market: Optional[pd.DataFrame] = None, daily: Optional[pd.DataFrame] = None,
-                      ) -> List[Dict[str, Any]]:
+                      sector: Optional[str] = None, nse=None) -> List[Dict[str, Any]]:
     loose = replace(rules, min_rr=LOOSE['intraday']['min_rr'])
     cutoff = rules.clock('no_entry_after')
     final_now = (datetime.combine(date(2000, 1, 1), cutoff) + timedelta(minutes=5)).time()
@@ -323,6 +341,15 @@ def simulate_intraday(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f
                 return
             if t.get('triggered'):
                 ok = not t.get('late') and t['rr'] >= thr['min_rr'] - 1e-9
+                f = None
+                if ok:
+                    s = z['s']
+                    f = features.combine(features.trade_context(t, {
+                        'position': s['pos'], 'pre_rr': s['prr'], 'atr_pct': day['atr'], 'avg_volume': day['vol'],
+                        'score': s['sc'], 'in_zone': s['iz'], 'target_kind': s.get('tk')}),
+                        features.market_context(market, d), features.stock_day_context(daily, d),
+                        *_extra_context(symbol, t, z['side'], d, f5, market, daily, sector, swing=False, nse=nse))
+                    ok = smc.context_gate(f, z['side'], thr, intraday.TUNABLE) is None     # gated: rejected, as live
                 z['status'] = 'trade' if ok else 'rejected'
                 if ok:
                     okey = ('io', symbol, t['choch_time'], t['entry'], t['stop'], t['target'])
@@ -331,11 +358,6 @@ def simulate_intraday(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f
                                              fo=symbol in universe.fo_symbols())
                         memo[okey] = {k: o.get(k) for k in ('status', 'exit', 'exit_time', 'r')}
                     o = memo[okey]
-                    s = z['s']
-                    f = features.combine(features.trade_context(t, {
-                        'position': s['pos'], 'pre_rr': s['prr'], 'atr_pct': day['atr'], 'avg_volume': day['vol'],
-                        'score': s['sc'], 'in_zone': s['iz'], 'target_kind': s.get('tk')}),
-                        features.market_context(market, d), features.stock_day_context(daily, d))
                     trades.append({'mode': 'intraday', 'symbol': symbol, 'side': z['side'], 'entry_time': t['choch_time'],
                                    'entry': t['entry'], 'stop': t['stop'], 'target': t['target'],
                                    'status': o['status'], 'exit': o.get('exit'), 'exit_time': o.get('exit_time'),
@@ -373,18 +395,19 @@ def simulate_intraday(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f
 
 def simulate(mode: str, symbols: List[str], thr: Dict[str, float], rules, memo: Dict, data15: Data, data5: Optional[Data],
              records: Dict[str, Dict[str, Any]], market: Optional[pd.DataFrame], dailies: Dict[str, pd.DataFrame],
-             since: Optional[date] = None, until: Optional[date] = None) -> List[Dict[str, Any]]:
+             since: Optional[date] = None, until: Optional[date] = None, nse=None) -> List[Dict[str, Any]]:
     """Every trade the rule set `thr` would have made, oldest first; optionally only
     those entered between `since` and `until` (the lifecycle still runs from the start)."""
     out = []
+    sectors = universe.sectors()
     for sym in symbols:
         rec = records.get(sym)
         if not rec:
             continue
         if mode == 'swing':
-            out += simulate_swing(sym, rec, thr, data15, rules, memo, market, dailies.get(sym))
+            out += simulate_swing(sym, rec, thr, data15, rules, memo, market, dailies.get(sym), sector=sectors.get(sym), nse=nse)
         else:
-            out += simulate_intraday(sym, rec, thr, data5, rules, memo, market, dailies.get(sym))
+            out += simulate_intraday(sym, rec, thr, data5, rules, memo, market, dailies.get(sym), sector=sectors.get(sym), nse=nse)
     out.sort(key=lambda t: t['entry_time'])
     if since or until:
         out = [t for t in out if (not since or t['entry_time'][:10] >= since.isoformat())

@@ -6,7 +6,7 @@
 <!-- iPhone: no phone-number links on prices, IDs and counts; the colours of the status bar; added to the Home Screen it
      opens as its own app (standalone), with its own icon and name. -->
 <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
-<meta name="theme-color" content="#ffffff" data-light="#ffffff" data-dark="#111d27">
+<meta name="theme-color" content="#eaf0f6" data-light="#eaf0f6" data-dark="#09131e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -545,12 +545,15 @@
                border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18); }
     .tm-menu[hidden] { display: none; }
     .tm-head { font: 600 10.5px/1 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 4px 6px 8px; }
+    .tm-head:not(:first-child) { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
     .tm-menu .theme-seg { background: none; border: 0; padding: 0; }
     .tm-menu .theme-seg button { font-size: 13.5px; }
+    .tm-menu .tm-more { width: 100%; margin-top: 10px; justify-content: center; }
+    .sb-theme .btn-link { align-self: flex-start; font-size: 12.5px; }
     #tm-btn [data-theme-icon] { display: inline-grid; place-items: center; }
     #tm-btn svg { width: 16px; height: 16px; }
     #tm-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-    .sb-theme { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+    .sb-theme { margin-top: 10px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
     .sb-theme .theme-seg { flex: 1; }
     .nb-count { position: absolute; top: -6px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
         background: var(--bad); color: #fff; font: 600 10.5px/17px var(--font); text-align: center; box-shadow: 0 0 0 2px var(--surface); }
@@ -1192,6 +1195,63 @@
     .pf-two { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
     @media (max-width: 1100px) { .pf-two { grid-template-columns: minmax(0, 1fr); } }
     .pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); gap: 12px; }
+    /* Breakdowns: diverging columns (a scale) and bars (categories), a heatmap of every dimension, a table. */
+    .bd-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 0 0 12px; }
+    .bd-bar .seg { flex: 0 0 auto; }
+    .bd-bar .seg button { padding: 6px 12px; white-space: nowrap; }
+    .bd-card h3 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+    .bd-card h3 small { font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-3); }
+    .bd-cols { position: relative; display: flex; gap: 2px; padding-top: 4px; }
+    .bd-zero { position: absolute; left: 0; right: 0; height: 1px; background: var(--line-strong); pointer-events: none; }
+    .bd-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; border-radius: var(--r-sm);
+              cursor: default; outline: none; padding: 0 1px 4px; }
+    .bd-col:hover, .bd-col:focus-visible, .bd-row:hover, .bd-row:focus-visible, .bd-cell:hover, .bd-cell:focus-visible { background: var(--sunk); }
+    .bd-col:focus-visible, .bd-row:focus-visible, .bd-cell:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+    .bd-plot { position: relative; width: 100%; }
+    .bd-mark { position: absolute; left: 50%; transform: translateX(-50%); width: min(24px, 62%); }
+    .bd-col .bd-mark[data-pos="1"] { border-radius: 4px 4px 0 0; }
+    .bd-col .bd-mark[data-pos="0"] { border-radius: 0 0 4px 4px; }
+    .bd-val { position: absolute; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 600; color: var(--ink-2);
+              font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 14px; }
+    .bd-x { font-size: 11.5px; color: var(--ink-2); text-align: center; line-height: 1.25; margin-top: 4px; overflow-wrap: anywhere; }
+    .bd-n { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+    .bd-rows { display: grid; gap: 2px; }
+    .bd-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) 62px; gap: 10px; align-items: center;
+              padding: 5px 4px; border-radius: var(--r-sm); font-size: 13px; outline: none; }
+    .bd-row .bd-lab { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+    .bd-row .bd-lab small { color: var(--ink-3); font-size: 11px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+    .bd-row .bd-v { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+    .bd-track { position: relative; height: 14px; }
+    .bd-track .bd-mark { top: 0; bottom: 0; transform: none; width: auto; left: auto; }
+    .bd-track .bd-mark[data-pos="1"] { border-radius: 0 4px 4px 0; }
+    .bd-track .bd-mark[data-pos="0"] { border-radius: 4px 0 0 4px; }
+    .bd-track .bd-axis { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--line-strong); }
+    .bd-mark[data-c="gain"] { background: var(--gain); }
+    .bd-mark[data-c="loss"] { background: var(--loss); }
+    .bd-mark[data-c="seq"] { background: var(--accent); }
+    .bd-mark[data-c="small"] { background: var(--ink-3); opacity: 0.3; }
+    [data-small="1"] .bd-x, [data-small="1"] .bd-lab, [data-small="1"] .bd-v, [data-small="1"] .bd-val { color: var(--ink-3); }
+    .bd-sig { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 3px; border-radius: 50%; vertical-align: -2px; }
+    .bd-sig[data-s="good"] { background: var(--good-soft); color: var(--good); }
+    .bd-sig[data-s="bad"] { background: var(--bad-soft); color: var(--bad); }
+    .bd-sig svg { width: 9px; height: 9px; }
+    .bd-heat { display: grid; gap: 4px; }
+    .bd-hrow { display: grid; grid-template-columns: minmax(120px, 210px) 1fr; gap: 8px; align-items: stretch; }
+    .bd-hname { font-size: 12.5px; color: var(--ink-2); align-self: center; line-height: 1.25; }
+    .bd-hcells { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+    @media (max-width: 760px) { .bd-hcells { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .bd-cell { position: relative; padding: 6px 7px; border-radius: 4px; min-height: 44px; outline: none; cursor: default;
+               display: grid; align-content: space-between; }
+    .bd-cell b { font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--ink); }
+    .bd-cell span { font-size: 10.5px; color: var(--ink-2); line-height: 1.2; overflow-wrap: anywhere; }
+    .bd-cell[data-small="1"] b, .bd-cell[data-small="1"] span { color: var(--ink-3); }
+    .bd-legend { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-3); margin: 10px 0 0; flex-wrap: wrap; }
+    .bd-legend i { display: inline-block; width: 160px; height: 8px; border-radius: 4px; }
+    .bd-tip { position: fixed; z-index: 80; pointer-events: none; background: var(--surface); border: 1px solid var(--line-strong);
+              border-radius: var(--r-md); padding: 8px 10px; font-size: 12px; color: var(--ink-2); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+              max-width: 260px; line-height: 1.45; }
+    .bd-tip strong { display: block; font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+    @media (max-width: 640px) { .bd-hrow { grid-template-columns: 1fr; } .bd-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 56px; } }
     .pf-card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 10px 12px; }
     .pf-card h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-3); }
     .pf-row { display: grid; grid-template-columns: minmax(0, 1.2fr) 34px 46px minmax(70px, 1fr) 54px; gap: 8px; align-items: center;
@@ -1776,7 +1836,15 @@
             <section>
                 <div class="panel-head"><h2 class="panel-title">Breakdowns</h2>
                     <span class="panel-meta">Grey: under 15 trades, too few to mean much</span></div>
-                <div class="pf-grid" id="pf-breakdown"></div>
+                <div class="bd-bar">
+                    <div class="seg small" role="group" aria-label="What the charts show" id="bd-metric">
+                        <button type="button" data-bdm="avg">Avg R a trade</button><button type="button" data-bdm="total">Total R</button>
+                        <button type="button" data-bdm="win">Win rate</button><button type="button" data-bdm="n">Trades</button></div>
+                    <div class="seg small" role="group" aria-label="View" id="bd-view">
+                        <button type="button" data-bdv="charts">Charts</button><button type="button" data-bdv="heat">Heatmap</button>
+                        <button type="button" data-bdv="table">Table</button></div>
+                </div>
+                <div id="pf-breakdown"></div>
             </section>
 
             <section id="pf-extra"></section>
@@ -5692,10 +5760,25 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && NB.open)
 setInterval(() => { if (NB.open) nbRender(); }, 60000);      // "5 min ago" keeps up
 
 /* ------------------------------------------------------------- theme */
-// The engine is static/theme.js (loaded first in <head>); here, its two switches: the top bar's button with a
-// Light / System / Dark menu (every screen size), and the same three in the sidebar's App section.
+// The engine is static/theme.js (loaded first in <head>); here, its switches: the top bar's button with a
+// Light / System / Dark menu and a Glass / Classic one under it (every screen size), and the same in the
+// sidebar's App section.
 $('tm-menu').appendChild(NWTheme.control({ vertical: true }));
+$('tm-menu').insertAdjacentHTML('beforeend', '<div class="tm-head">Style</div>');
+$('tm-menu').appendChild(NWTheme.styleControl({ vertical: true }));
+$('tm-menu').insertAdjacentHTML('beforeend', '<button class="btn tm-more" type="button" data-theme-mgr>Theme manager…</button>');
 $('sb-theme').appendChild(NWTheme.control({}));
+$('sb-theme').appendChild(NWTheme.styleControl({}));
+$('sb-theme').insertAdjacentHTML('beforeend', '<button class="btn-link" type="button" data-theme-mgr>Theme manager: palettes…</button>');
+// The theme manager: mode, style and the palettes (NiftyWhale's, popular editor themes, Terminal) with previews.
+function openThemes() {
+    tmToggle(false);
+    openModal('Themes', 'Mode, style and palette, kept on this device', '', true);
+    $('modal-body').appendChild(NWTheme.manager());
+    const cur = $('modal-body').querySelector('.tmgr-grid [aria-checked="true"]');
+    if (cur) cur.focus();
+}
+document.querySelectorAll('[data-theme-mgr]').forEach((b) => b.addEventListener('click', openThemes));   // the menu stops clicks going further
 document.querySelectorAll('[data-theme-icon]').forEach((el) => { el.innerHTML = NWTheme.ICON[NWTheme.pref]; });
 function tmToggle(open) {
     open = open == null ? $('tm-menu').hidden : open;
@@ -7077,7 +7160,10 @@ const sgnR = (v, d = 2) => v == null ? '—' : (v >= 0 ? '+' : '') + Number(v).t
 const PARAM_LABEL = { min_avg_volume: 'Min volume', min_atr_pct: 'Min ATR %', max_discount: 'Discount ≤', pre_min_rr: 'Provisional R:R',
     min_rr: 'Final R:R', min_bias: 'Min OI bias', min_move_pct: 'Min 30-min move %', max_iv_pct: 'Max IV pct',
     max_spread_pct: 'Max spread %', stop_pct: 'Stop %', target_pct: 'Target %',
-    max_market_run: 'Max Nifty 20-day run %', min_zone_age: 'Min zone age (days)', max_rr: 'Max R:R' };
+    max_market_run: 'Max Nifty 20-day run %', min_zone_age: 'Min zone age (days)', max_rr: 'Max R:R',
+    min_breadth: 'Min breadth %', weekly_align: 'Weekly trend agrees', min_rs_nifty: 'Min strength vs Nifty',
+    min_rs_sector: 'Min strength vs sector', min_choch_rvol: 'Min CHoCH volume ×', min_close_loc: 'Min CHoCH close',
+    oi_align: 'Futures OI agrees', results_gap: 'Days clear of results', deliv_align: 'Delivery agrees' };
 // A context gate at its 'off' value (swing: max_market_run 10, min_zone_age 0, max_rr 30) reads as off.
 const gateOff = (k, v) => { const t = (S && S.tunable || {})[k]; return !!(t && t.off != null && +v === t.off); };
 const fmtParam = (k, v) => v == null ? '—' : gateOff(k, v) ? 'off' : k === 'min_avg_volume' ? lakh(v) : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -7142,6 +7228,141 @@ function equityDraw(box, pts, now) {
     if (c.n !== n) { c.n = n; c.chart.timeScale().fitContent(); }
 }
 
+/* ------------------------------------------------------------- breakdowns
+   Each condition's buckets against the trades' result. The job is polarity (did trades in this bucket make
+   or lose R?), so the form is a diverging bar on a zero line: columns for a scale (VIX bands, entry time,
+   weekdays: a trend reads left to right), ranked bars for categories. Win rate and trade counts are
+   magnitudes: one hue from zero. A heatmap shows every dimension at once; the table has every number.
+   Gain / loss are --gain / --loss (validated for colour-blind separation); sign also reads from position
+   and the +/- of every label. Under 15 trades a bucket is grey. Every mark has a hover / focus tooltip. */
+const BD_METRICS = {
+    avg:   { label: 'Avg R a trade', get: (r) => r.avg_r, fmt: (v) => sgnR(v), div: true },
+    total: { label: 'Total R', get: (r) => r.total_r, fmt: (v) => sgnR(v, 1), div: true },
+    win:   { label: 'Win rate', get: (r) => r.win_rate, fmt: (v) => Math.round(v) + '%', div: false },
+    n:     { label: 'Trades', get: (r) => r.n, fmt: (v) => String(v), div: false },
+};
+let bdMetric = store.get('nw.bd.metric', 'avg'), bdView = store.get('nw.bd.view', 'charts'), bdData = [];
+if (!BD_METRICS[bdMetric]) bdMetric = 'avg';
+const bdTone = (r, v, M) => r.small ? 'small' : !M.div ? 'seq' : v >= 0 ? 'gain' : 'loss';
+const bdSig = (r) => r.signal ? `<span class="bd-sig" data-s="${r.signal}" title="${r.signal === 'good' ? 'Clearly better' : 'Clearly worse'} than the rest">${r.signal === 'good' ? IC.up : IC.down}</span>` : '';
+const bdAria = (b, r) => `${b.label}, ${r.bucket}: ${r.n} trades, ${Math.round(r.win_rate)}% won, ${sgnR(r.avg_r)} a trade, ${sgnR(r.total_r, 1)} in all`;
+
+// One scale for every panel, so the same bar length means the same R everywhere and the zero lines line up.
+// It comes from the buckets with 15+ trades (a handful of trades swings far and would flatten the rest);
+// a small bucket's mark stops at the scale's edge, its value in its label and tooltip.
+function bdDomain(bd, M) {
+    const all = bd.flatMap((b) => b.rows), big = all.filter((r) => !r.small);
+    const vals = (big.length ? big : all).map(M.get), hi = Math.max(0, ...vals), lo = Math.min(0, ...vals);
+    const clamp = (v) => Math.max(lo, Math.min(hi, v));
+    return { hi, lo, span: (hi - lo) || 1, clamp };
+}
+
+function bdColumns(b, bi, M, D) {
+    const { hi, span, clamp } = D;
+    const H = 110, PAD = 16, zero = PAD + hi / span * H;
+    const cols = b.rows.map((r, ri) => {
+        const raw = M.get(r), v = clamp(raw), h = raw ? Math.max(3, Math.abs(v) / span * H) : 0, top = raw >= 0 ? zero - h : zero;
+        return `<div class="bd-col" data-bd="${bi}:${ri}" data-small="${r.small ? 1 : 0}" tabindex="0" role="img" aria-label="${esc(bdAria(b, r))}">
+            <div class="bd-plot" style="height:${H + 2 * PAD}px"><i class="bd-mark" data-c="${bdTone(r, raw, M)}" data-pos="${raw >= 0 ? 1 : 0}" style="top:${top}px;height:${h}px"></i>
+                <span class="bd-val" style="top:${raw >= 0 ? top - 15 : top + h + 1}px">${esc(M.fmt(raw))}</span></div>
+            <div class="bd-x">${esc(r.bucket)}${bdSig(r)}</div><div class="bd-n">${r.n}</div></div>`;
+    }).join('');
+    return `<div class="bd-cols"><div class="bd-zero" style="top:${4 + zero}px"></div>${cols}</div>`;
+}
+
+function bdBars(b, bi, M, D) {
+    const { lo, span, clamp } = D;
+    const z = -lo / span * 100;                                   // where zero sits across the track, %
+    return `<div class="bd-rows">${b.rows.map((r, ri) => {
+        const raw = M.get(r), v = clamp(raw), w = Math.abs(v) / span * 100;
+        const at = raw >= 0 ? `left:${z}%;width:${Math.max(w, raw ? 1 : 0)}%` : `left:${z - w}%;width:${Math.max(w, 1)}%`;
+        return `<div class="bd-row" data-bd="${bi}:${ri}" data-small="${r.small ? 1 : 0}" tabindex="0" role="img" aria-label="${esc(bdAria(b, r))}">
+            <span class="bd-lab">${esc(r.bucket)}${bdSig(r)}<small>${r.n}</small></span>
+            <span class="bd-track">${M.div ? `<i class="bd-axis" style="left:${z}%"></i>` : ''}<i class="bd-mark" data-c="${bdTone(r, raw, M)}" data-pos="${raw >= 0 ? 1 : 0}" style="${at}"></i></span>
+            <span class="bd-v">${esc(M.fmt(raw))}</span></div>`;
+    }).join('')}</div>`;
+}
+
+function bdHeat(bd, M) {
+    // One scale for every cell: diverging around zero (to the 90th percentile of |value|, so one outlier does not
+    // wash the rest out), or a magnitude from zero.
+    const vals = bd.flatMap((b) => b.rows.filter((r) => !r.small).map((r) => Math.abs(M.get(r)))).sort((a, b) => a - b);
+    const top = vals.length ? vals[Math.floor(0.9 * (vals.length - 1))] || vals[vals.length - 1] || 1 : 1;
+    const fill = (r) => {
+        if (r.small) return 'var(--sunk)';
+        const v = M.get(r), k = Math.min(1, Math.abs(v) / top);
+        const pole = M.div ? (v >= 0 ? 'var(--gain)' : 'var(--loss)') : 'var(--accent)';
+        return `color-mix(in oklab, ${pole} ${Math.round(8 + k * 62)}%, var(--surface))`;
+    };
+    const legend = M.div
+        ? `<span>${esc(M.fmt(-top))}</span><i style="background:linear-gradient(90deg, color-mix(in oklab, var(--loss) 70%, var(--surface)), var(--surface), color-mix(in oklab, var(--gain) 70%, var(--surface)))"></i><span>${esc(M.fmt(top))}</span>`
+        : `<span>${esc(M.fmt(0))}</span><i style="background:linear-gradient(90deg, var(--surface), color-mix(in oklab, var(--accent) 70%, var(--surface)))"></i><span>${esc(M.fmt(top))}</span>`;
+    return `<div class="bd-heat">${bd.map((b, bi) => `<div class="bd-hrow"><div class="bd-hname">${esc(b.label)}</div><div class="bd-hcells">${
+        b.rows.map((r, ri) => `<div class="bd-cell" data-bd="${bi}:${ri}" data-small="${r.small ? 1 : 0}" tabindex="0" role="img" aria-label="${esc(bdAria(b, r))}"
+            style="background:${fill(r)}"><span>${esc(r.bucket)}${bdSig(r)}</span><b>${esc(M.fmt(M.get(r)))}</b></div>`).join('')}</div></div>`).join('')}</div>
+        <p class="bd-legend">${M.label}: ${legend}<span>· grey: under 15 trades</span></p>`;
+}
+
+function bdTable(bd) {
+    return `<div class="table-wrap"><table><thead><tr><th>Condition</th><th>Bucket</th><th class="r">Trades</th><th class="r">Win rate</th>
+        <th class="r">Avg R a trade</th><th class="r">Total R</th><th>Stands out</th></tr></thead><tbody>${
+        bd.flatMap((b) => b.rows.map((r) => `<tr${r.small ? ' class="muted"' : ''}><td>${esc(b.label)}</td><td>${esc(r.bucket)}</td>
+            <td class="r num">${r.n}</td><td class="r num">${Math.round(r.win_rate)}%</td><td class="r num">${rfmt(r.avg_r)}</td>
+            <td class="r num">${sgnR(r.total_r, 1)}</td><td>${r.signal ? (r.signal === 'good' ? 'better' : 'worse') : ''}</td></tr>`)).join('')}</tbody></table></div>`;
+}
+
+function renderBreakdowns(bd) {
+    bdData = bd;
+    document.querySelectorAll('[data-bdm]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.bdm === bdMetric)));
+    document.querySelectorAll('[data-bdv]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.bdv === bdView)));
+    $('bd-metric').hidden = bdView === 'table';
+    const box = $('pf-breakdown');
+    if (!bd.length) { box.className = ''; box.innerHTML = '<p class="muted">Breakdowns appear once there are closed trades in at least two buckets.</p>'; return; }
+    const M = BD_METRICS[bdMetric];
+    if (bdView === 'heat') { box.className = ''; box.innerHTML = bdHeat(bd, M); return; }
+    if (bdView === 'table') { box.className = ''; box.innerHTML = bdTable(bd); return; }
+    box.className = 'pf-grid';
+    const D = bdDomain(bd, M);
+    box.innerHTML = bd.map((b, bi) => `<div class="pf-card bd-card"><h3>${esc(b.label)}<small>${b.rows.reduce((t, r) => t + r.n, 0)} trades</small></h3>
+        ${b.ordered ? bdColumns(b, bi, M, D) : bdBars(b, bi, M, D)}</div>`).join('');
+}
+
+// The one tooltip: the hovered (or focused) bucket, the chosen measure first, then the rest.
+const bdTip = document.createElement('div');
+bdTip.className = 'bd-tip'; bdTip.hidden = true; document.body.appendChild(bdTip);
+function bdShow(el, x, y) {
+    const [bi, ri] = (el.dataset.bd || '').split(':').map(Number), b = bdData[bi], r = b && b.rows[ri];
+    if (!r) return;
+    const M = BD_METRICS[bdView === 'table' ? 'avg' : bdMetric];
+    bdTip.replaceChildren();
+    const strong = document.createElement('strong'); strong.textContent = `${M.fmt(M.get(r))} ${M === BD_METRICS.avg ? 'a trade' : ''}`.trim();
+    const what = document.createElement('div'); what.textContent = `${r.bucket} · ${b.label}`;
+    const nums = document.createElement('div');
+    nums.textContent = `${r.n} trades · ${Math.round(r.win_rate)}% won · ${sgnR(r.avg_r)} a trade · ${sgnR(r.total_r, 1)} in all`;
+    bdTip.append(strong, what, nums);
+    if (r.small || r.signal) {
+        const note = document.createElement('div'); note.className = 'muted';
+        note.textContent = r.small ? 'Under 15 trades: too few to mean much' : `Clearly ${r.signal === 'good' ? 'better' : 'worse'} than the rest (two standard errors)`;
+        bdTip.append(note);
+    }
+    bdTip.hidden = false;
+    const w = bdTip.offsetWidth, h = bdTip.offsetHeight;
+    bdTip.style.left = Math.max(8, Math.min(innerWidth - w - 8, x + 14)) + 'px';
+    bdTip.style.top = Math.max(8, y - h - 12 < 8 ? y + 18 : y - h - 12) + 'px';
+}
+$('pf-breakdown').addEventListener('pointermove', (e) => { const el = e.target.closest('[data-bd]'); if (el) bdShow(el, e.clientX, e.clientY); else bdTip.hidden = true; });
+$('pf-breakdown').addEventListener('pointerleave', () => { bdTip.hidden = true; });
+$('pf-breakdown').addEventListener('focusin', (e) => { const el = e.target.closest('[data-bd]'); if (el) { const r = el.getBoundingClientRect(); bdShow(el, r.left + r.width / 2, r.top); } });
+$('pf-breakdown').addEventListener('focusout', () => { bdTip.hidden = true; });
+document.querySelector('.bd-bar').addEventListener('click', (e) => {
+    const m = e.target.closest('[data-bdm]'), v = e.target.closest('[data-bdv]');
+    if (m) { bdMetric = m.dataset.bdm; store.set('nw.bd.metric', bdMetric); }
+    else if (v) { bdView = v.dataset.bdv; store.set('nw.bd.view', bdView); }
+    else return;
+    bdTip.hidden = true;
+    renderBreakdowns(bdData);
+});
+
 function renderPerf() {
     document.querySelectorAll('[data-pfm]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pfm === pfMode)));
     document.querySelectorAll('[data-pfs]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pfs === pfSrc)));
@@ -7181,14 +7402,7 @@ function renderPerf() {
             <span><b>${esc(h.dimension)}: ${esc(h.bucket)}</b> — ${sgnR(h.avg_r)} a trade over ${h.n} trades (${h.win_rate}% won)</span></div>`).join('')}</div>`
             : `<p class="muted">Nothing stands out yet. A condition is called out once it has ${15}+ trades and differs clearly from the rest${
                 s.trades ? ` (${s.trades} trades so far)` : ''}.</p>`;
-        const maxAbs = Math.max(0.5, ...((d.breakdown || []).flatMap((b) => b.rows.map((r) => Math.abs(r.avg_r)))));
-        $('pf-breakdown').innerHTML = (d.breakdown || []).map((b) => `<div class="pf-card"><h3>${esc(b.label)}</h3>
-            ${b.rows.map((r) => { const w = Math.min(50, Math.abs(r.avg_r) / maxAbs * 50);
-                return `<div class="pf-row" data-small="${r.small ? 1 : 0}"><span>${esc(r.bucket)}${r.signal ? `<span class="pf-sig" data-s="${r.signal}">${r.signal === 'good' ? IC.up : IC.down}</span>` : ''}</span>
-                <span class="n" title="trades">${r.n}</span><span class="w" title="win rate">${Math.round(r.win_rate)}%</span>
-                <span class="pf-bar-cell" title="${sgnR(r.avg_r)} a trade"><i style="${r.avg_r >= 0 ? 'left:50%' : 'right:50%'};width:${w}%;background:var(--${r.avg_r >= 0 ? 'good' : 'bad'})"></i></span>
-                <span class="t" title="total">${sgnR(r.total_r, 1)}</span></div>`; }).join('')}</div>`).join('')
-            || '<p class="muted">Breakdowns appear once there are closed trades in at least two buckets.</p>';
+        renderBreakdowns(d.breakdown || []);
         let extra = '';
         if (pfSrc === 'backtest' && d.by_symbol) {
             const list = (rows) => rows.map((r) => `<div class="pf-row" style="grid-template-columns:1fr 40px 60px"><span class="sym">${esc(r.symbol)}</span>
@@ -7362,6 +7576,7 @@ function renderLab() {
             <button class="btn" type="button" data-lab="backtest">Run backtest now</button>
             <button class="btn" type="button" data-lab="tune">Tune now</button>
             <button class="btn" type="button" data-lab="report">Send weekly report</button>
+            <button class="btn" type="button" data-lab="backfill" title="Delivery %, FII positioning, futures OI and results dates for the lab's history, from NSE's archives">Backfill NSE history</button>
             <button class="btn" type="button" id="lab-settings-btn">${IC.gear} Lab settings</button></div>
         <p class="muted lab-sched">Swing: ${esc(uniLabel(st.swing_universe))}, ${st.lab_years_swing} years · intraday: ${esc(uniLabel(st.intraday_universe))},
             ${st.lab_years_intraday} years · options: ${LAB.candidates} candidates recorded.</p>
@@ -8044,6 +8259,10 @@ const CK_ACTIONS = [
     ['Toggle the sidebar', 'controls collapse expand', CK_IC.tab, () => $('sb-toggle').click(), ''],
     ...NWTheme.MODES.map((m) => [`Theme: ${NWTheme.LABEL[m]}`, `theme appearance colour color mode ${m} ${m === 'system' ? 'auto device' : m === 'dark' ? 'night' : 'day'}`,
         NWTheme.ICON[m], () => NWTheme.set(m), '']),
+    ...NWTheme.STYLES.map((m) => [`Style: ${NWTheme.STYLE_LABEL[m]}`, `theme style ${m} ${m === 'glass' ? 'glossy translucent liquid' : 'plain flat simple'}`,
+        NWTheme.STYLE_ICON[m], () => NWTheme.setStyle(m), '']),
+    ['Theme manager', 'theme palette colours colors appearance', CK_IC.gear, () => openThemes(), ''],
+    ...NWTheme.PALETTES.map((p) => [`Palette: ${p.name}`, `theme palette colours colors ${p.note}`, CK_IC.gear, () => NWTheme.setPalette(p.id), '']),
 ];
 
 async function ckIndex() {

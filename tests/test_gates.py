@@ -91,9 +91,10 @@ class Records(unittest.TestCase):
                                        default=str).encode()).hexdigest()[:12]
         self.assertEqual(backtest.structural_key('swing', smc.Rules()), want)
 
-    def test_thresholds_carry_the_gates_for_swing_only(self):
+    def test_thresholds_carry_each_modes_gates(self):
         self.assertEqual(set(backtest.thresholds('swing', smc.Rules())), set(backtest.FILTERS) | set(smc.GATES))
-        self.assertEqual(set(backtest.thresholds('intraday', app.intraday.IntradayRules())), set(backtest.FILTERS))
+        self.assertEqual(set(backtest.thresholds('intraday', app.intraday.IntradayRules())),
+                         set(backtest.FILTERS) | set(app.intraday.GATES))
 
 
 class GatedLifecycle(test_learn.SwingLifecycle):
@@ -165,7 +166,9 @@ class AutopilotLadder(unittest.TestCase):
     def test_specs_offer_the_gates_for_swing(self):
         sp = lab.specs('swing')
         self.assertTrue(set(smc.GATES) <= set(sp))
-        self.assertFalse(set(smc.GATES) & set(lab.specs('intraday')))
+        isp = lab.specs('intraday')
+        self.assertTrue(set(app.intraday.GATES) <= set(isp))
+        self.assertFalse({'max_market_run', 'min_zone_age', 'max_rr', 'weekly_align', 'min_rs_sector'} & set(isp))
 
     def test_ladder_from_off(self):
         pol = autopilot.policy({})

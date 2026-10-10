@@ -64,6 +64,34 @@ INDICES: Dict[str, tuple] = {
     'niftyconsumption':      ('Nifty India Consumption', 'Themes'),
     'niftymnc':              ('Nifty MNC', 'Themes'),
 }
+# A stock's own sector, for its relative strength: the most specific sector index it is in (PSU Bank
+# before Bank, Oil & Gas before Energy, Pharma before Healthcare; Financial Services, the broadest, last).
+SECTOR_ORDER = ['niftypsubank', 'niftybank', 'niftyit', 'niftypharma', 'niftyhealthcare', 'niftyauto', 'niftyfmcg',
+                'niftymetal', 'niftyoilgas', 'niftyenergy', 'niftyrealty', 'niftymedia', 'niftyconsumerdurables', 'niftyfinance']
+
+
+def sector_of(stock: Dict) -> Optional[str]:
+    return next((k for k in SECTOR_ORDER if k in (stock.get('indices') or [])), None)
+
+
+def sectors(u: Optional[Dict] = None) -> Dict[str, Optional[str]]:
+    """Every stock's own sector index (SECTOR_ORDER), or None for one in no sector index."""
+    try:
+        stocks = (u or load()).get('stocks', [])
+    except (OSError, ValueError):
+        return {}
+    return {s['symbol']: sector_of(s) for s in stocks}
+
+
+def sector_members(u: Optional[Dict] = None) -> Dict[str, List[str]]:
+    """Each sector index's members (all of them, not only the stocks it is the own sector of)."""
+    try:
+        stocks = (u or load()).get('stocks', [])
+    except (OSError, ValueError):
+        return {}
+    return {k: [s['symbol'] for s in stocks if k in (s.get('indices') or [])] for k in SECTOR_ORDER}
+
+
 # The protocol's own choices (Step 1). 'nifty100' is both an index and one of these.
 PROTOCOL = {'nifty100': 'Nifty 100', 'fo': 'F&O stocks', 'both': 'Nifty 100 + F&O'}
 UNIVERSES = tuple(PROTOCOL) + tuple(k for k in INDICES if k not in PROTOCOL)

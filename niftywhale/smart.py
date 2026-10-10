@@ -43,6 +43,11 @@ BLOCK_URL = ARCHIVES + '/content/equities/block.csv'
 POI_URL = ARCHIVES + '/content/nsccl/fao_participant_oi_{d}.csv'
 BHAV_URL = ARCHIVES + '/products/content/sec_bhavdata_full_{d}.csv'
 FLOWS_URL = 'https://www.nseindia.com/api/fiidiiTradeReact'
+# The F&O bhavcopy: NSE's UDiFF file since July 2024, the older one before (backfill.py tries both).
+FO_URL = 'https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{ymd}_F_0000.csv.zip'
+FO_OLD_URL = ARCHIVES + '/content/historical/DERIVATIVES/{y}/{mon}/fo{d}{mon}{y}bhav.csv.zip'
+EVENTS_URL = 'https://www.nseindia.com/api/event-calendar'
+NSE_HOME = 'https://www.nseindia.com/'
 PACE_S = 1.5
 TIMEOUT = 30
 PARTICIPANTS = ('Client', 'DII', 'FII', 'Pro')
@@ -199,6 +204,40 @@ def parse_bhav(text: str) -> Dict[str, Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------- analysis
+def parse_fo_bhav(text: str) -> Dict[str, Dict[str, Any]]:
+    """An F&O bhavcopy CSV (either format) -> {symbol: oi, oi_chg, close} for stock futures: open interest
+    and its change summed over the expiries, the nearest expiry's close."""
+    out: Dict[str, Dict[str, Any]] = {}
+    near: Dict[str, str] = {}
+    for row in csv.DictReader(io.StringIO(text)):
+        row = {(k or '').strip(): (v or '').strip() for k, v in row.items()}
+        kind = row.get('FinInstrmTp') or row.get('INSTRUMENT')
+        if kind not in ('STF', 'FUTSTK'):
+            continue
+        sym = row.get('TckrSymb') or row.get('SYMBOL')
+        expiry = row.get('XpryDt') or _day(row.get('EXPIRY_DT', '')) or ''
+        oi, chg = _num(row.get('OpnIntrst') or row.get('OPEN_INT')), _num(row.get('ChngInOpnIntrst') or row.get('CHG_IN_OI'))
+        close = _num(row.get('ClsPric') or row.get('CLOSE'))
+        if not sym or oi is None:
+            continue
+        r = out.setdefault(sym, {'oi': 0, 'oi_chg': 0, 'close': None})
+        r['oi'] += int(oi)
+        r['oi_chg'] += int(chg or 0)
+        if close and (sym not in near or expiry < near[sym]):
+            near[sym], r['close'] = expiry, close
+    return out
+
+
+def parse_events(rows: Any) -> List[Dict[str, Any]]:
+    """NSE's event calendar -> [{symbol, day (ISO), purpose}]."""
+    out = []
+    for r in rows if isinstance(rows, list) else []:
+        day = _day(r.get('date') or '')
+        if r.get('symbol') and day:
+            out.append({'symbol': r['symbol'].strip(), 'day': day, 'purpose': (r.get('purpose') or '').strip()[:80]})
+    return out
+
+
 def delivery_read(history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """The latest session's delivery against the stock's own previous DELIV_SESSIONS:
       accumulation  heavy volume, delivery well above normal, the stock up: positions taken home
@@ -325,6 +364,36 @@ class Fetcher:
     def participant_oi(self, day: date) -> Optional[Dict[str, Dict[str, int]]]:
         r = self.get(POI_URL.format(d=day.strftime('%d%m%Y')))
         return parse_participant_oi(r.text) if r is not None else None
+
+    def fo_bhav(self, day: date) -> Optional[Dict[str, Dict[str, Any]]]:
+        """Stock futures OI for `day` (parse_fo_bhav): the UDiFF file, else the older one."""
+        import zipfile
+        for url in (FO_URL.format(ymd=day.strftime('%Y%m%d')),
+                    FO_OLD_URL.format(y=day.year, mon=day.strftime('%b').upper(), d=day.strftime('%d'))):
+            r = self.get(url)
+            if r is not None:
+                z = zipfile.ZipFile(io.BytesIO(r.content))
+                return parse_fo_bhav(z.read(z.namelist()[0]).decode('utf-8', 'replace'))
+        return None
+
+    def events(self, first: date, last: date) -> List[Dict[str, Any]]:
+        """Board meetings (results among them) between two days, from NSE's event calendar. NSE wants its
+        own cookies: when it refuses, its home page is fetched for them and the call retried."""
+        params = {'index': 'equities', 'from_date': first.strftime('%d-%m-%Y'), 'to_date': last.strftime('%d-%m-%Y')}
+        headers = {'Referer': NSE_HOME, 'Accept': 'application/json'}
+        for attempt in range(2):
+            with self.lock:
+                gap = self.pace - (time.time() - self.last)
+                if gap > 0:
+                    time.sleep(gap)
+                self.last = time.time()
+            r = self.session.get(EVENTS_URL, params=params, headers=headers, timeout=TIMEOUT)
+            if r.status_code in (401, 403) and attempt == 0:
+                self.session.get(NSE_HOME, timeout=TIMEOUT)          # cookies, whatever the status
+                continue
+            r.raise_for_status()
+            return parse_events(r.json())
+        return []
 
     def bhav(self, day: date) -> Optional[Dict[str, Dict[str, Any]]]:
         r = self.get(BHAV_URL.format(d=day.strftime('%d%m%Y')))

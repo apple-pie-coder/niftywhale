@@ -167,6 +167,49 @@ def update_market(years: float = 8) -> Optional[pd.DataFrame]:
     return m
 
 
+CONTEXT = 'CONTEXT'          # breadth and sector series, built from the daily candles held (update_context)
+BREADTH_MIN_STOCKS = 50      # fewer stocks with a 50-day average that day, and breadth is not counted
+
+
+def update_context() -> Optional[pd.DataFrame]:
+    """The market's breadth and each sector's own index, day by day, from every stock's daily candles
+    held (the live universes, five years): `breadth50`, the share of stocks closing above their 50-day
+    average (%), and `sec_<index>`, an equal-weighted index of the sector's members (100 at the start).
+    Built by the lab after the daily candles; the live app and the backtester read the same file, so a
+    trade's breadth and sector strength mean the same in both."""
+    from niftywhale import universe
+    closes = {}
+    for p in sorted((LAB_DIR / 'history' / '1d').glob('*.pkl.gz')):
+        sym = p.name[:-len('.pkl.gz')]
+        f = load('1d', sym)
+        if f is not None and len(f) >= 60 and 'Close' in f:
+            s = f['Close'].astype(float)
+            closes[sym] = s[~s.index.duplicated(keep='last')]
+    if not closes:
+        return None
+    px = pd.DataFrame(closes).sort_index()
+    ma50 = px.rolling(50, min_periods=50).mean()
+    counted = ma50.notna().sum(axis=1)
+    above = ((px > ma50) & ma50.notna()).sum(axis=1)
+    out = pd.DataFrame({'breadth50': (above / counted.where(counted >= BREADTH_MIN_STOCKS) * 100).round(2)})
+    rets = px.pct_change(fill_method=None)
+    for key, members in universe.sector_members().items():
+        have = [m for m in members if m in rets]
+        if len(have) >= 3:
+            out[f'sec_{key}'] = ((1 + rets[have].mean(axis=1, skipna=True).fillna(0)).cumprod() * 100).round(3)
+    out = out.dropna(how='all')
+    save('market', CONTEXT, out)
+    return out
+
+
+def load_market() -> Optional[pd.DataFrame]:
+    """Nifty and VIX (update_market) with breadth and the sector series (update_context) beside them."""
+    m, c = load('market', 'NIFTY_VIX'), load('market', CONTEXT)
+    if m is None or c is None:
+        return m
+    return m.join(c, how='left')
+
+
 def coverage(intervals=('1d', '15m', '5m')) -> Dict[str, Dict[str, object]]:
     """What is on disk: per interval, symbols, first and last date, size."""
     out = {}

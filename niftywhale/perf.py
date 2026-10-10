@@ -9,6 +9,7 @@ t-test); small buckets are shown but greyed in the dashboard, because a
 handful of trades says almost nothing.
 """
 import math
+import re
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -101,13 +102,27 @@ DIMENSIONS: List[Tuple[str, str, Callable[[Dict[str, Any]], Optional[str]]]] = [
     ('zone_age', 'Days zone waited (swing)', lambda t: _band([1, 3, 6])(t['f'].get('zone_age_days'))),
     ('target', 'Target pool (intraday)', lambda t: t['f'].get('target_kind')),
     ('stock_trend', 'Stock vs its 50-day', lambda t: _band([-5, 0, 5], '{:+g}%')(t['f'].get('stock_vs_ma50'))),
+    # Breadth, strength, the weekly trend and the CHoCH candle (features.py): strength and the trend read the trade's way.
+    ('breadth', 'Stocks above their 50-day', lambda t: _band([30, 45, 60, 75], '{:g}%')(t['f'].get('breadth50'))),
+    ('rs_nifty', 'Strength vs Nifty, 20 days (trade\'s way)',
+     lambda t: _band([-5, -2, 0, 2, 5], '{:+g}')(None if t['f'].get('rs_nifty20') is None else t['f']['rs_nifty20'] * _side(t))),
+    ('rs_sector', 'Strength vs its sector, 20 days (trade\'s way)',
+     lambda t: _band([-5, -2, 0, 2, 5], '{:+g}')(None if t['f'].get('rs_sector20') is None else t['f']['rs_sector20'] * _side(t))),
+    ('weekly', 'Weekly trend (swing)', lambda t: None if not t['f'].get('weekly_trend') else
+        'mixed' if t['f']['weekly_trend'] == 'mixed' else
+        'with the trade' if t['f']['weekly_trend'] == ('up' if _side(t) > 0 else 'down') else 'against the trade'),
+    ('choch_rvol', 'CHoCH candle volume vs its slot', lambda t: _band([0.75, 1, 1.5, 2], '{:g}×')(t['f'].get('choch_rvol'))),
+    ('choch_close', 'CHoCH candle close (trade\'s way)', lambda t: _band([0.25, 0.5, 0.75], '{:g}')(t['f'].get('choch_close_loc'))),
     # Live trades only: the backtester has no news history, so its trades fall outside these two.
     ('news', 'News in the 24 h before entry', lambda t: None if 'news_24h' not in t['f'] else
         'NSE filing' if t['f'].get('filing_24h') else 'media only' if t['f']['news_24h'] else 'none'),
     ('news_tone', 'News tone vs the trade (FinBERT, 24 h)', lambda t: news_tone_bucket(t)),
     # Smart money (smart.py), from what NSE published before the entry's day. Live trades only too.
     ('inst_deals', 'Institutional deals in the week before', lambda t: inst_deals_bucket(t)),
-    ('delivery', 'Delivery the session before', lambda t: (t.get('f') or {}).get('deliv_read') if (t.get('f') or {}).get('sm') else None),
+    ('delivery', 'Delivery the session before', lambda t: (t.get('f') or {}).get('deliv_read')),
+    # Futures and results (backfill.py): the backtester has their history too.
+    ('futures', 'Stock futures, 5 sessions (vs the trade)', lambda t: futures_bucket(t)),
+    ('results', 'Days to the next results', lambda t: _band([3, 7, 14, 30], '{:g}')(t['f'].get('days_to_results'))),
     ('fii_futures', 'FII index futures positioning', lambda t: fii_stance(t)),
     ('fii_cash', 'FII cash flow the session before', lambda t: None if (t.get('f') or {}).get('fii_cash_cr') is None
         else 'FII net buyers' if t['f']['fii_cash_cr'] > 0 else 'FII net sellers'),
@@ -128,6 +143,18 @@ def inst_deals_bucket(t: Dict[str, Any]) -> Optional[str]:
     if not net:
         return 'none'
     return 'with the trade' if net * _side(t) > 0 else 'against the trade'
+
+
+def futures_bucket(t: Dict[str, Any]) -> Optional[str]:
+    """Futures buildup the trade's way: a long's long buildup or short covering agrees, a short's short
+    buildup or long unwinding."""
+    k = (t.get('f') or {}).get('fut_buildup')
+    if not k:
+        return None
+    if k == 'neutral':
+        return 'neutral'
+    agrees = k in (('long buildup', 'short covering') if _side(t) > 0 else ('short buildup', 'long unwinding'))
+    return f"{k}: {'with' if agrees else 'against'} the trade"
 
 
 def fii_stance(t: Dict[str, Any]) -> Optional[str]:
@@ -191,17 +218,39 @@ def breakdown(trades: List[Dict[str, Any]], dims=None) -> List[Dict[str, Any]]:
             rows.append({'bucket': b, 'n': n, 'win_rate': round(100 * sum(r > 0 for r in rs) / n, 1),
                          'avg_r': round(mean, 3), 'total_r': round(sum(rs), 2), 'signal': signal,
                          'small': n < MIN_BUCKET})
-        out.append({'key': key, 'label': label, 'rows': sorted(rows, key=_order)})
+        out.append(arrange({'key': key, 'label': label, 'rows': rows}))
     return out
 
 
-def _order(row):
-    b = row['bucket']
+def arrange(dim: Dict[str, Any]) -> Dict[str, Any]:
+    """A dimension's buckets in reading order: a scale (bands, clock times, weekdays) in its own order, so a
+    trend across it reads left to right (`ordered`); categories with no order, best first. Also for
+    breakdowns stored before this order existed (a backtest run's)."""
+    rows = dim.get('rows') or []
+    keys = [_scale_key(r['bucket']) for r in rows]
+    ordered = bool(rows) and all(k is not None for k in keys)
+    rows = [r for _, r in sorted(zip(keys, rows), key=lambda kr: kr[0])] if ordered \
+        else sorted(rows, key=lambda r: -(r.get('avg_r') or 0))
+    return {**dim, 'ordered': ordered, 'rows': rows}
+
+
+_NUM = re.compile(r'[-+]?\d+(?:\.\d+)?')
+
+
+def _scale_key(b: str) -> Optional[float]:
+    """Where a bucket sits on its scale: a band ('< 12', '12–15', '≥ 22', '+0.3%–+1%'), a clock time
+    ('09:15–10:30', '13:30 on') or a weekday; None for a category with no order."""
+    if b in WEEKDAYS:
+        return float(WEEKDAYS.index(b))
+    t = re.match(r'(\d{2}):(\d{2})', b)
+    if t:
+        return float(int(t.group(1)) * 60 + int(t.group(2)))
     if b.startswith('<'):
-        return (0, b)
+        return -math.inf
     if b.startswith('≥'):
-        return (2, b)
-    return (1, b)
+        return math.inf
+    n = _NUM.match(b)
+    return float(n.group()) if n else None
 
 
 def highlights(bd: List[Dict[str, Any]], limit: int = 6) -> List[Dict[str, Any]]:

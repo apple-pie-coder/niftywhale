@@ -349,15 +349,27 @@ Alerts from before paper trading started (6 Oct 2026) stay as they were: trigger
 
 #### Theme
 
-**Light**, **Dark** or **System** (follow the device, switching live when it does): the top bar's theme button opens
-the choice on any screen, the sidebar's App section has the same three, and the command palette has *Theme: ...*. The
-choice is kept per device and every open tab follows it; the Guide, the sign-in page and the certificate page use it
-too. On a phone the browser's own bars take the theme's colour.
+Three choices, each kept per device and followed by every open tab, the Guide, the sign-in page and the certificate page:
 
-Under the hood (`static/theme.js`, `static/theme.css`): both palettes live in one stylesheet as colour tokens, and a
-small script loaded first on every page sets `<html data-theme="light|dark">` before anything is drawn, so a page never
-flashes the wrong theme. A switch eases the colours over a quarter second (not with reduced motion) and fires a
-`themechange` event, which the charts and the mood tint redraw on.
+- **Mode:** **Light**, **Dark** or **System** (follow the device, switching live when it does).
+- **Style:** **Glass** (the default: translucent panels with blur, specular edges and glossy controls over a softly
+  tinted backdrop) or **Classic** (solid flat surfaces, square corners, no gradients, blur or shadows; the same layout).
+- **Palette:** NiftyWhale's own, popular editor themes (Solarized, GitHub, Catppuccin, Gruvbox, One, Tokyo Night in
+  light and dark; Nord, Dracula and Monokai, dark only), and **Terminal**: phosphor green on black, monospace throughout,
+  for trading. A dark-only palette keeps the page dark whatever the mode says.
+
+The top bar's theme button opens mode and style, with **Theme manager…** for the palettes (a preview card each); the
+sidebar's App section has the same, and the command palette has *Theme: ...*, *Style: ...*, *Palette: ...* and *Theme
+manager*. The market's mood tint (4.13) shows in every style and palette. On a phone the browser's own bars take the
+palette's colour.
+
+Under the hood (`static/theme.js`, `static/theme.css`): NiftyWhale's palettes and both styles live in one stylesheet as
+colour tokens; the other palettes are data in `theme.js`, written as CSS with every derived colour worked out (charts read
+the tokens). The script is loaded first on every page and sets `<html data-theme data-style data-palette>` before anything
+is drawn, so a page never flashes the wrong theme. A change eases the colours over a quarter second (not with reduced
+motion) and fires a `themechange` event, which the charts and the mood tint redraw on. Each palette's gain / loss pair
+(the colours of results in charts) is checked to stay apart under colour blindness; GitHub's is its own colour-blind
+blue / orange.
 
 ### 4.2 Sidebar
 
@@ -1552,9 +1564,15 @@ The tab then shows:
 - **What stands out:** conditions whose trades did clearly better or worse than the rest.
   - A condition is only called out with 15 or more trades and a difference of more than two standard errors.
   - That's a rough t-test, but it stops a handful of lucky trades from looking like a pattern.
-- **Breakdowns:** one card per condition (direction, entry time, Nifty trend, VIX, gap, R:R, pullback depth, ATR, score, stop distance, zone age, target pool, stock trend).
-  - Each card shows trades, win rate, average R (the bar) and total R.
-  - Buckets under 15 trades are grey.
+- **Breakdowns:** every condition a trade was taken in (direction, entry time, weekday, Nifty trend, breadth, VIX, gap,
+  R:R, pullback depth, ATR, score, stop distance, zone age, target pool, stock trend, strength against Nifty and against its sector,
+  the weekly trend, the CHoCH candle's volume and close, news, deals, delivery, futures buildup, FII positioning and cash,
+  days to results), bucket by bucket.
+  - Measure: **Avg R a trade**, **Total R**, **Win rate** or **Trades**.
+  - **Charts:** columns on a zero line for a scale (VIX bands, times, weekdays read left to right), ranked bars for
+    categories, all on one scale so the same length means the same R everywhere. **Heatmap:** every condition at once,
+    a row each. **Table:** every number.
+  - Buckets under 15 trades are grey (and kept off the scale, their value in the label); hover or focus any mark for its numbers.
 - **By stock** (backtest): the best and worst stocks. **Recent trades** (live): the last 25 with their context.
 
 ### 7.3 The lab and the backtester
@@ -1596,9 +1614,34 @@ Backtests run in a second container, `niftywhale-lab`, built from the same image
    Baselines, tuning, shadow runs and rollbacks all judge rules after costs. The Backtest view says what costs took, with the
    result before them.
 
+4. **Context** (`niftywhale/features.py`, the same functions as a live entry). Each simulated entry gets what a live one
+   records, as of the session before it:
+   - from the history on disk: market breadth (% of the lab's stocks above their 50-day), strength against Nifty and against
+     the stock's sector over 20 sessions, the weekly trend (swing), and the CHoCH candle's relative volume and where it closed;
+   - from NSE's dated files (below): the delivery read, FII index-futures positioning, the stock's futures buildup (OI and
+     price over 5 sessions: long / short buildup, short covering, long unwinding) and days to and from results.
+
+   Each is also a **gate** in the rule set (off by default, tuned like any threshold): min breadth, weekly trend agrees,
+   min strength vs Nifty and vs sector, min CHoCH volume and close, futures OI agrees, days clear of results, delivery
+   agrees. Intraday has the breadth, strength, CHoCH, OI and delivery gates.
+
+**NSE history** (`niftywhale/backfill.py`; the lab's nightly and first start, or **Backfill NSE history** in the Lab panel):
+
+| What | NSE file | Back to |
+|---|---|---|
+| Delivery % (the lab's stocks) | `sec_bhavdata_full` | 2021 |
+| Participant OI (FII / DII / Pro / Client) | `fao_participant_oi` | 2021 |
+| Stock futures OI, a day | F&O bhavcopy (both of its formats) | 2021 |
+| Results dates | the event calendar | 2021 |
+
+The first fill reads one file of each a day, an hour or two at NSE's pace; after that a night adds one day, and it stops
+after 10 days NSE refuses in a row, carrying on the next night. FII / DII cash flows have no dated archive (NSE's API
+answers only the latest day), so their history is what the live app has collected.
+
 **What a backtest can't see:**
 
 - the live data's delays and gaps (slippage stands in for part of them);
+- market depth at the trigger, which no archive has;
 - stocks that left the index since (it uses today's members, which flatters the results).
 
 Use backtests to compare rules, not as a forecast.
