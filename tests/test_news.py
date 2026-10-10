@@ -329,7 +329,7 @@ class Reaction(unittest.TestCase):
     def test_stock_candles_that_stop_at_15_15(self):
         # An F&O stock has no 15:15 candle (the closing auction), and Nifty's is built from the
         # auction's indicative prices: the close is read at 15:15 for both.
-        dhan = self.stock[[t.time() != news.session.CTS_END_FO for t in self.stock.index]]
+        dhan = self.stock[[t.time() != news.session.cts_end_fo() for t in self.stock.index]]
         up = candles(self.D1, [1000.0] * 24 + [1100.0] + [1100.0] * 25)   # Nifty +10% in the last 15 minutes
         r = news.reaction('2026-10-07T11:40:00+05:30', dhan, up, now=datetime(2026, 10, 7, 15, 31, tzinfo=IST))
         self.assertEqual((r['react_close'], r['due']), (10.0, '2026-10-07T15:46:00+05:30'))     # then the official close

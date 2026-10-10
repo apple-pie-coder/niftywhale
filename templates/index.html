@@ -4936,7 +4936,9 @@ async function appSettingsModal(focus) {
     const status = (ok, msg) => `<p class="apps-status" data-ok="${ok ? 1 : 0}"><i></i>${msg}</p>`;
     // One quiet line per tab: which values come from .env, and a way back to .env for any saved here.
     const names = { telegram_token: 'bot token', telegram_chat_id: 'chat ID', dhan_client_id: 'client ID', dhan_pin: 'PIN', dhan_totp: 'TOTP secret',
-                    data_source: 'price data', live_watch_delay: 'delay with Dhan', watch_delay: 'delay with yfinance', log_level: 'log level' };
+                    data_source: 'price data', live_watch_delay: 'delay with Dhan', watch_delay: 'delay with yfinance', log_level: 'log level',
+                    intraday_square_off: 'intraday square-off', nse_cts_end_fo: "F&O stocks' trading end", nse_closes_final: 'official closes out',
+                    nse_fo_close: 'F&O close', nse_cas_start: "the auction's first day" };
     const foot = (keys) => {
         const env = keys.filter((k) => F[k].source === 'env').map((k) => names[k]);
         const here = keys.filter((k) => F[k].source === 'app');
@@ -4945,7 +4947,7 @@ async function appSettingsModal(focus) {
         here.forEach((k) => parts.push(`${names[k][0].toUpperCase() + names[k].slice(1)} is saved here · <button type="button" class="btn-link" data-apps-clear="${k}">${F[k].env_set ? 'use .env' : 'use the default'}</button>`));
         return parts.length ? `<p class="apps-foot">${parts.join(' ')}</p>` : '';
     };
-    const TABS = [['telegram', 'Telegram'], ['dhan', 'Dhan'], ['data', 'Data'], ['log', 'Logging']];
+    const TABS = [['telegram', 'Telegram'], ['dhan', 'Dhan'], ['data', 'Data'], ['session', 'Market session'], ['log', 'Logging']];
     const tab = TABS.some(([k]) => k === focus) ? focus : 'telegram';
     openModal('App settings', 'A value saved here replaces the one in .env', `<div class="apps" id="apps-form">
         <div class="seg apps-tabs" role="tablist">${TABS.map(([k, l]) => `<button type="button" role="tab" data-apps-tab="${k}" aria-pressed="${k === tab}">${l}</button>`).join('')}</div>
@@ -4966,13 +4968,25 @@ async function appSettingsModal(focus) {
             ${field('live_watch_delay', 'Wait after a candle, with Dhan (seconds)', text('live_watch_delay', '10', 'numeric'))}
             ${field('watch_delay', 'Wait after a candle, with yfinance (seconds)', text('watch_delay', '90', 'numeric'))}
             ${foot(['data_source', 'live_watch_delay', 'watch_delay'])}</div>
+        <div class="apps-pane" data-pane="session" hidden>
+            ${field('intraday_square_off', 'Intraday square-off', text('intraday_square_off', '15:10', 'numeric'))}
+            <p class="apps-foot">Dhan squares off intraday equity at 15:10. An F&amp;O stock is never squared off after its trading ends (below).</p>
+            ${field('nse_cts_end_fo', 'F&amp;O stocks stop trading at', text('nse_cts_end_fo', '15:15', 'numeric'))}
+            ${field('nse_closes_final', 'Official closes are out by', text('nse_closes_final', '15:45', 'numeric'))}
+            ${field('nse_fo_close', 'F&amp;O segment closes at', text('nse_fo_close', '15:40', 'numeric'))}
+            ${field('nse_cas_start', 'Closing auction began on', text('nse_cas_start', '2026-08-03'))}
+            <p class="apps-foot">Since the closing auction, a stock with F&amp;O stops continuous trading at 15:15 and closes in an auction;
+            the rest trade to 15:30. SEBI may move these times again: set them here and they apply within seconds, no restart.
+            Days before the auction's first day keep one 15:30 close for every stock.</p>
+            ${foot(['intraday_square_off', 'nse_cts_end_fo', 'nse_closes_final', 'nse_fo_close', 'nse_cas_start'])}</div>
         <div class="apps-pane" data-pane="log" hidden>
             ${field('log_level', 'Log level', sel('log_level', [['DEBUG', 'Debug'], ['INFO', 'Info'], ['WARNING', 'Warnings'], ['ERROR', 'Errors only']]))}
             ${foot(['log_level'])}
             <details class="apps-more"><summary>What still lives in .env</summary>
                 <p><code>NIFTYWHALE_SCHEDULER</code>, <code>PORT</code>, <code>DB_PATH</code>, <code>UNIVERSE_PATH</code> and <code>TZ</code>: the app
                 runs on them, so they are set in docker-compose. Rule thresholds (<code>SMC_*</code>, <code>INTRADAY_*</code>) are set with the
-                sidebar's <b>Tune…</b> buttons, which also replace .env.</p></details></div>
+                sidebar's <b>Tune…</b> buttons, which also replace .env. The intraday start and entry cutoff
+                (<code>INTRADAY_START</code>, <code>INTRADAY_NO_ENTRY_AFTER</code>) stay in .env.</p></details></div>
         <div class="sch-err" id="apps-err" hidden></div>
         <div class="apps-actions"><button class="btn btn-primary" type="button" id="apps-save">Save</button></div></div>`);
     const show = (k) => {

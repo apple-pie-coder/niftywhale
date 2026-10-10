@@ -23,12 +23,13 @@ import signal
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import replace
 from datetime import date, datetime, time as dtime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
-from niftywhale import autopilot, backtest, data, dhan, history, intraday, notify, options, perf, smc, store, universe
+from niftywhale import autopilot, backtest, config, data, dhan, history, intraday, notify, options, perf, smc, store, universe
 
 logger = logging.getLogger('niftywhale.lab')
 
@@ -46,8 +47,8 @@ def current_rules(mode: str):
         saved = {}
     if mode == 'swing':
         return smc.Rules.from_env().with_overrides(saved)
-    if mode == 'intraday':
-        return intraday.IntradayRules.from_env().with_overrides(saved)
+    if mode == 'intraday':                  # the square-off: App settings, as in the app
+        return replace(intraday.IntradayRules.from_env().with_overrides(saved), square_off=config.get('intraday_square_off'))
     return options.rules_from(saved)
 
 

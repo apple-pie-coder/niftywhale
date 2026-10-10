@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import time
+from datetime import date, datetime
 from typing import Any, Dict, Optional, Tuple
 
 from niftywhale import store
@@ -34,6 +35,19 @@ FIELDS: Dict[str, Tuple[str, str, str, bool]] = {
     'live_watch_delay': ('cfg:live_watch_delay_s', 'LIVE_WATCH_DELAY_SECONDS', '10', False),
     'data_source': ('cfg:data_source', 'NIFTYWHALE_DATA', 'auto', False),
     'log_level': ('cfg:log_level', 'LOG_LEVEL', 'INFO', False),
+    # NSE's session clock around the closing auction (session.py), and the intraday square-off.
+    'intraday_square_off': ('cfg:intraday_square_off', 'INTRADAY_SQUARE_OFF', '15:10', False),
+    'nse_cts_end_fo': ('cfg:nse_cts_end_fo', 'NSE_CTS_END_FO', '15:15', False),
+    'nse_closes_final': ('cfg:nse_closes_final', 'NSE_CLOSES_FINAL', '15:45', False),
+    'nse_fo_close': ('cfg:nse_fo_close', 'NSE_FO_CLOSE', '15:40', False),
+    'nse_cas_start': ('cfg:nse_cas_start', 'NSE_CAS_START', '2026-08-03', False),
+}
+# Times (HH:MM) and the range each may take; a value out of it from .env falls back to the default.
+CLOCKS: Dict[str, Tuple[str, str, str]] = {
+    'intraday_square_off': ('09:30', '15:30', 'the intraday square-off'),
+    'nse_cts_end_fo': ('14:00', '15:30', "F&O stocks' continuous trading end"),
+    'nse_closes_final': ('15:30', '17:00', 'the time official closes are out'),
+    'nse_fo_close': ('15:15', '16:00', 'the F&O close'),
 }
 
 _cache: Dict[str, Tuple[float, str, str]] = {}      # name -> (read at, value, source)
@@ -57,6 +71,8 @@ def _read(name: str) -> Tuple[str, str]:
     else:
         value, source = default, 'default'
     value = clean(name, value)
+    if (name in CLOCKS or name == 'nse_cas_start') and source != 'default' and validate(name, value):
+        value, source = default, 'default'          # a typo in .env (or a stale value) keeps the default
     with _lock:
         _cache[name] = (time.time(), value, source)
     return value, source
@@ -69,6 +85,11 @@ def get(name: str) -> str:
 def source(name: str) -> str:
     """Where the value comes from: 'app', 'env' or 'default'."""
     return _read(name)[1]
+
+
+def get_clock(name: str):
+    """A time setting (CLOCKS) as a datetime.time."""
+    return datetime.strptime(get(name), '%H:%M').time()
 
 
 def get_int(name: str) -> int:
@@ -114,6 +135,21 @@ def validate(name: str, value: Any) -> Optional[str]:
         return 'data source is auto or yfinance'
     if name == 'log_level' and v not in LOG_LEVELS:
         return f'log level is one of {", ".join(LOG_LEVELS)}'
+    if name in CLOCKS:
+        lo, hi, what = CLOCKS[name]
+        try:
+            t = datetime.strptime(v, '%H:%M').strftime('%H:%M')
+        except ValueError:
+            return f'{what} is a time like {FIELDS[name][2]}'
+        if not lo <= t <= hi:
+            return f'{what} is between {lo} and {hi}'
+    if name == 'nse_cas_start':
+        try:
+            d = date.fromisoformat(v)
+        except ValueError:
+            return "the closing auction's first day is a date like 2026-08-03"
+        if d.year < 2024:
+            return "the closing auction's first day is 2024 or later"
     return None
 
 

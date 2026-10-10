@@ -320,7 +320,7 @@ def _reaches(closes, t) -> bool:
 
 def _final_at(day) -> datetime:
     """When `day`'s official closes are out (an F&O stock's comes from the closing auction)."""
-    return datetime.combine(day, session.CLOSES_FINAL, IST)
+    return datetime.combine(day, session.closes_final(), IST)
 
 
 def _official(closes, now: datetime) -> Dict[Any, float]:

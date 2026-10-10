@@ -9,46 +9,41 @@ indicative prices, not from trades. A stock without F&O trades on to 15:30 and c
 VWAP of its last half hour. The F&O segment itself trades to 15:40.
 
 SEBI's consultation of 12 Sep 2026 proposes moving these again (continuous trading to 15:30
-with the auction 15:31-15:40, or the auction 15:15-15:25 with F&O to 15:30), so each time can
-be set in .env as NSE_<NAME>=HH:MM, and the auction's first day as NSE_CAS_START=YYYY-MM-DD.
-Days before that keep the old session: one close at 15:30 for every stock.
-
-Pure: no I/O beyond reading the environment once.
+with the auction 15:31-15:40, or the auction 15:15-15:25 with F&O to 15:30), so each time is a
+setting (config.py: App settings > Market session, else NSE_<NAME> in .env), read afresh each
+time it is used. Days before the auction's first day keep the old session: one close at 15:30
+for every stock.
 """
-import os
 from datetime import date, datetime, time as dtime
 
-
-def _clock(name: str, default: str) -> dtime:
-    try:
-        return datetime.strptime((os.getenv('NSE_' + name) or '').strip(), '%H:%M').time()
-    except ValueError:
-        return datetime.strptime(default, '%H:%M').time()      # unset or a typo: the default
-
-
-def _day(name: str, default: str) -> date:
-    try:
-        return date.fromisoformat((os.getenv('NSE_' + name) or '').strip())
-    except ValueError:
-        return date.fromisoformat(default)
-
+from niftywhale import config
 
 OPEN = dtime(9, 15)
 CLOSE = dtime(15, 30)                           # continuous trading ends: stocks without F&O
-CTS_END_FO = _clock('CTS_END_FO', '15:15')      # continuous trading ends: stocks with F&O; their auction follows
-CLOSES_FINAL = _clock('CLOSES_FINAL', '15:45')  # every official close is out (the auction's match included)
-FO_CLOSE = _clock('FO_CLOSE', '15:40')          # the F&O segment
-CAS_START = _day('CAS_START', '2026-08-03')
+
+
+def cts_end_fo() -> dtime:
+    """Continuous trading ends for stocks with F&O; their auction follows."""
+    return config.get_clock('nse_cts_end_fo')
+
+
+def closes_final() -> dtime:
+    """Every official close is out (the auction's match included)."""
+    return config.get_clock('nse_closes_final')
+
+
+def cas_start() -> date:
+    return date.fromisoformat(config.get('nse_cas_start'))
 
 
 def auction(day: date) -> bool:
     """Whether F&O stocks closed by auction on `day`."""
-    return day >= CAS_START
+    return day >= cas_start()
 
 
 def cts_end(fo: bool, day: date) -> dtime:
     """When a stock's continuous trading (and so its last candle) ends on `day`."""
-    return CTS_END_FO if fo and auction(day) else CLOSE
+    return cts_end_fo() if fo and auction(day) else CLOSE
 
 
 def index_end(day: date) -> dtime:
@@ -59,7 +54,7 @@ def index_end(day: date) -> dtime:
 
 def fo_close(day: date) -> dtime:
     """When the F&O segment stops trading on `day`."""
-    return FO_CLOSE if auction(day) else CLOSE
+    return config.get_clock('nse_fo_close') if auction(day) else CLOSE
 
 
 def fo_open(when: datetime) -> bool:

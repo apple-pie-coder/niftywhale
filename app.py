@@ -27,6 +27,7 @@ import os
 import threading
 import requests
 import time
+from dataclasses import replace
 from datetime import date, datetime, time as dtime, timedelta
 
 import pandas as pd
@@ -74,8 +75,9 @@ def saved_intra_overrides() -> dict:
 
 
 def irules() -> intraday.IntradayRules:
-    """The intraday .env rules with anything saved from the intraday tuner on top."""
-    return ENV_INTRA.with_overrides(saved_intra_overrides())
+    """The intraday .env rules with anything saved from the intraday tuner on top, and the
+    square-off from App settings (config.py)."""
+    return replace(ENV_INTRA.with_overrides(saved_intra_overrides()), square_off=config.get('intraday_square_off'))
 
 
 def short_block(stock: dict, mode: str = 'swing'):
@@ -752,7 +754,7 @@ def _news_reactions() -> int:
     # none yet; for any other, the cache must be fresh (a frame from before a close holds that
     # day's last price, not its close), so it is refreshed.
     tickers = [s + '.NS' for s in symbols] + ['^NSEI']
-    final_today = datetime.combine(now.date(), session.CLOSES_FINAL, now.tzinfo)
+    final_today = datetime.combine(now.date(), session.closes_final(), now.tzinfo)
     older = any(datetime.fromisoformat(r['published']).astimezone(now.tzinfo).date() < now.date() for r in rows)
     daily = data.daily(tickers) if older or now >= final_today else data.frames_for(tickers)
 

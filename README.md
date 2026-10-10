@@ -1312,8 +1312,8 @@ It re-screens the **15m candles of the last intraday scan** in about a second (r
 first if there hasn't been one since the app started). The status line says what time those
 candles are from. Click a what-if setup to open its chart under those rules. **Save as my
 rules** applies them from the next 15m scan and 5m check. **Save & rescan** runs a 15m scan
-straight away. Saved values sit on top of `.env`, as in swing mode. The clock (start, cutoff,
-square-off) stays in `.env`.
+straight away. Saved values sit on top of `.env`, as in swing mode. The start and the entry cutoff
+stay in `.env`; the square-off is in App settings → Market session (5.9).
 
 Every threshold can also be set in `.env` as `INTRADAY_<NAME>`:
 
@@ -1335,7 +1335,7 @@ Every threshold can also be set in `.env` as `INTRADAY_<NAME>`:
 | `INTRADAY_MIN_RR` | 2.0 | Final R:R for an entry alert. |
 | `INTRADAY_START` | 09:30 | First scan (after the opening range). |
 | `INTRADAY_NO_ENTRY_AFTER` | 14:30 | Entry cutoff. |
-| `INTRADAY_SQUARE_OFF` | 15:10 | Square-off time (F&O stocks: never after 15:15, see 5.2). |
+| `INTRADAY_SQUARE_OFF` | 15:10 | Square-off time (F&O stocks: never after 15:15, see 5.2). Also in App settings → Market session, which wins. |
 
 Restart the container after changing them (`docker compose up -d`). A typo falls back to the
 default rather than stopping the app.
@@ -1349,14 +1349,16 @@ auction's indicative prices. A stock without F&O trades on to 15:30. The F&O seg
 NiftyWhale follows this everywhere (`niftywhale/session.py`): the intraday square-off (5.2), the news
 reactions (4.14), and the options passes (6). Days before 3 August keep the old session.
 
-SEBI's consultation of 12 September 2026 proposes moving these times again, so each can be set in `.env`:
+SEBI's consultation of 12 September 2026 proposes moving these times again, so each is a setting: **App settings →
+Market session** (it applies within seconds, no restart), else `.env`. The intraday square-off (5.2) is there too.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `NSE_CTS_END_FO` | 15:15 | Continuous trading ends for F&O stocks; the auction follows. |
-| `NSE_CLOSES_FINAL` | 15:45 | Every official close is out, the auction's included. |
-| `NSE_FO_CLOSE` | 15:40 | The F&O segment closes. |
-| `NSE_CAS_START` | 2026-08-03 | The auction's first day. |
+| On the dashboard | `.env` | Default | Meaning |
+|---|---|---|---|
+| Intraday square-off | `INTRADAY_SQUARE_OFF` | 15:10 | Dhan's auto square-off; an F&O stock's is never after its trading ends. |
+| F&O stocks stop trading at | `NSE_CTS_END_FO` | 15:15 | Continuous trading ends for F&O stocks; the auction follows. |
+| Official closes are out by | `NSE_CLOSES_FINAL` | 15:45 | Every official close is out, the auction's included. |
+| F&O segment closes at | `NSE_FO_CLOSE` | 15:40 | The F&O segment closes. |
+| Closing auction began on | `NSE_CAS_START` | 2026-08-03 | The auction's first day. |
 
 Under SEBI's Option A (continuous trading to 15:30, the auction 15:31-15:40, F&O to 15:45) they would be
 15:30, 15:50 (say) and 15:45; under Option B (the auction 15:15-15:25, F&O to 15:30), 15:15, 15:35 and 15:30.
@@ -1751,7 +1753,7 @@ Rejected triggers are never sent. The **Entry alerts** switch controls both mode
 | `WATCH_DELAY_SECONDS` | `90` | Wait after each 15-minute candle closes before reading it from yfinance. |
 | `SMC_*` | see 11 | Any protocol threshold, e.g. `SMC_MIN_RR=2.5`. |
 | `INTRADAY_*` | see 5.8 | Any intraday threshold or time, e.g. `INTRADAY_MIN_RR=2.5`, `INTRADAY_NO_ENTRY_AFTER=14:00`. |
-| `NSE_*` | see 5.9 | NSE's session clock around the closing auction, e.g. `NSE_CTS_END_FO=15:30` if SEBI moves it. |
+| `NSE_*` | see 5.9 | NSE's session clock around the closing auction, e.g. `NSE_CTS_END_FO=15:30` if SEBI moves it. Also in App settings → Market session, which wins. |
 | `DHAN_CLIENT_ID`, `DHAN_PIN`, `DHAN_TOTP_SECRET` | empty | Automatic Dhan login for real-time data (4.10). |
 | `DHAN_ACCESS_TOKEN` | empty | A Dhan token to start with, instead of pasting one in the dashboard. |
 | `LIVE_WATCH_DELAY_SECONDS` | `10` | Delay after each candle (swing watcher, intraday scan and check) when Dhan is live. Without Dhan, `WATCH_DELAY_SECONDS` applies. |
@@ -3639,7 +3641,7 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
 
 #### `GET /api/config`
 
-App settings that once needed .env (Telegram, Dhan automatic login, data source, candle delays, log level): each value and where it comes from (`app`, `env` or `default`). Secrets only say whether they are set; the Telegram token says which bot it is.
+App settings that once needed .env (Telegram, Dhan automatic login, data source, candle delays, the market session's times, log level): each value and where it comes from (`app`, `env` or `default`). Secrets only say whether they are set; the Telegram token says which bot it is.
 
 ```sh
 curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/config
@@ -3663,8 +3665,13 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/config
     "dhan_client_id": {…},
     "dhan_pin": {…},
     "dhan_totp": {…},
+    "intraday_square_off": {…},
     "live_watch_delay": {…},
     "log_level": {…},
+    "nse_cas_start": {…},
+    "nse_closes_final": {…},
+    "nse_cts_end_fo": {…},
+    "nse_fo_close": {…},
     "telegram_chat_id": {…},
     "telegram_token": {…},
     "watch_delay": {…}
@@ -3677,7 +3684,7 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/config
 
 Saves App settings (all or none: one bad value refuses the lot). New Dhan login details start a login at once.
 
-**Body:** `telegram_token`, `telegram_chat_id`, `dhan_client_id`, `dhan_pin`, `dhan_totp`, `data_source` (`auto` or `yfinance`), `watch_delay`, `live_watch_delay`, `log_level`; `""` clears one back to .env
+**Body:** `telegram_token`, `telegram_chat_id`, `dhan_client_id`, `dhan_pin`, `dhan_totp`, `data_source` (`auto` or `yfinance`), `watch_delay`, `live_watch_delay`, `log_level`, `intraday_square_off`, `nse_cts_end_fo`, `nse_closes_final`, `nse_fo_close` (HH:MM), `nse_cas_start` (YYYY-MM-DD); `""` clears one back to .env
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
@@ -3702,8 +3709,13 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
     "dhan_client_id": {…},
     "dhan_pin": {…},
     "dhan_totp": {…},
+    "intraday_square_off": {…},
     "live_watch_delay": {…},
     "log_level": {…},
+    "nse_cas_start": {…},
+    "nse_closes_final": {…},
+    "nse_cts_end_fo": {…},
+    "nse_fo_close": {…},
     "telegram_chat_id": {…},
     "telegram_token": {…},
     "watch_delay": {…}

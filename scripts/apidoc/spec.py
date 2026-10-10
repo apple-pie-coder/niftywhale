@@ -179,11 +179,12 @@ E = [
      '`lab_swing_universe`, `lab_intraday_universe`, `lab_years_swing`, `lab_years_intraday`, `weekly_report`',
      'Saves dashboard settings; returns them all.'),
     ('settings', 'GET', '/api/config', '/api/config', None, '',
-     'App settings that once needed .env (Telegram, Dhan automatic login, data source, candle delays, log level): each value and where it '
+     'App settings that once needed .env (Telegram, Dhan automatic login, data source, candle delays, the market session's times, log level): each value and where it '
      'comes from (`app`, `env` or `default`). Secrets only say whether they are set; the Telegram token says which bot it is.'),
     ('settings', 'POST', '/api/config', '/api/config', {'watch_delay': '60', 'log_level': 'INFO'},
      '`telegram_token`, `telegram_chat_id`, `dhan_client_id`, `dhan_pin`, `dhan_totp`, `data_source` (`auto` or `yfinance`), '
-     '`watch_delay`, `live_watch_delay`, `log_level`; `""` clears one back to .env',
+     '`watch_delay`, `live_watch_delay`, `log_level`, `intraday_square_off`, `nse_cts_end_fo`, `nse_closes_final`, `nse_fo_close` (HH:MM), '
+     '`nse_cas_start` (YYYY-MM-DD); `""` clears one back to .env',
      'Saves App settings (all or none: one bad value refuses the lot). New Dhan login details start a login at once.'),
     ('settings', 'POST', '/api/telegram/test', '/api/telegram/test', {}, '', 'Sends a test message to the configured chat.'),
     ('settings', 'POST', '/api/dhan/token', '/api/dhan/token', {'access_token': 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJkaGFuQ2xpZW50SWQiOiIxMTAwMDEyMzQ1In0.signature', 'client_id': '1100012345'},
