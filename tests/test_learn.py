@@ -416,7 +416,9 @@ class LabAndApi(unittest.TestCase):
             st = lab.state('swing')
             self.assertIn('awaiting', st)
             self.assertNotIn('challenger', st)
-            self.assertEqual(self.client.post('/api/autopilot/approve', json={'mode': 'swing'}).status_code, 200)
+            # Approve names the proposal shown (its since): without it, refused; with it, applied.
+            self.assertEqual(self.client.post('/api/autopilot/approve', json={'mode': 'swing'}).status_code, 400)
+            self.assertEqual(self.client.post('/api/autopilot/approve', json={'mode': 'swing', 'since': '2026-08-01'}).status_code, 200)
             self.assertEqual(json.loads(store.settings()['rules'])['min_rr'], 3.5)
         del since
 

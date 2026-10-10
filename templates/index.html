@@ -1219,6 +1219,11 @@
     .ap-diff { margin-top: 3px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: normal; }
     .ap-more { padding: 8px 0 0; font-size: 13px; }
     .sq { display: grid; gap: 12px; }
+    .sq-btn { margin-left: 6px; padding: 2px 8px; font: inherit; font-size: 11.5px; font-weight: 600; border-radius: var(--r-sm);
+        border: 1px solid var(--line-strong); background: var(--surface); color: var(--bad); cursor: pointer; white-space: nowrap; }
+    .sq-btn:hover { background: var(--sunk); border-color: var(--bad); }
+    .tr-sq { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
+    .tr-sq .sq-btn { margin: 0; font-size: 13px; padding: 6px 12px; }
     .sq-sec { display: grid; gap: 4px; }
     .sq-head { padding: 4px 0 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
     .sq-head label, .sq-row { display: flex; gap: 10px; align-items: center; cursor: pointer; }
@@ -1233,7 +1238,11 @@
     .sq-acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
     .pf-rules { margin: 8px 0 0; line-height: 1.6; }
     .pf-rules b { color: var(--ink-2); font-weight: 600; }
-    #pf-run { font-size: 12.5px; max-width: 100%; }
+    /* The backtest run picker: the app's dropdown look (as the universe picker and the News filters), sized to the bar's controls. */
+    #pf-run { max-width: 100%; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink); padding: 7px 10px;
+              background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); cursor: pointer; }
+    #pf-run:hover { border-color: var(--accent); }
+    #pf-run:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .jobd .jrun { display: inline-block; margin-top: 4px; font-size: 12.5px; }
     .ap-card[data-tone="warn"] { border-color: var(--warn); background: var(--warn-soft); }
     .ap-thr { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
@@ -1979,7 +1988,7 @@
         <section>
             <div class="panel-head"><h2 class="panel-title">Open positions</h2><span class="panel-meta" id="dm-open-meta"></span></div>
             <div class="table-wrap"><table><thead><tr><th>Opened</th><th>Mode</th><th>Instrument</th><th>Side</th><th class="r">Quantity</th>
-                <th class="r">Entry</th><th class="r">Stop · target</th><th class="r">Last</th><th class="r">Open P&amp;L</th><th class="r">Blocked</th></tr></thead>
+                <th class="r">Entry</th><th class="r">Stop · target</th><th class="r">Last</th><th class="r">Open P&amp;L</th><th class="r">Blocked</th><th></th></tr></thead>
                 <tbody id="dm-open"></tbody><tfoot id="dm-open-foot"></tfoot></table></div>
             <div class="pager" id="pg-dmopen" aria-label="Pages"></div>
         </section>
@@ -2946,7 +2955,8 @@ function renderZones() {
     }
     $('zones').innerHTML = paged('zones', zs).map((z) => `<tr data-click="${esc(z.symbol)}"${['triggered', 'won', 'lost'].includes(z.status) && (z.trigger || {}).paper ? ` data-ref="swing:${z.id}"` : ''}>
         <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td>
-        <td><span class="chip" data-s="${esc(z.status)}">${esc(z.status === 'triggered' && (z.trigger || {}).paper ? 'open trade' : z.status)}</span></td>
+        <td><span class="chip" data-s="${esc(z.status)}">${esc(z.status === 'triggered' && (z.trigger || {}).paper ? 'open trade' : z.status)}</span>${
+            z.status === 'triggered' && (z.trigger || {}).paper ? sqBtn('paper', `swing:${z.id}`, z.symbol) : ''}</td>
         <td class="r num">${px(z.zone_low)} – ${px(z.zone_high)}</td>
         <td class="note">${esc(z.note || 'not checked yet')}${z.last_checked ? `<br><span class="muted">${hhmm(z.last_checked)}</span>` : ''}</td>
         <td>${['watching', 'tapped'].includes(z.status)
@@ -2998,7 +3008,8 @@ function renderSwingTrades() {
             <td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td><td class="r num">${px(t.target)}</td>
             <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span>${
                 t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${
-                t.approx ? ' <span class="muted" title="Partly judged on daily candles after a data gap">≈</span>' : ''}</td>
+                t.approx ? ' <span class="muted" title="Partly judged on daily candles after a data gap">≈</span>' : ''}${
+                z.status === 'triggered' ? sqBtn('paper', `swing:${z.id}`, z.symbol) : ''}</td>
             <td class="r num">${exit}</td>
             <td class="r num">${z.status === 'triggered' ? lpR(z.symbol, t, z.side, rfmt(t.r_open)) : rfmt(t.r != null ? t.r : t.r_open)}</td></tr>`;
     }).join('') : `<tr><td colspan="8"><div class="empty"><b>No paper trades yet</b>Each swing entry alert is followed on 15m
@@ -4755,6 +4766,29 @@ document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-sq]');
     if (b) { e.preventDefault(); squareOffModal(b.dataset.sq); }
 });
+// One open row's own Square off: that trade (its demo position closes with it) or that demo position
+// alone, at the live price, after a confirm. In the capture phase, so the click never opens the row too.
+const sqBtn = (kind, key, what) => `<button type="button" class="sq-btn" data-sq-one="${kind}" data-sq-key="${esc(String(key))}"
+    data-sq-what="${esc(what)}" title="Close it now at the live price">Square off</button>`;
+async function squareOffOne(kind, key, what) {
+    if (!await ask({ title: `Square off ${what}?`, ok: 'Square off', danger: true,
+                     body: kind === 'paper' ? 'At the live price now. Its demo position closes with it, at the same price.'
+                                            : 'At the live price now. The paper trade behind it runs on to its target or stop.' })) return;
+    try {
+        const r = await api('/api/squareoff', kind === 'paper' ? { paper: [key] } : { demo: [+key] });
+        const res = (kind === 'paper' ? r.results.paper : r.results.demo)[0] || {};
+        toast(res.ok ? `${what} squared off at ${px(res.price)}` : `Not squared off: ${res.why}`);
+        refresh();
+        if (mode === 'demo') loadDemo();
+        if (current && current.trade && $('drawer').dataset.open === '1') openTrade(current.trade.ref);
+    } catch (e) { toast(e.message); }
+}
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sq-one]');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    squareOffOne(b.dataset.sqOne, b.dataset.sqKey, b.dataset.sqWhat);
+}, true);
 
 async function loadDemo() {
     clearTimeout(demoTimer);
@@ -4829,7 +4863,7 @@ function demoOpenFoot() {
     const pageNote = page.length < open.length
         ? ` <span class="muted">· these ${page.length} rows ${rsSigned(page.reduce((t, p) => t + (p.unreal || 0), 0))}</span>` : '';
     return `<tr><td colspan="8"><b>All ${open.length} open</b> <span class="muted">·</span> ${parts}${pageNote}</td>
-        <td class="r num"><b>${rsSigned(total)}</b></td><td class="r num">${rs(d.account.blocked)}</td></tr>`;
+        <td class="r num"><b>${rsSigned(total)}</b></td><td class="r num">${rs(d.account.blocked)}</td><td></td></tr>`;
 }
 
 // The open table's price and P&L cells, flashing green / red as the price moves.
@@ -5420,7 +5454,9 @@ function renderTrade() {
             <div class="tr-when">${open ? 'running for ' + tdur(d.minutes) : `${dmWhen(d.exit_time)} · held ${tdur(d.minutes)}`}</div></div>
         <div class="tr-r num">${open && d.lp ? lpR(d.lp, d, d.side, rfmt(r)) : rfmt(r)}<span class="muted">${open ? 'live' : 'result'}</span></div>
         ${P ? `<div class="tr-net num">${open ? (d.lp ? `<span data-lp="${esc(d.lp)}" data-lk="pnl" data-entry="${P.entry}" data-qty="${P.qty}" data-side="${esc(P.side)}">${rsSigned(P.unreal)}</span>` : rsSigned(P.unreal)) : rsSigned(P.net)}
-            <span class="muted">${open ? 'demo, open' : 'demo, after charges'}</span></div>` : ''}</div>`;
+            <span class="muted">${open ? 'demo, open' : 'demo, after charges'}</span></div>` : ''}</div>
+        ${open || (P && P.status === 'open') ? `<div class="tr-sq">${open ? sqBtn('paper', d.ref, d.mode === 'options' ? `${d.symbol} ${kfmt(o.strike)} ${o.side}` : d.symbol) : ''}${
+            P && P.status === 'open' ? sqBtn('demo', P.id, `the demo position (${P.instrument})`).replace('>Square off<', '>Square off the demo position only<') : ''}</div>` : ''}`;
     const lv = (k, v, sub) => `<div class="lv"><div class="lv-k">${k}</div><div class="lv-v num">${v}</div>${sub ? `<div class="muted" style="font-size:11.5px">${sub}</div>` : ''}</div>`;
     const riskPct = d.risk_pts && d.entry ? (100 * d.risk_pts / d.entry).toFixed(2) + '%' : '';
     const levels = `<div class="levels">${lv('Entry', px(d.entry), dmWhen(d.entry_time))}
@@ -5902,8 +5938,9 @@ function renderDemo() {
     $('dm-open').innerHTML = d.open.length ? paged('dmopen', d.open).map((p) => `<tr data-sym="${esc(p.symbol)}" data-pid="${p.id}" data-ref="${esc(p.ref)}" class="clickable">
         <td class="num">${dmWhen(p.entry_time)}</td><td>${MODE_NAME[p.mode]}</td><td><b>${esc(p.instrument)}</b> ${prod(p)}</td><td>${side(p)}</td>
         <td class="r num">${qty(p)}</td><td class="r num">${px(p.entry)}</td><td class="r num">${px(p.stop)} · ${px(p.target)}</td>
-        <td class="r num dm-tick dm-last" data-v="${p.last}">${px(p.last)}</td><td class="r num dm-tick dm-unreal">${rsSigned(p.unreal)}</td><td class="r num">${rs(p.margin)}</td></tr>`).join('')
-        : `<tr><td colspan="10"><div class="empty">${started ? 'No open positions.' : 'No account yet.'}</div></td></tr>`;
+        <td class="r num dm-tick dm-last" data-v="${p.last}">${px(p.last)}</td><td class="r num dm-tick dm-unreal">${rsSigned(p.unreal)}</td><td class="r num">${rs(p.margin)}</td>
+        <td class="r">${sqBtn('demo', p.id, p.instrument)}</td></tr>`).join('')
+        : `<tr><td colspan="11"><div class="empty">${started ? 'No open positions.' : 'No account yet.'}</div></td></tr>`;
     $('dm-open-foot').innerHTML = demoOpenFoot();
     const closed = d.closed || [];
     const net = closed.reduce((t, p) => t + (p.net || 0), 0);
@@ -6195,7 +6232,8 @@ function renderIntraday() {
         const res = t.r != null ? t.r : t.r_open;
         return `<tr data-intra-sym="${esc(z.symbol)}" data-click${t.entry && ['triggered', 'won', 'lost', 'closed'].includes(z.status) ? ` data-ref="intraday:${z.id}"` : ''}>
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}<span class="sub">${esc(z.name || '')}</span></td>
-            <td><span class="chip" data-s="${esc(z.status)}">${esc(z.status === 'triggered' ? 'open trade' : z.status)}</span></td>
+            <td><span class="chip" data-s="${esc(z.status)}">${esc(z.status === 'triggered' ? 'open trade' : z.status)}</span>${
+                z.status === 'triggered' && t.entry ? sqBtn('paper', `intraday:${z.id}`, z.symbol) : ''}</td>
             <td class="r num">${px(z.zone_low)} – ${px(z.zone_high)}</td>
             <td class="r num">${px(z.target)}<span class="kind">${esc(m.target_label || '')}</span></td>
             <td class="r num">${t.entry ? px(t.entry) + ' / ' + px(t.stop) : '—'}</td>
@@ -6236,7 +6274,7 @@ function renderIntraday() {
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td><td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td>
             <td class="r num">${px(t.target)}</td>
             <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span>${
-                t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}</td>
+                t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${z.status === 'triggered' ? sqBtn('paper', `intraday:${z.id}`, z.symbol) : ''}</td>
             <td class="r num">${t.exit != null ? px(t.exit) + ' <span class="muted">' + tm(t.exit_time) + '</span>' : '—'}</td>
             <td class="r num">${rfmt(t.r != null ? t.r : t.r_open)}</td></tr>`;
     }).join('') : `<tr><td colspan="8"><div class="empty"><b>No intraday alerts yet</b>Each entry alert is followed on 5m candles
@@ -6533,7 +6571,8 @@ function renderOptions() {
             <td class="num">${hhmm(i.created_at)}</td>
             <td><span class="sym">${esc(i.symbol)} ${kfmt(i.strike)} ${esc(i.side)}</span>${sideTag(i.direction)}<span class="sub">${expLabel(i.expiry)} expiry${i.lot ? ' · lot ' + i.lot : ''}</span></td>
             <td class="r num">${px(i.entry)}</td><td class="r num">${px(i.stop)}</td><td class="r num">${px(i.target)}</td>
-            <td><span class="chip" data-s="${esc(i.status)}">${esc(i.status === 'open' ? 'open' : i.note || i.status)}</span></td>
+            <td><span class="chip" data-s="${esc(i.status)}">${esc(i.status === 'open' ? 'open' : i.note || i.status)}</span>${
+                i.status === 'open' ? sqBtn('paper', `options:${i.id}`, `${i.symbol} ${kfmt(i.strike)} ${i.side}`) : ''}</td>
             <td class="r num">${i.exit != null ? px(i.exit) + ' <span class="muted">' + tm(i.exit_time) + '</span>' : i.last != null ? '<span class="muted">now ' + (i.lp ? `<span data-lp="${esc(i.lp)}" data-v="${i.last}">${px(i.last)}</span>` : px(i.last)) + '</span>' : '—'}</td>
             <td class="r num">${i.lp ? lpR(i.lp, i, 'long', rfmt(rr)) : rfmt(rr)}</td>
             <td class="r num">${i.lp && i.lot ? `<span data-lp="${esc(i.lp)}" data-lk="pnl" data-entry="${i.entry}" data-qty="${i.lot}">${rupeePnl(pnl)}</span>` : pnl == null ? '—' : rupeePnl(pnl)}</td></tr>`;
@@ -6709,7 +6748,8 @@ function renderOptionsDrawer(keep) {
     let shown = ocAllStrikes ? d.chain : d.chain.slice(Math.max(0, ai - 12), ai + 13);
     if (current.focus && !shown.some((r) => r.k === current.focus.k)) shown = d.chain;     // the strike asked for is further out
     const ideaRows = (d.ideas || []).slice(0, 5).map((i) => `<tr class="clickable" data-ref="options:${i.id}"><td class="num">${hhmm(i.created_at)}</td><td>${kfmt(i.strike)} ${esc(i.side)}</td>
-        <td class="r num">${px(i.entry)}</td><td><span class="chip" data-s="${esc(i.status)}">${esc(i.status === 'open' ? 'open' : i.note || i.status)}</span></td>
+        <td class="r num">${px(i.entry)}</td><td><span class="chip" data-s="${esc(i.status)}">${esc(i.status === 'open' ? 'open' : i.note || i.status)}</span>${
+            i.status === 'open' ? sqBtn('paper', `options:${i.id}`, `${i.symbol} ${kfmt(i.strike)} ${i.side}`) : ''}</td>
         <td class="r num">${i.lp ? lpR(i.lp, i, 'long', rfmt(i.r_open)) : rfmt(i.r != null ? i.r : i.r_open)}</td></tr>`).join('');
     $('dw-body').innerHTML =
         `<div class="tools"><div class="seg small" role="group" aria-label="Expiry">${expBtns}</div>

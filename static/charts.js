@@ -94,6 +94,8 @@
         hline: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M1.5 8h13"/><path d="M4 4.5h8M4 11.5h8" stroke-width="1" opacity=".45"/></svg>',
         rect: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="4" width="11" height="8" rx="1"/></svg>',
         magnet: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3.5 2.5v5.5a4.5 4.5 0 0 0 9 0V2.5"/><path d="M3.5 5.5h3M9.5 5.5h3"/></svg>',
+        undo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5 2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/></svg>',
+        redo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a4 4 0 0 0 0 8H9"/></svg>',
         trash: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.2h11M6.2 4.2V2.8h3.6v1.4M3.9 4.2l.7 9h6.8l.7-9"/></svg>',
     };
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -313,6 +315,7 @@
         root.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === tool)));
         const del = root.querySelector('[data-tool-del]');
         if (del) del.disabled = !sel;
+        historyState();
         // The colour button shows the selected drawing's colour, or the next drawings'.
         const d = selected(), cur = d ? d.color || null : drawColor;
         const sw = root.querySelector('[data-draw-color] .sw');
@@ -320,6 +323,35 @@
         const btn = root.querySelector('[data-draw-color]');
         if (btn) btn.title = d ? 'Colour of the selected drawing' : 'Colour of the next drawings';
         root.querySelectorAll('.ch-pal [data-sw]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sw === cur)));
+    }
+    // Undo / redo (Ctrl or Cmd + Z; Ctrl or Cmd + Shift + Z, or Ctrl + Y; the toolbar's arrows): each change to an
+    // instrument's drawings (one placed, moved or reshaped, recoloured, deleted) first keeps a copy of its list as it
+    // was. Undo puts that copy back (and saves it, as any change is); redo goes forward again. A new change clears redo.
+    const HISTORY_MAX = 100;
+    let undoStack = [], redoStack = [];
+    const copyOf = (sym) => JSON.parse(JSON.stringify(drawings[sym] || []));
+    function remember(sym, list) {
+        undoStack.push({ sym, list: list || copyOf(sym) });
+        if (undoStack.length > HISTORY_MAX) undoStack.shift();
+        redoStack = [];
+        historyState();
+    }
+    function stepHistory(from, to) {
+        if (placing) { placing = null; redrawSym(); return; }     // a half-placed drawing: undo its first click only
+        const h = from.pop();
+        if (!h) return;
+        to.push({ sym: h.sym, list: copyOf(h.sym) });
+        drawings[h.sym] = h.list;
+        if (sel && !h.list.some((d) => d.id === sel.id)) sel = null;
+        toolState(); redrawSym(h.sym); saveDrawings(h.sym);
+    }
+    const undo = () => stepHistory(undoStack, redoStack);
+    const redo = () => stepHistory(redoStack, undoStack);
+    function historyState() {
+        if (!root) return;
+        const u = root.querySelector('[data-undo]'), r = root.querySelector('[data-redo]');
+        if (u) u.disabled = !undoStack.length && !placing;
+        if (r) r.disabled = !redoStack.length;
     }
     function saveDrawings(sym) {
         clearTimeout(drawSaveT[sym]);
@@ -338,6 +370,7 @@
         }, 400);
     }
     function addDrawing(c, d) {
+        remember(c.symbol);
         d.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         if (drawColor) d.color = drawColor;
         (drawings[c.symbol] = drawings[c.symbol] || []).push(d);
@@ -355,6 +388,8 @@
     function setColor(color) {
         const d = selected();
         if (d) {
+            if ((d.color || null) === (color || null)) { toolState(); return; }
+            remember(sel.symbol);
             if (color) d.color = color; else delete d.color;
             redrawSym(sel.symbol); saveDrawings(sel.symbol);
         } else {
@@ -366,6 +401,7 @@
     function deleteSelected() {
         if (!sel) return;
         const sym = sel.symbol;
+        remember(sym);
         drawings[sym] = (drawings[sym] || []).filter((d) => d.id !== sel.id);
         sel = null;
         toolState(); redrawSym(sym); saveDrawings(sym);
@@ -378,7 +414,7 @@
             e.preventDefault(); e.stopPropagation();
             const at = { t: pt.t, p: pt.p };
             if (tool === 'hline') { addDrawing(c, { type: 'hline', p1: at }); return; }
-            if (!placing || placing.c !== c) { placing = { c, type: tool, p1: at, p2: { ...at } }; redrawSym(c.symbol); return; }
+            if (!placing || placing.c !== c) { placing = { c, type: tool, p1: at, p2: { ...at } }; redrawSym(c.symbol); historyState(); return; }
             placing.p2 = at;
             const d = { type: placing.type, p1: placing.p1, p2: placing.p2 };
             placing = null;
@@ -390,7 +426,8 @@
         e.preventDefault(); e.stopPropagation();
         sel = { symbol: c.symbol, id: h.d.id };
         toolState();
-        dragging = { c, d: h.d, part: h.part, start: pt, orig: JSON.parse(JSON.stringify(h.d)), moved: false, id: e.pointerId };
+        dragging = { c, d: h.d, part: h.part, start: pt, orig: JSON.parse(JSON.stringify(h.d)), moved: false, id: e.pointerId,
+                     before: copyOf(c.symbol) };
         freeze(c, true);
         redrawSym();
     }
@@ -427,12 +464,18 @@
         if (!g) return;
         dragging = null;
         freeze(g.c, !!tool);
-        if (g.moved) saveDrawings(g.c.symbol);
+        if (g.moved) { remember(g.c.symbol, g.before); saveDrawings(g.c.symbol); }    // a click without a move is no change
     };
     document.addEventListener('pointerup', endDrag);
     document.addEventListener('pointercancel', endDrag);
     document.addEventListener('keydown', (e) => {
         if (!root || !visible() || e.target.closest('input, select, textarea')) return;
+        const k = (e.key || '').toLowerCase();
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 'z' || (k === 'y' && e.ctrlKey && !e.metaKey))) {
+            e.preventDefault();
+            if (k === 'y' || e.shiftKey) redo(); else undo();
+            return;
+        }
         if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSelected(); }
         else if (e.key === 'Escape' && (tool || sel || placing)) { sel = null; setTool(''); }
     });
@@ -800,7 +843,10 @@
                     <span class="ch-toolwrap"><button type="button" data-draw-color aria-haspopup="true" aria-expanded="false" title="Colour of the next drawings" aria-label="Colour"><i class="sw"></i></button>
                         <div class="ch-pal" role="dialog" aria-label="Drawing colour" hidden>${PALETTE.map((h) => `<button type="button" class="sw-b" data-sw="${h}" style="background:${h}" aria-label="${h}" aria-pressed="false"></button>`).join('')}
                             <div class="pal-row"><label>Custom <input type="color" data-sw-custom value="#2962ff"></label><button type="button" class="pal-def" data-sw-def>Default</button></div></div></span>
-                    <button type="button" data-tool-del disabled title="Delete the selected drawing (Delete)" aria-label="Delete the selected drawing">${IC.trash}</button></div>
+                    <button type="button" data-tool-del disabled title="Delete the selected drawing (Delete)" aria-label="Delete the selected drawing">${IC.trash}</button>
+                    <span class="sep" aria-hidden="true"></span>
+                    <button type="button" data-undo disabled title="Undo the last drawing change (Ctrl or Cmd + Z)" aria-label="Undo">${IC.undo}</button>
+                    <button type="button" data-redo disabled title="Redo (Ctrl or Cmd + Shift + Z, or Ctrl + Y)" aria-label="Redo">${IC.redo}</button></div>
                 <span class="ch-count"></span>
                 <span class="ch-feed"><i></i><span>${esc(cfg.note || '')}</span></span></div>
             <datalist id="ch-syms">${groups.map((g) => cfg.instruments.filter((i) => i.group === g)
@@ -828,6 +874,8 @@
             const t = e.target.closest('[data-tool]');
             if (t) { setTool(t.dataset.tool === tool ? '' : t.dataset.tool); return; }
             if (e.target.closest('[data-tool-del]')) deleteSelected();
+            if (e.target.closest('[data-undo]')) { undo(); return; }
+            if (e.target.closest('[data-redo]')) { redo(); return; }
             const mg = e.target.closest('[data-magnet-lc]');
             if (mg) {
                 magnet = !magnet;

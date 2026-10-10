@@ -680,6 +680,10 @@ the pointer between the two clicks; the tool goes back to the pointer when the d
 
 - With the **pointer**, click a drawing to select it: drag it to move it, or drag a handle (a trend line's ends, a rectangle's
   corners) to reshape it. **Delete** (or the bin) removes it; **Esc** lets go of it, or of a tool.
+- **Undo / redo:** **Ctrl + Z** (**Cmd + Z** on a Mac) takes back the last change to the drawings (one placed, moved or reshaped,
+  recoloured or deleted), up to 100 back; **Ctrl + Shift + Z** (**Cmd + Shift + Z**) or **Ctrl + Y** redoes it, and so do the
+  toolbar's two arrows. Halfway through placing a trend line or rectangle, it takes back the first click. The step is saved like
+  any change, so other devices follow. Typing in a box is left alone: there, Ctrl + Z undoes the typing.
 - Drawings belong to the instrument and sit at their time and price, so they show on every timeframe of it and on every
   chart of it at once.
 - **Colour:** the colour button (beside the magnet) opens eight colours, a custom one and **Default** (the theme's). With a
@@ -1133,7 +1137,9 @@ palette (4.8), `add 50k` or `withdraw 1L` moves demo money directly.
 
 **Square off…** closes open positions now, at the live price: one, a few you tick, or **Square off all**. It is on the Demo
 funds tab (the demo account's positions), above each paper-trade journal (swing, intraday, options: that mode's trades), and in
-the command palette (*Square off positions*: everything). Each row shows the entry, the live price and where it stands (R, or
+the command palette (*Square off positions*: everything). Every open row also has its own **Square off** button: in the swing
+and intraday zone tables, the three journals, an option chain's ideas, the demo account's open positions, and a trade's own
+window (which also offers *Square off the demo position only*). Each row shows the entry, the live price and where it stands (R, or
 open P&L in rupees); what cannot close now says why, and cannot be ticked.
 
 - **A paper trade** closes as *squared off*, marked *(you)* in its journal. Its demo position closes with it, at the same price,
