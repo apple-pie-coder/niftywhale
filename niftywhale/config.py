@@ -42,6 +42,13 @@ FIELDS: Dict[str, Tuple[str, str, str, bool]] = {
     'nse_fo_close': ('cfg:nse_fo_close', 'NSE_FO_CLOSE', '15:40', False),
     'nse_cas_start': ('cfg:nse_cas_start', 'NSE_CAS_START', '2026-08-03', False),
 }
+# What App settings calls each one (the change log shows them by these names).
+LABELS = {'telegram_token': 'Telegram bot token', 'telegram_chat_id': 'Telegram chat ID', 'dhan_client_id': 'Dhan client ID',
+          'dhan_pin': 'Dhan PIN', 'dhan_totp': 'Dhan TOTP secret', 'watch_delay': 'Wait after a candle, with yfinance (s)',
+          'live_watch_delay': 'Wait after a candle, with Dhan (s)', 'data_source': 'Price data', 'log_level': 'Log level',
+          'intraday_square_off': 'Intraday square-off', 'nse_cts_end_fo': 'F&O stocks stop trading at',
+          'nse_closes_final': 'Official closes are out by', 'nse_fo_close': 'F&O segment closes at',
+          'nse_cas_start': 'Closing auction began on'}
 # Times (HH:MM) and the range each may take; a value out of it from .env falls back to the default.
 CLOCKS: Dict[str, Tuple[str, str, str]] = {
     'intraday_square_off': ('09:30', '15:30', 'the intraday square-off'),

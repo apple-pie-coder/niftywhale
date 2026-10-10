@@ -534,7 +534,8 @@ def weekly_report() -> str:
         lines.append(line)
     week = [r for r in store.autopilot_log(20) if r['ts'] >= (datetime.now() - timedelta(days=7)).isoformat()]
     if week:
-        lines.append('\n<b>Autopilot this week</b>\n' + '\n'.join(f"{r['ts'][:10]} {_esc(r['mode'])}: {_esc(r['action'])}" for r in week[:8]))
+        lines.append('\n<b>Rule changes this week</b>\n' + '\n'.join(
+            f"{r['ts'][:10]} {_esc(r['mode'])}: {_esc(r['action'])}{' (you)' if r.get('by') == 'you' else ''}" for r in week[:8]))
     lines.append('\nPaper trades and backtests, not your fills. Not investment advice.')
     return '\n'.join(lines)
 

@@ -1271,6 +1271,42 @@ def api_trade(ref):
     return jsonify(safe(d))
 
 
+# ---------------------------------------------------------------- the change log
+def log_change(mode: str, before: dict, after: dict, keys, why: str) -> None:
+    """A change you made (a Tune… button, App settings) in the Performance tab's change log, as the
+    values that moved: the autopilot logs its own. Nothing moved, nothing logged."""
+    moved = [k for k in keys if before.get(k) != after.get(k)]
+    if moved:
+        store.log_autopilot(mode, 'tuned' if mode != 'app' else 'settings', {k: before.get(k) for k in moved},
+                            {k: after.get(k) for k in moved}, why, 'you')
+
+
+def _config_values(names) -> dict:
+    """Settings' values for the change log: a secret only as set or not, never its value."""
+    return {k: ('set' if config.get(k) else 'not set') if config.FIELDS[k][3] else config.get(k)
+            for k in names if k in config.FIELDS}
+
+
+def change_labels() -> dict:
+    """What each logged value is called, per mode, as the tuners and App settings call it."""
+    return {'swing': {k: v['label'] for k, v in smc.TUNABLE.items()},
+            'intraday': {k: v['label'] for k, v in intraday.TUNABLE.items()},
+            'options': {k: v[4] for k, v in options.TUNABLE.items()},
+            'app': config.LABELS}
+
+
+@app.route('/api/lab/log')
+def api_lab_log():
+    """Older change-log entries: `before` an entry id, `limit` at a time (at most 200)."""
+    try:
+        before = int(request.args.get('before'))
+        limit = max(1, min(200, int(request.args.get('limit') or 50)))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'before is an entry id'}), 400
+    rows = store.autopilot_log(limit + 1, before)
+    return jsonify(safe({'log': rows[:limit], 'more': len(rows) > limit}))
+
+
 # ---------------------------------------------------------------- App settings (config.py)
 @app.route('/api/config')
 def api_config():
@@ -1292,8 +1328,14 @@ def api_config_save():
     errors = {k: e for k in body for e in [config.validate(k, body[k])] if e}
     if errors:
         return jsonify({'error': '; '.join(errors.values()), 'fields': errors}), 400
+    before = _config_values(body)
     config.save(body)
     logger.info('App settings changed: ' + ', '.join(sorted(body)))        # names only, never values
+    after = _config_values(body)
+    for k in body:                       # a secret is only ever 'set'; a new one replacing it is still a change
+        if config.FIELDS[k][3] and config.clean(k, body[k]) and before[k] == 'set':
+            after[k] = 'replaced'
+    log_change('app', before, after, config.FIELDS, 'App settings')
     if any(k.startswith('dhan_') for k in body) or 'data_source' in body:
         dhan._state.update(next_login=0.0, rejected=False, profile=None, profile_at=0.0, error=None)
         if dhan.mode() == 'auto':
@@ -3535,8 +3577,10 @@ def api_intraday_rules():
     applied = ENV_INTRA.with_overrides(overrides).as_dict()
     env = ENV_INTRA.as_dict()
     keep = {k: applied[k] for k in overrides if k in intraday.TUNABLE and applied[k] != env[k]}
+    before = irules().as_dict()
     store.set_settings({'intraday_rules': keep})
     logger.info(f'Intraday rules saved: {keep or "reset to .env defaults"}')
+    log_change('intraday', before, irules().as_dict(), intraday.TUNABLE, 'saved with Tune…' if keep else 'reset to .env with Tune…')
     return jsonify({'rules': irules().as_dict(), 'overrides': keep})
 
 
@@ -3623,8 +3667,10 @@ def api_rules():
     applied = ENV_RULES.with_overrides(overrides).as_dict()
     # Keep only what differs from .env, as the clamped, typed value.
     keep = {k: applied[k] for k in overrides if k in smc.TUNABLE and applied[k] != ENV_RULES.as_dict()[k]}
+    before = current_rules().as_dict()
     store.set_settings({'rules': keep})
     logger.info(f'Rules saved: {keep or "reset to .env defaults"}')
+    log_change('swing', before, current_rules().as_dict(), smc.TUNABLE, 'saved with Tune…' if keep else 'reset to .env with Tune…')
     return jsonify({'rules': current_rules().as_dict(), 'overrides': keep})
 
 
@@ -3719,6 +3765,7 @@ def api_lab():
         except Exception as e:
             _COVERAGE.update(at=time.time(), value={'error': str(e)})
     st = store.settings()
+    log = store.autopilot_log(41)
     modes = {}
     for m in autopilot.MODES:
         a = lab.state(m)
@@ -3728,7 +3775,7 @@ def api_lab():
             current = {}
         modes[m] = {**a, 'current': current, 'specs': lab.specs(m), 'paused': st.get(f'paused_{m}') == '1'}
     return jsonify(safe({
-        'jobs': [lab.job_view(j) for j in store.jobs(12)], 'coverage': _COVERAGE['value'], 'modes': modes, 'log': store.autopilot_log(40),
+        'jobs': [lab.job_view(j) for j in store.jobs(12)], 'coverage': _COVERAGE['value'], 'modes': modes, 'log': log[:40], 'log_more': len(log) > 40, 'labels': change_labels(),
         'policy': lab.policy(), 'last_report': store.get_json('lab:last_report'),
         'settings': {**{k: st[k] for k in ('lab_swing_universe', 'lab_intraday_universe', 'lab_years_swing',
                                            'lab_years_intraday', 'weekly_report', 'lab_alerts')},
@@ -4042,7 +4089,9 @@ def api_options_rules():
     # Store only what differs from the defaults, already clamped.
     ruled = options.rules_from(clean)
     saved = {k: ruled[k] for k in clean if ruled[k] != options.TUNABLE[k][0]}
+    before = orules()
     store.set_settings({'options_rules': saved})
+    log_change('options', before, orules(), options.TUNABLE, 'saved with Tune…' if saved else 'reset to the defaults with Tune…')
     return jsonify({'rules': orules(), 'rule_overrides': saved})
 
 

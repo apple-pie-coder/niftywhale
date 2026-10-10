@@ -1074,9 +1074,11 @@ def prune_notices() -> None:
         c.execute('DELETE FROM notices WHERE ts < ?', (cut,))
 
 
-def autopilot_log(limit: int = 50) -> List[Dict[str, Any]]:
+def autopilot_log(limit: int = 50, before_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """The change log, newest first; `before_id` pages back past that entry."""
     with connect() as c:
-        rows = _rows(c.execute('SELECT * FROM autopilot_log ORDER BY id DESC LIMIT ?', (limit,)))
+        rows = _rows(c.execute('SELECT * FROM autopilot_log WHERE id < ? ORDER BY id DESC LIMIT ?',
+                               (before_id if before_id is not None else 2 ** 62, limit)))
     for r in rows:
         r['before'] = json.loads(r['before']) if r.get('before') else None
         r['after'] = json.loads(r['after']) if r.get('after') else None

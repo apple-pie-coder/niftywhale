@@ -1213,6 +1213,8 @@
     .ap-row b { min-width: 120px; }
     .ap-card { border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px; font-size: 13px; display: grid; gap: 6px; }
     .ap-card[data-tone="accent"] { border-color: var(--accent); background: var(--accent-soft); }
+    .ap-diff { margin-top: 3px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: normal; }
+    .ap-more { padding: 8px 0 0; font-size: 13px; }
     .ap-card[data-tone="warn"] { border-color: var(--warn); background: var(--warn-soft); }
     .ap-thr { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
     .lab-cov { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
@@ -1757,10 +1759,11 @@
                 </section>
                 <section>
                     <div class="panel-head"><h2 class="panel-title">Change log</h2>
-                        <span class="panel-meta">Everything the autopilot (or you) changed</span></div>
+                        <span class="panel-meta">Everything the autopilot or you changed: the Tune… buttons, App settings</span></div>
                     <div class="table-wrap"><table>
                         <thead><tr><th>When</th><th>Mode</th><th>What</th><th>Why</th></tr></thead>
                         <tbody id="ap-log"></tbody></table></div>
+                    <div class="ap-more" id="ap-log-more"></div>
                 </section>
             </div>
             <p class="foot">Live results are the paper journal: alerts taken exactly, no costs. Backtests replay years of
@@ -7041,6 +7044,58 @@ function renderPerf() {
     renderLab();
 }
 
+/* The change log: each entry with what moved in it ('Final R:R (5m) 2 → 2.5'), named as the tuners
+   and App settings name them; the autopilot's nested limits by their path; no override (null) as
+   'default'. Older entries page in
+   below the newest 40, and stay while the panel reloads. */
+const LOG_OLDER = { rows: [], more: null };
+const flatLog = (o, p = '', out = {}) => {
+    if (o && typeof o === 'object' && !Array.isArray(o)) Object.entries(o).forEach(([k, v]) => flatLog(v, p ? `${p}.${k}` : k, out));
+    else if (p) out[p] = o;
+    return out;
+};
+const logVal = (v) => v == null ? 'default' : v === '' ? '—'
+    : Array.isArray(v) ? (v.length === 2 && v.every((x) => typeof x === 'number') ? `${v[0]}–${v[1]}` : v.join(', '))
+    : typeof v === 'number' ? String(+v.toFixed(4)) : String(v);
+function logDiff(r) {
+    const L = LAB.labels || {}, b = flatLog(r.before || {}), a = flatLog(r.after || {}), names = L[r.mode] || {};
+    const name = (k) => {                      // 'limits.swing.min_rr' (the policy): 'swing Final R:R'
+        if (names[k]) return names[k];
+        const parts = k.split('.'), last = parts[parts.length - 1], m = parts.find((x) => L[x]);
+        const n = (m && L[m][last]) || last.replace(/_/g, ' ');
+        return m ? `${m} ${n}` : n;
+    };
+    const nb = Object.keys(b).length, na = Object.keys(a).length;
+    let items;
+    if (nb && na) items = Object.keys(a).filter((k) => k in b && JSON.stringify(a[k]) !== JSON.stringify(b[k]))
+        .map((k) => `${name(k)} ${logVal(b[k])} → ${logVal(a[k])}`);
+    else items = Object.entries(nb ? b : a).map(([k, v]) => `${name(k)} ${logVal(v)}`);
+    if (!items.length) return '';
+    return `<div class="ap-diff" title="${esc(items.join('\n'))}">${items.slice(0, 6).map(esc).join('<br>')}${
+        items.length > 6 ? `<br>+${items.length - 6} more` : ''}</div>`;
+}
+function renderChangeLog() {
+    const first = LAB.log.length ? Math.min(...LAB.log.map((r) => r.id)) : Infinity;
+    const rows = LAB.log.concat(LOG_OLDER.rows.filter((r) => r.id < first));
+    $('ap-log').innerHTML = rows.length ? rows.map((r) => `<tr><td class="num">${hhmm(r.ts)}</td><td>${esc(r.mode === 'app' ? 'app settings' : r.mode)}</td>
+        <td>${esc(r.action)}${r.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${logDiff(r)}</td><td class="note">${esc(r.why || '')}</td></tr>`).join('')
+        : '<tr><td colspan="4"><div class="empty"><b>No changes yet</b>Your Tune… and App settings saves, and the autopilot\'s proposals, promotions, rollbacks and pauses, are logged here.</div></td></tr>';
+    const more = LOG_OLDER.rows.length ? LOG_OLDER.more : LAB.log_more;
+    $('ap-log-more').innerHTML = more ? '<button class="btn-link" type="button" id="ap-log-older">Show older</button>' : '';
+}
+$('ap-log-more').addEventListener('click', async (e) => {
+    const b = e.target.closest('#ap-log-older');
+    if (!b || !LAB) return;
+    const all = LAB.log.concat(LOG_OLDER.rows);
+    b.disabled = true;
+    try {
+        const d = await api(`/api/lab/log?before=${Math.min(...all.map((r) => r.id))}&limit=50`);
+        LOG_OLDER.rows.push(...d.log);
+        LOG_OLDER.more = d.more;
+        renderChangeLog();
+    } catch (err) { b.disabled = false; toast('Could not load older changes: ' + err.message); }
+});
+
 function renderAutopilot() {
     if (!LAB) return;
     const a = LAB.modes[pfMode], pol = LAB.policy;
@@ -7082,9 +7137,7 @@ function renderAutopilot() {
     }
     if (!a.paused) html += `<div class="ap-row"><button class="btn-link" type="button" data-ap="pause" data-on="1">Pause ${MODE_LABEL[pfMode].toLowerCase()} alerts</button></div>`;
     $('ap-box').innerHTML = html + '</div>';
-    $('ap-log').innerHTML = LAB.log.length ? LAB.log.map((r) => `<tr><td class="num">${hhmm(r.ts)}</td><td>${esc(r.mode)}</td>
-        <td>${esc(r.action)}${r.by === 'you' ? ' <span class="muted">(you)</span>' : ''}</td><td class="note">${esc(r.why || '')}</td></tr>`).join('')
-        : '<tr><td colspan="4"><div class="empty"><b>No changes yet</b>Proposals, promotions, rollbacks and pauses are logged here.</div></td></tr>';
+    renderChangeLog();
     $('perf-badge').innerHTML = Object.values(LAB.modes).some((m) => m.paused) ? IC.pause : Object.values(LAB.modes).some((m) => m.awaiting) ? '•' : '';
 }
 

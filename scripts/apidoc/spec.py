@@ -148,8 +148,12 @@ E = [
      'Statistics, the cumulative-R curve, highlights and breakdowns of the live paper journal (plus the last 25 trades, this week, and the '
      'open trades with their feed symbols in `open_live`), or of the latest backtest of the current rules.'),
     ('lab', 'GET', '/api/lab', '/api/lab', None, '',
-     'History on disk, recent lab jobs, each mode\'s autopilot state, the policy, the change log and the lab `settings` '
+     'History on disk, recent lab jobs, each mode\'s autopilot state, the policy, the change log (the newest 40, `log_more` when '
+     'there are older ones, and `labels`: what each logged value is called, per mode) and the lab `settings` '
      '(universes and history length per mode).'),
+    ('lab', 'GET', '/api/lab/log', '/api/lab/log?before=2&limit=50', None, '`?before=<entry id>`, `?limit=1–200` (50)',
+     'Older change-log entries: the autopilot\'s, and your Tune… and App settings changes (`by` `you`), each with the values '
+     'that moved in `before` / `after` (a secret only as set, not set or replaced).'),
     ('lab', 'POST', '/api/lab/job', '/api/lab/job', {'kind': 'backtest'}, '`kind`: `backtest`, `tune`, `report` or `nightly`',
      'Queues a lab job; heavy work waits for the market to close.'),
     ('lab', 'POST', '/api/autopilot/policy', '/api/autopilot/policy', '{policy}',

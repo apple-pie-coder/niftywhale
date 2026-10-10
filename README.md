@@ -1636,6 +1636,11 @@ what may change it:
    - They resume when trades during the pause add up to +2R, when new rules are promoted, or when you press **Resume alerts**.
 
 Every proposal, promotion, drop, rollback, pause and resume is announced on Telegram and listed in the **Change log**. **Undo this change** puts the previous rules back.
+
+The **Change log** is the whole tuning history: the autopilot's changes and yours, marked *(you)*. A save with a **Tune…**
+button (swing, intraday, options) and a change in **App settings** are logged too. Each entry lists the values that moved,
+as the tuner names them (*Final R:R (5m) 2 → 2.5*), and a secret only as set, not set or replaced, never its value.
+The newest 40 show; **Show older** brings 50 more at a time.
 Options learning stays dormant until about three months of candidates are recorded; Dhan has no historical option chains to backtest on.
 
 **Why swing has gates (October 2026 study).** All 711 swing trades from three years of nifty100 history, replayed with the
@@ -3344,7 +3349,7 @@ curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/perf?mode=s
 
 #### `GET /api/lab`
 
-History on disk, recent lab jobs, each mode's autopilot state, the policy, the change log and the lab `settings` (universes and history length per mode).
+History on disk, recent lab jobs, each mode's autopilot state, the policy, the change log (the newest 40, `log_more` when there are older ones, and `labels`: what each logged value is called, per mode) and the lab `settings` (universes and history length per mode).
 
 ```sh
 curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/lab
@@ -3357,11 +3362,41 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/lab
   "jobs": [
     {…}
   ],
+  "labels": {…},
   "last_report": null,
   "log": [],
+  "log_more": false,
   "modes": {…},
   "policy": {…},
   "settings": {…}
+}
+```
+
+#### `GET /api/lab/log`
+
+Older change-log entries: the autopilot's, and your Tune… and App settings changes (`by` `you`), each with the values that moved in `before` / `after` (a secret only as set, not set or replaced).
+
+**Query:** `?before=<entry id>`, `?limit=1–200` (50)
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" "http://127.0.0.1:5058/api/lab/log?before=2&limit=50"
+```
+
+```json
+{
+  "log": [
+    {
+      "after": {"min_rr": 2.5},
+      "before": {"min_rr": 2.0},
+      "by": "you",
+      "id": 1,
+      "mode": "intraday",
+      "action": "tuned",
+      "ts": "2026-10-10T17:02:11",
+      "why": "saved with Tune…"
+    }
+  ],
+  "more": false
 }
 ```
 
