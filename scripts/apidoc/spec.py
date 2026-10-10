@@ -144,13 +144,16 @@ E = [
      'One stock: its delivery read and history, and its deals of the last 30 days.'),
     ('news', 'POST', '/api/smart/refresh', '/api/smart/refresh', {}, '', 'Fetches from NSE now, in the background.'),
 
-    ('lab', 'GET', '/api/perf', '/api/perf?mode=swing', None, '`?mode=swing|intraday|options`, `?source=live|backtest`',
+    ('lab', 'GET', '/api/perf', '/api/perf?mode=swing', None, '`?mode=swing|intraday|options`, `?source=live|backtest`, `?run=<id>` (backtest)',
      'Statistics, the cumulative-R curve, highlights and breakdowns of the live paper journal (plus the last 25 trades, this week, and the '
-     'open trades with their feed symbols in `open_live`), or of the latest backtest of the current rules.'),
+     'open trades with their feed symbols in `open_live`), or of a backtest: the latest of the current rules, or `run` to look back at an '
+     'earlier one (`runs` lists the ones kept, `latest` says whether this is the newest).'),
     ('lab', 'GET', '/api/lab', '/api/lab', None, '',
      'History on disk, recent lab jobs, each mode\'s autopilot state, the policy, the change log (the newest 40, `log_more` when '
      'there are older ones, and `labels`: what each logged value is called, per mode) and the lab `settings` '
      '(universes and history length per mode).'),
+    ('lab', 'GET', '/api/lab/jobs', '/api/lab/jobs?before=3&limit=10', None, '`?before=<job id>`, `?limit=1–50` (10)',
+     'Older lab jobs, each as the Lab panel shows one: steps, results, and `run_id` for a step that saved a backtest run.'),
     ('lab', 'GET', '/api/lab/log', '/api/lab/log?before=2&limit=50', None, '`?before=<entry id>`, `?limit=1–200` (50)',
      'Older change-log entries: the autopilot\'s, and your Tune… and App settings changes (`by` `you`), each with the values '
      'that moved in `before` / `after` (a secret only as set, not set or replaced).'),

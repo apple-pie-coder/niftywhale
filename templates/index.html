@@ -1215,6 +1215,10 @@
     .ap-card[data-tone="accent"] { border-color: var(--accent); background: var(--accent-soft); }
     .ap-diff { margin-top: 3px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: normal; }
     .ap-more { padding: 8px 0 0; font-size: 13px; }
+    .pf-rules { margin: 8px 0 0; line-height: 1.6; }
+    .pf-rules b { color: var(--ink-2); font-weight: 600; }
+    #pf-run { font-size: 12.5px; max-width: 100%; }
+    .jobd .jrun { display: inline-block; margin-top: 4px; font-size: 12.5px; }
     .ap-card[data-tone="warn"] { border-color: var(--warn); background: var(--warn-soft); }
     .ap-thr { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
     .lab-cov { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
@@ -1226,6 +1230,11 @@
     .mood-sw { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; cursor: pointer; }
     .mood-sw input { width: 16px; height: 16px; accent-color: var(--accent); }
     /* Coming up: the lab's next runs, soonest first, with a countdown. */
+    /* Coming up beside the recent jobs on a wide screen, so the Lab grows sideways, not down. */
+    .lab-flow { display: grid; gap: 0 18px; align-items: start; }
+    @media (min-width: 1100px) { .lab-flow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .lab-flow > :only-child { grid-column: 1 / -1; } }
+    .lab-hist { margin-top: 12px; }
+    .lab-hist .lab-jobs { margin-top: 6px; }
     .lab-next { margin-top: 12px; }
     .lab-next ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
     .lab-nx { display: grid; grid-template-columns: minmax(118px, auto) minmax(0, 1fr); gap: 2px 12px; padding: 8px 10px;
@@ -1719,9 +1728,11 @@
                 <div class="seg small" role="group" aria-label="Source" id="pf-src">
                     <button type="button" data-pfs="live" aria-pressed="true">Live paper trades</button>
                     <button type="button" data-pfs="backtest" aria-pressed="false">Backtest</button></div>
+                <span id="pf-run-pick"></span>
                 <span class="panel-meta" id="pf-meta" style="margin-left:auto"></span>
             </div>
             <div class="stats" id="pf-stats"></div>
+            <p class="muted pf-rules" id="pf-rules" hidden></p>
 
             <div class="pf-two">
                 <section>
@@ -1751,21 +1762,20 @@
                 <div class="box" id="ap-box"></div>
             </section>
 
-            <div class="pf-two">
-                <section>
-                    <div class="panel-head"><h2 class="panel-title">Lab</h2>
-                        <span class="panel-meta">Backtests run here, outside market hours</span></div>
-                    <div class="box" id="lab-box"></div>
-                </section>
-                <section>
-                    <div class="panel-head"><h2 class="panel-title">Change log</h2>
-                        <span class="panel-meta">Everything the autopilot or you changed: the Tune… buttons, App settings</span></div>
-                    <div class="table-wrap"><table>
-                        <thead><tr><th>When</th><th>Mode</th><th>What</th><th>Why</th></tr></thead>
-                        <tbody id="ap-log"></tbody></table></div>
-                    <div class="ap-more" id="ap-log-more"></div>
-                </section>
-            </div>
+            <section>
+                <div class="panel-head"><h2 class="panel-title">Lab</h2>
+                    <span class="panel-meta">Backtests run here, outside market hours</span></div>
+                <div class="box" id="lab-box"></div>
+            </section>
+
+            <section>
+                <div class="panel-head"><h2 class="panel-title">Change log</h2>
+                    <span class="panel-meta">Everything the autopilot or you changed: the Tune… buttons, App settings</span></div>
+                <div class="table-wrap"><table>
+                    <thead><tr><th>When</th><th>Mode</th><th>What</th><th>Why</th></tr></thead>
+                    <tbody id="ap-log"></tbody></table></div>
+                <div class="ap-more" id="ap-log-more"></div>
+            </section>
             <p class="foot">Live results are the paper journal: alerts taken exactly, no costs. Backtests replay years of
                 candles through the same rule code; they cannot see delays, costs or stocks that left the index, so treat
                 them as a way to compare rules, not a forecast. The autopilot only moves the filter thresholds, inside your
@@ -6920,6 +6930,7 @@ $('tk-track').addEventListener('click', (e) => {
 
 /* -------------------------------------------------------- performance */
 let pfMode = store.get('nw.pf.mode', 'swing'), pfSrc = store.get('nw.pf.src', 'live');
+let pfRun = null;           // a backtest run picked to look back at (an id); null: the latest
 let PF = null, LAB = null, pfTimer = null;
 const MODE_LABEL = { swing: 'Swing', intraday: 'Intraday', options: 'Options' };
 const sgnR = (v, d = 2) => v == null ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + 'R';
@@ -6935,9 +6946,13 @@ async function loadPerf() {
     clearTimeout(pfTimer);
     if (mode !== 'perf') return;
     try {
-        [PF, LAB] = await Promise.all([api(`/api/perf?mode=${pfMode}&source=${pfSrc}`), api('/api/lab')]);
+        const run = pfSrc === 'backtest' && pfRun ? `&run=${pfRun}` : '';
+        [PF, LAB] = await Promise.all([api(`/api/perf?mode=${pfMode}&source=${pfSrc}${run}`), api('/api/lab')]);
         renderPerf();
-    } catch (e) { $('pf-meta').textContent = 'Could not load: ' + e.message; }
+    } catch (e) {
+        if (pfRun) { pfRun = null; toast('That run is no longer kept: showing the latest'); loadPerf(); return; }   // pruned
+        $('pf-meta').textContent = 'Could not load: ' + e.message;
+    }
     const running = LAB && LAB.jobs.some((j) => j.status === 'running' || j.status === 'queued');
     if (!document.hidden) pfTimer = setTimeout(loadPerf, viaSocket(running ? 10000 : 60000));
 }
@@ -6993,6 +7008,13 @@ function renderPerf() {
     const d = PF, s = d.summary || {};
     const stat = (k, v, sub, tone) => `<div class="stat"${tone ? ` data-tone="${tone}"` : ''}><div class="stat-k">${k}</div>
         <div class="stat-v num">${v}</div><div class="stat-s">${sub}</div></div>`;
+    // Backtest: a picker of the runs kept (the newest first), and the rules the shown run used.
+    const runs = pfSrc === 'backtest' ? d.runs || [] : [];
+    $('pf-run-pick').innerHTML = runs.length > 1 ? `<select id="pf-run" aria-label="Backtest run">${runs.map((r, i) =>
+        `<option value="${r.id}"${d.run && r.id === d.run.id ? ' selected' : ''}>${esc(hhmm(r.created))} · ${r.trades || 0} trades, ${esc(sgnR(r.total_r))}${i ? '' : ' · latest'}</option>`).join('')}</select>` : '';
+    const params = pfSrc === 'backtest' && d.run && d.run.params ? Object.entries(d.run.params) : [];
+    $('pf-rules').hidden = !params.length;
+    $('pf-rules').innerHTML = params.length ? `Rules in this run: ${params.map(([k, v]) => `${esc(PARAM_LABEL[k] || k)} <b>${esc(fmtParam(k, v))}</b>`).join(' · ')}` : '';
     if (pfSrc === 'backtest' && !d.run) {
         $('pf-meta').textContent = 'No backtest yet';
         $('pf-stats').innerHTML = stat('Backtest', 'Not run yet', 'The lab runs one after the history has downloaded', 'warn');
@@ -7000,7 +7022,7 @@ function renderPerf() {
         $('pf-equity').innerHTML = '<p class="muted">See the Lab panel below for progress.</p>';
     } else {
         $('pf-meta').textContent = pfSrc === 'backtest'
-            ? `${d.run.universe} · ${d.run.period_from} – ${d.run.period_to} · current rules · run ${hhmm(d.run.created)}`
+            ? `${d.run.universe} · ${d.run.period_from} – ${d.run.period_to} · ${d.latest ? 'current rules' : 'the rules then'} · run ${hhmm(d.run.created)}`
             : `${MODE_LABEL[pfMode]} paper journal` + (d.week && d.week.trades ? ` · this week ${d.week.trades} closed, ${sgnR(d.week.total_r, 1)}` : '');
         $('pf-stats').innerHTML = !s.trades
             ? stat('Trades', s.open ? s.open + ' open' : '0', pfSrc === 'live' ? 'Closed paper trades appear here' : 'No trades in the backtest')
@@ -7179,7 +7201,10 @@ function renderLab() {
     const c = LAB.coverage || {}, st = LAB.settings;
     const cov = (k, label) => { const x = c[k] || {}; return `<div class="stat"><div class="stat-k">${label}</div><div class="stat-v num">${x.symbols || 0}</div>
         <div class="stat-s">${x.first ? `${covDate(x.first)} – ${covDate(x.last)}<br>${x.mb} MB` : 'not downloaded yet'}</div></div>`; };
-    const jobs = LAB.jobs.slice(0, 6).map((j) => {
+    const recent = LAB.jobs.slice(0, JOBS_SHOWN), first = recent.length ? Math.min(...recent.map((j) => j.id)) : Infinity;
+    const listed = recent.concat(JOBS_OLDER.rows.filter((j) => j.id < first));
+    const more = JOBS_OLDER.rows.length ? JOBS_OLDER.more : LAB.jobs.length > JOBS_SHOWN;
+    const jobs = listed.map((j) => {
         const s = jobStep(j), bar = j.status === 'running' && s && s.total
             ? `<span class="progress"><i style="width:${Math.min(100, 100 * s.n / s.total).toFixed(1)}%"></i></span>` : '';
         const when = j.status === 'running' ? dur(j.secs) : j.status === 'queued' ? hhmm(j.created) : hhmm(j.finished || j.started);
@@ -7196,8 +7221,10 @@ function renderLab() {
             <button class="btn" type="button" id="lab-settings-btn">${IC.gear} Lab settings</button></div>
         <p class="muted lab-sched">Swing: ${esc(uniLabel(st.swing_universe))}, ${st.lab_years_swing} years · intraday: ${esc(uniLabel(st.intraday_universe))},
             ${st.lab_years_intraday} years · options: ${LAB.candidates} candidates recorded.</p>
-        ${labNext(LAB.upcoming || [])}
-        <ul class="lab-jobs">${jobs || '<li class="muted" style="padding:10px 0">No jobs yet.</li>'}</ul>`;
+        <div class="lab-flow">${labNext(LAB.upcoming || [])}
+            <div class="lab-hist"><div class="label">Recent jobs</div>
+                <ul class="lab-jobs">${jobs || '<li class="muted" style="padding:10px 0">No jobs yet.</li>'}</ul>
+                ${more ? '<div class="ap-more"><button class="btn-link" type="button" id="lab-jobs-older">Show older jobs</button></div>' : ''}</div></div>`;
     // An open job detail follows the job as it runs.
     const open = $('modal').hidden ? null : $('modal-body').querySelector('.jobd');
     if (open) {
@@ -7301,6 +7328,7 @@ function jobDetail(j) {
         // A tuning's outcome laid out; any other result line, split where it lists several things.
         if (s.result) sub += tuneCard(s.result);
         else if (s.notes.length) sub += `<ul class="jres">${s.notes.flatMap(noteLines).map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`;
+        if (s.run_id) sub += `<button type="button" class="btn-link jrun" data-run="${s.run_id}" data-run-mode="${esc(s.run_mode)}">See the full results: curve, breakdown, best and worst stocks ›</button>`;
         const d = s.secs != null ? dur(s.secs) : s.state === 'skipped' ? 'skipped' : s.state === 'pending' ? '' : s.state === 'done' && s.total ? `${s.total}` : '';
         return `<li data-st="${s.state}"><span class="jdot" aria-label="${s.state}">${icon[s.state] || ''}</span><div>
             <div class="jrow"><span class="jl">${i + 1}. ${esc(s.label)}</span><span class="jd">${esc(d)}</span></div>
@@ -7316,10 +7344,42 @@ function jobDetail(j) {
 }
 
 function openJob(id) {
-    const j = LAB && LAB.jobs.find((x) => String(x.id) === String(id));
+    const j = LAB && LAB.jobs.concat(JOBS_OLDER.rows).find((x) => String(x.id) === String(id));
     if (!j) return;
     openModal(j.title, jobSub(j), jobDetail(j));
 }
+
+// Older jobs page in below the recent ones (and stay while the panel reloads); each opens like the rest.
+const JOBS_SHOWN = 6, JOBS_OLDER = { rows: [], more: null };
+async function olderJobs(btn) {
+    const shown = LAB.jobs.slice(0, JOBS_SHOWN).concat(JOBS_OLDER.rows);
+    btn.disabled = true;
+    try {
+        const d = await api(`/api/lab/jobs?before=${Math.min(...shown.map((j) => j.id))}&limit=10`);
+        JOBS_OLDER.rows.push(...d.jobs);
+        JOBS_OLDER.more = d.more;
+        renderLab();
+    } catch (e) { btn.disabled = false; toast('Could not load older jobs: ' + e.message); }
+}
+
+// A backtest run from a job's detail (or the picker): the Performance view of that run.
+function showRun(id, runMode) {
+    closeModal();
+    pfMode = runMode; pfSrc = 'backtest'; pfRun = +id;
+    store.set('nw.pf.mode', pfMode); store.set('nw.pf.src', pfSrc);
+    loadPerf();
+    $('perf-view').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+$('modal-body').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-run]');
+    if (r) showRun(r.dataset.run, r.dataset.runMode);
+});
+$('perf-view').addEventListener('change', (e) => {
+    if (e.target.id !== 'pf-run') return;
+    const latest = PF && PF.runs && PF.runs[0] && String(PF.runs[0].id) === e.target.value;
+    pfRun = latest ? null : +e.target.value;
+    loadPerf();
+});
 
 function openPolicy() {
     const p = LAB.policy, a = LAB.modes[pfMode];
@@ -7356,9 +7416,10 @@ function openPolicy() {
 
 $('perf-view').addEventListener('click', async (e) => {
     const m = e.target.closest('[data-pfm]');
-    if (m) { pfMode = m.dataset.pfm; store.set('nw.pf.mode', pfMode); loadPerf(); return; }
+    if (m) { pfMode = m.dataset.pfm; pfRun = null; store.set('nw.pf.mode', pfMode); loadPerf(); return; }
     const sr = e.target.closest('[data-pfs]');
-    if (sr) { pfSrc = sr.dataset.pfs; store.set('nw.pf.src', pfSrc); loadPerf(); return; }
+    if (sr) { pfSrc = sr.dataset.pfs; pfRun = null; store.set('nw.pf.src', pfSrc); loadPerf(); return; }
+    if (e.target.closest('#lab-jobs-older')) { olderJobs(e.target.closest('#lab-jobs-older')); return; }
     const ap = e.target.closest('[data-ap]');
     if (ap) {
         const action = ap.dataset.ap;

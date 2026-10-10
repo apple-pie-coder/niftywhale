@@ -1295,6 +1295,20 @@ def change_labels() -> dict:
             'app': config.LABELS}
 
 
+@app.route('/api/lab/jobs')
+def api_lab_jobs():
+    """Older lab jobs, each as the Lab panel shows one (steps, results, the backtest run a step saved):
+    `before` a job id, `limit` at a time (at most 50)."""
+    from niftywhale import lab
+    try:
+        before = int(request.args.get('before'))
+        limit = max(1, min(50, int(request.args.get('limit') or 10)))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'before is a job id'}), 400
+    rows, kept = store.jobs(limit + 1, before), store.runs()
+    return jsonify(safe({'jobs': [lab.job_view(j, runs=kept) for j in rows[:limit]], 'more': len(rows) > limit}))
+
+
 @app.route('/api/lab/log')
 def api_lab_log():
     """Older change-log entries: `before` an entry id, `limit` at a time (at most 200)."""
@@ -3727,16 +3741,26 @@ def refresh_universe():
 
 @app.route('/api/perf')
 def api_perf():
-    """Performance of one mode: live paper trades, or the latest backtest of the current rules."""
+    """Performance of one mode: live paper trades, or a backtest: the latest of the current rules, or
+    `run` (an id from `runs`, the ones kept) to look back at an earlier one."""
     mode = request.args.get('mode', 'swing')
     if mode not in autopilot.MODES:
         return jsonify({'error': 'mode must be swing, intraday or options'}), 400
     if request.args.get('source') == 'backtest':
-        run = store.latest_run(mode, 'baseline')
+        kept = store.runs(mode)
+        listed = [{k: r[k] for k in ('id', 'created', 'period_from', 'period_to', 'trades', 'total_r', 'win_rate')} for r in kept]
+        want = request.args.get('run')
+        if want:
+            run = store.get_run(int(want)) if want.isdigit() else None
+            if not run or run['mode'] != mode or run['kind'] != 'baseline':
+                return jsonify({'error': f'no {mode} backtest run {want} is kept (the latest 60 are)'}), 404
+        else:
+            run = store.latest_run(mode, 'baseline')
         if not run:
-            return jsonify({'source': 'backtest', 'mode': mode, 'run': None})
+            return jsonify({'source': 'backtest', 'mode': mode, 'run': None, 'runs': listed})
         extra = run.get('extra') or {}
-        return jsonify(safe({'source': 'backtest', 'mode': mode, 'run': {k: run[k] for k in (
+        return jsonify(safe({'source': 'backtest', 'mode': mode, 'runs': listed, 'latest': run['id'] == kept[0]['id'],
+                             'run': {k: run[k] for k in (
             'id', 'created', 'params', 'period_from', 'period_to', 'universe')}, 'summary': run['summary'],
             'breakdown': run['breakdown'], 'equity': run['equity'], 'highlights': extra.get('highlights', []),
             'by_symbol': extra.get('by_symbol'), 'symbols': extra.get('symbols')}))
@@ -3766,6 +3790,7 @@ def api_lab():
             _COVERAGE.update(at=time.time(), value={'error': str(e)})
     st = store.settings()
     log = store.autopilot_log(41)
+    kept_runs = store.runs()
     modes = {}
     for m in autopilot.MODES:
         a = lab.state(m)
@@ -3775,7 +3800,7 @@ def api_lab():
             current = {}
         modes[m] = {**a, 'current': current, 'specs': lab.specs(m), 'paused': st.get(f'paused_{m}') == '1'}
     return jsonify(safe({
-        'jobs': [lab.job_view(j) for j in store.jobs(12)], 'coverage': _COVERAGE['value'], 'modes': modes, 'log': log[:40], 'log_more': len(log) > 40, 'labels': change_labels(),
+        'jobs': [lab.job_view(j, runs=kept_runs) for j in store.jobs(12)], 'coverage': _COVERAGE['value'], 'modes': modes, 'log': log[:40], 'log_more': len(log) > 40, 'labels': change_labels(),
         'policy': lab.policy(), 'last_report': store.get_json('lab:last_report'),
         'settings': {**{k: st[k] for k in ('lab_swing_universe', 'lab_intraday_universe', 'lab_years_swing',
                                            'lab_years_intraday', 'weekly_report', 'lab_alerts')},

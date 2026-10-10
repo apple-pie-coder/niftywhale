@@ -1519,7 +1519,9 @@ Without the candidates, the autopilot could only ever make the idea rules strict
 Pick a mode (Swing, Intraday or Options) and a source:
 
 - **Live paper trades:** the journal, every alert taken exactly as given, with no costs.
-- **Backtest:** the latest replay of the current rules over the history.
+- **Backtest:** the latest replay of the current rules over the history. A **run picker** next to it opens any of the
+  last 60 runs instead (each nightly update and backtest saves one per mode), and **Rules in this run** lists the
+  thresholds that run used.
 
 The tab then shows:
 
@@ -1580,6 +1582,10 @@ Use backtests to compare rules, not as a forecast.
 | Saturday 09:00 | Weekly Telegram report. |
 
 The **Lab** panel shows what history is on disk and the latest jobs, with buttons for **Run backtest now**, **Tune now** and **Send weekly report**.
+On a wide screen, **Coming up** and **Recent jobs** sit side by side. Click a job for what it did, step by step: its
+times, counts and results, a tuning's verdict and numbers, and for a backtest step **See the full results**, which
+opens that run in the Performance view above (its curve, breakdown and best and worst stocks). **Show older jobs**
+brings ten more at a time.
 
 **Telegram job alerts** (Lab settings → Job alerts, on by default):
 - 15 minutes before each scheduled run (the nightly update, Saturday's tuning): what runs, when, and when it should be done.
@@ -3315,9 +3321,9 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/smar
 
 #### `GET /api/perf`
 
-Statistics, the cumulative-R curve, highlights and breakdowns of the live paper journal (plus the last 25 trades, this week, and the open trades with their feed symbols in `open_live`), or of the latest backtest of the current rules.
+Statistics, the cumulative-R curve, highlights and breakdowns of the live paper journal (plus the last 25 trades, this week, and the open trades with their feed symbols in `open_live`), or of a backtest: the latest of the current rules, or `run` to look back at an earlier one (`runs` lists the ones kept, `latest` says whether this is the newest).
 
-**Query:** `?mode=swing|intraday|options`, `?source=live|backtest`
+**Query:** `?mode=swing|intraday|options`, `?source=live|backtest`, `?run=<id>` (backtest)
 
 ```sh
 curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/perf?mode=swing'
@@ -3369,6 +3375,25 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/lab
   "modes": {…},
   "policy": {…},
   "settings": {…}
+}
+```
+
+#### `GET /api/lab/jobs`
+
+Older lab jobs, each as the Lab panel shows one: steps, results, and `run_id` for a step that saved a backtest run.
+
+**Query:** `?before=<job id>`, `?limit=1–50` (10)
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" "http://127.0.0.1:5058/api/lab/jobs?before=3&limit=10"
+```
+
+```json
+{
+  "jobs": [
+    {…}
+  ],
+  "more": false
 }
 ```
 

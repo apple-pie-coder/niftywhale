@@ -928,15 +928,38 @@ def add_run(mode: str, kind: str, params: Dict[str, Any], period: tuple, univers
                           json.dumps(breakdown), json.dumps(equity), json.dumps(extra))).lastrowid
 
 
-def latest_run(mode: str, kind: str) -> Optional[Dict[str, Any]]:
-    with connect() as c:
-        row = c.execute('SELECT * FROM bt_runs WHERE mode = ? AND kind = ? ORDER BY id DESC LIMIT 1', (mode, kind)).fetchone()
+def _run(row) -> Optional[Dict[str, Any]]:
     if not row:
         return None
     d = dict(row)
     for k in ('params', 'summary', 'breakdown', 'equity', 'extra'):
         d[k] = json.loads(d[k]) if d.get(k) else None
     return d
+
+
+def latest_run(mode: str, kind: str) -> Optional[Dict[str, Any]]:
+    with connect() as c:
+        return _run(c.execute('SELECT * FROM bt_runs WHERE mode = ? AND kind = ? ORDER BY id DESC LIMIT 1', (mode, kind)).fetchone())
+
+
+def get_run(run_id: int) -> Optional[Dict[str, Any]]:
+    with connect() as c:
+        return _run(c.execute('SELECT * FROM bt_runs WHERE id = ?', (run_id,)).fetchone())
+
+
+def runs(mode: Optional[str] = None, kind: str = 'baseline') -> List[Dict[str, Any]]:
+    """The backtest runs kept (prune_runs), newest first, without their curves: for a picker, and
+    for finding the run a lab job saved."""
+    q, args = 'SELECT id, mode, kind, created, period_from, period_to, universe, summary FROM bt_runs WHERE kind = ?', [kind]
+    if mode:
+        q += ' AND mode = ?'
+        args.append(mode)
+    with connect() as c:
+        rows = _rows(c.execute(q + ' ORDER BY id DESC', args))
+    for r in rows:
+        s = json.loads(r.pop('summary') or '{}')
+        r.update(trades=s.get('trades'), total_r=s.get('total_r'), win_rate=s.get('win_rate'))
+    return rows
 
 
 def prune_runs(keep: int = 60) -> None:
@@ -972,9 +995,11 @@ def update_job(job_id: int, **fields) -> None:
                   list(fields.values()) + [job_id])
 
 
-def jobs(limit: int = 20) -> List[Dict[str, Any]]:
+def jobs(limit: int = 20, before_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Lab jobs, newest first; `before_id` pages back past that one."""
     with connect() as c:
-        return _rows(c.execute('SELECT * FROM lab_jobs ORDER BY id DESC LIMIT ?', (limit,)))
+        return _rows(c.execute('SELECT * FROM lab_jobs WHERE id < ? ORDER BY id DESC LIMIT ?',
+                               (before_id if before_id is not None else 2 ** 62, limit)))
 
 
 def reset_running_jobs() -> None:

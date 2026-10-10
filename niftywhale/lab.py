@@ -621,6 +621,12 @@ class JobLog:
         self.steps.setdefault(key, {})['result'] = data
         self._save()
 
+    def link_run(self, run_id: int) -> None:
+        """The backtest run this step saved, so the job's detail can open its full results."""
+        if self.cur:
+            self.steps[self.cur]['run_id'] = run_id
+            self._save()
+
     def skip(self, key: str, why: str) -> None:
         """A step the job passed over, and why."""
         self.steps[key] = {'skipped': True, 'notes': [why[:300]]}
@@ -641,8 +647,26 @@ def _secs(a: Optional[str], b: Optional[str]) -> Optional[int]:
         return None
 
 
-def job_view(job: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
-    """A lab_jobs row for the dashboard: its steps in order with state, timing and counts."""
+RUN_STEPS = {'swing_sim': 'swing', 'intraday_sim': 'intraday', 'options': 'options'}     # steps that save a backtest run
+
+
+def _step_run(key: str, st: Dict[str, Any], runs: Optional[List[Dict[str, Any]]]) -> Optional[int]:
+    """The backtest run a step saved, if it is still kept: recorded with the step, or for a job from
+    before that, the run of its mode saved while the step ran."""
+    if key not in RUN_STEPS or runs is None:
+        return None
+    if st.get('run_id'):
+        return st['run_id'] if any(r['id'] == st['run_id'] for r in runs) else None
+    a, b = st.get('started'), st.get('finished')
+    if not (a and b):
+        return None
+    return next((r['id'] for r in runs if r['mode'] == RUN_STEPS[key] and a <= r['created'] <= b), None)
+
+
+def job_view(job: Dict[str, Any], now: Optional[datetime] = None,
+             runs: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """A lab_jobs row for the dashboard: its steps in order with state, timing and counts, and the
+    backtest run a step saved (`runs`: store.runs(), the ones kept)."""
     now_s = (now or datetime.now()).isoformat(timespec='seconds')
     args = job.get('args') or {}
     if isinstance(args, str):
@@ -685,7 +709,7 @@ def job_view(job: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, A
             state = 'done' if status == 'done' else 'unknown'
         v = {'key': k, 'label': STEP_LABEL.get(k, k), 'state': state, 'n': st.get('n'), 'total': st.get('total'),
              'notes': st.get('notes') or [], 'started': st.get('started'), 'finished': st.get('finished'),
-             'result': st.get('result')}
+             'result': st.get('result'), 'run_id': _step_run(k, st, runs), 'run_mode': RUN_STEPS.get(k)}
         v['secs'] = _secs(st.get('started'), st.get('finished') or (now_s if state == 'running' else None))
         if state == 'running' and v['secs'] and v['n'] and v['total'] and v['n'] < v['total']:
             v['eta_secs'] = int(v['secs'] / v['n'] * (v['total'] - v['n']))
@@ -725,6 +749,8 @@ def run_job(job: Dict[str, Any]) -> str:
                 progress(f'{mode}: simulating the current rules')
                 bench = Bench(mode)
                 b = baseline(mode, bench)
+                if b:
+                    progress.link_run(b['run_id'])
                 say(f"{mode}: {b.get('trades', 0) if b else 0} trades, {b.get('total_r') if b else '—'}R")
                 if kind == 'nightly':
                     for n in shadow_and_guards(mode, bench):
@@ -733,7 +759,9 @@ def run_job(job: Dict[str, Any]) -> str:
             candidate_outcomes(progress)
             bench = Bench('options')
             if bench.ready():
-                baseline('options', bench)
+                b = baseline('options', bench)
+                if b:
+                    progress.link_run(b['run_id'])
                 if kind == 'nightly':
                     for n in shadow_and_guards('options', bench):
                         say(f'options: {n}')
