@@ -132,6 +132,12 @@ E = [
     ('demo', 'GET', '/api/demo/statement.csv', '/api/demo/statement.csv', None, '',
      'The whole statement as a spreadsheet (CSV): date, time, type, description, detail, amount, balance, and each charge line.'),
     ('demo', 'POST', '/api/demo/sync', '/api/demo/sync', {}, '', 'Takes and settles trades now (it also runs every minute in the session).'),
+    ('demo', 'GET', '/api/squareoff', '/api/squareoff', None, '',
+     'What you could square off now: open paper trades and demo positions, each at its live price, with `why` when it cannot close now.'),
+    ('demo', 'POST', '/api/squareoff', '/api/squareoff', {'paper': ['swing:211']},
+     '`paper` (trade refs, `swing:<id>`, `intraday:<id>`, `options:<id>`), `demo` (position ids), or `all`: `paper`, `demo` or `both`',
+     'Squares off now, at the live price: the paper trades in `paper`, the demo positions in `demo`, or with `all` everything open. '
+     'A paper trade\'s demo position follows at the same price. Each item is closed or says why not; the rest go ahead. A write token or a signed-in page.'),
 
     ('news', 'GET', '/api/news', '/api/news?symbol=PAYTM&days=3', None, '`?symbol=X`, `?kind=filing|media`, `?days=1–45` (7)',
      'The news desk: filings and headlines, newest first, for every stock followed (or one stock), with `watch` and the desk\'s `state`.'),

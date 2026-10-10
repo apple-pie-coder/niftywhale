@@ -477,7 +477,7 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
     # Rollback: live trades since the last change lost, and the old rules would have done better.
     lc = st.get('last_change')
     if lc and pol['mode'] != 'off' and not lc.get('reverted') and bench.ready():
-        live = [t for t in store.live_trades(mode) if (t['entry_time'] or '')[:10] >= lc['session']]
+        live = [t for t in store.live_trades(mode) if (t['entry_time'] or '')[:10] >= lc['session'] and not t.get('manual')]
         prev = {**current_thresholds(mode), **{k: float(b) for k, (b, _) in (lc.get('changed') or {}).items() if b is not None}}
         newr = [t for t in bench.run(current_thresholds(mode)) if t['entry_time'][:10] >= lc['session']]
         oldr = [t for t in bench.run(prev) if t['entry_time'][:10] >= lc['session']]
@@ -490,8 +490,9 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
             notes.append('rolled back')
         st = state(mode)
 
-    # Pause / resume the Telegram entry alerts.
-    trades = store.live_trades(mode)
+    # Pause / resume the Telegram entry alerts. Trades you squared off yourself are your call, not the
+    # rules' result: they count in your journal, not in judging the rules.
+    trades = [t for t in store.live_trades(mode) if not t.get('manual')]
     paused = store.settings().get(f'paused_{mode}') == '1'
     if not paused and pol['mode'] != 'off':
         # Only trades since alerts last came back (or rules last changed): the streak that

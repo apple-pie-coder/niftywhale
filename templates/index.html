@@ -1218,6 +1218,19 @@
     .ap-card[data-tone="accent"] { border-color: var(--accent); background: var(--accent-soft); }
     .ap-diff { margin-top: 3px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: normal; }
     .ap-more { padding: 8px 0 0; font-size: 13px; }
+    .sq { display: grid; gap: 12px; }
+    .sq-sec { display: grid; gap: 4px; }
+    .sq-head { padding: 4px 0 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .sq-head label, .sq-row { display: flex; gap: 10px; align-items: center; cursor: pointer; }
+    .sq-row { padding: 7px 4px; border-radius: var(--r-sm); font-size: 13px; }
+    .sq-row:hover { background: var(--sunk); }
+    .sq-row[data-off] { cursor: default; opacity: .6; }
+    .sq-main { display: grid; gap: 1px; min-width: 0; flex: 1; }
+    .sq-main .muted { font-variant-numeric: tabular-nums; }
+    .sq-why { font-size: 12px; color: var(--ink-3); text-align: right; max-width: 45%; }
+    .sq-none { margin: 6px 0; }
+    .sq-note { font-size: 13px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--warn-soft, var(--sunk)); }
+    .sq-acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
     .pf-rules { margin: 8px 0 0; line-height: 1.6; }
     .pf-rules b { color: var(--ink-2); font-weight: 600; }
     #pf-run { font-size: 12.5px; max-width: 100%; }
@@ -1706,6 +1719,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title">Trade journal</h2>
                     <span class="panel-meta" id="i-journal-meta">Every intraday alert, followed to target, stop or square-off</span>
+                    <button class="btn-link" type="button" data-sq="intraday">Square off…</button>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -1831,6 +1845,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title">Ideas &amp; paper trades</h2>
                     <span class="panel-meta">Option buys from OI bias + price + PCR, followed to target, stop or square-off</span>
+                    <button class="btn-link" type="button" data-sq="options">Square off…</button>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -1947,6 +1962,7 @@
                     <button class="btn btn-primary" type="button" data-dm="deposit">Add funds</button>
                     <button class="btn" type="button" data-dm="withdraw">Withdraw</button>
                     <button class="btn" type="button" data-dm="settings">Settings</button>
+                    <button class="btn" type="button" data-sq="demo">Square off…</button>
                     <button class="btn-link" type="button" data-dm="reset">Start over</button>
                 </div>
             </div>
@@ -2052,6 +2068,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">Paper trades</h2>
                 <span class="panel-meta" id="s-journal-meta">Every entry alert, followed on 15m candles to its target or stop</span>
+                <button class="btn-link" type="button" data-sq="swing">Square off…</button>
             </div>
             <div class="stats" id="s-stats" style="margin-bottom:10px"></div>
             <div class="table-wrap">
@@ -2404,7 +2421,8 @@ const tfMode = { id: 'mode', opts: [['all', 'All modes'], ['swing', 'Swing', (r)
 const tfSt = (...names) => (z) => names.includes(z.status);
 const tfName = (r) => `${r.symbol || ''} ${r.name || ''}`;
 const TF_DEFS = {
-    sjournal: { groups: [tfIs('status', ['open', 'Open', tfSt('triggered')], ['won', 'Target', tfSt('won')], ['lost', 'Stop', tfSt('lost')]),
+    sjournal: { groups: [tfIs('status', ['open', 'Open', tfSt('triggered')], ['won', 'Target', tfSt('won')], ['lost', 'Stop', tfSt('lost')],
+                              ['closed', 'Squared off', tfSt('closed')]),
                          tfSide(), tfWhen((z) => (z.trigger || {}).choch_time)], text: tfName },
     zones: { groups: [tfIs('status', ['watching', 'Watching', tfSt('watching')], ['tapped', 'Tapped', tfSt('tapped')],
                            ['trade', 'Open trade', tfSt('triggered')], ['done', 'Closed', tfSt('won', 'lost')],
@@ -2978,7 +2996,8 @@ function renderSwingTrades() {
         return `<tr data-click="${esc(z.symbol)}" data-ref="swing:${z.id}"><td class="num">${hhmm(t.choch_time)}</td>
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td>
             <td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td><td class="r num">${px(t.target)}</td>
-            <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop' }[z.status] || z.status)}</span>${
+            <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span>${
+                t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${
                 t.approx ? ' <span class="muted" title="Partly judged on daily candles after a data gap">≈</span>' : ''}</td>
             <td class="r num">${exit}</td>
             <td class="r num">${z.status === 'triggered' ? lpR(z.symbol, t, z.side, rfmt(t.r_open)) : rfmt(t.r != null ? t.r : t.r_open)}</td></tr>`;
@@ -4669,6 +4688,74 @@ const MODE_NAME = { swing: 'Swing', intraday: 'Intraday', options: 'Options' };
 const dmWhen = (iso) => iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
 const dmDay = (iso) => iso ? new Date(iso + 'T00:00:00+05:30').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
+/* ------------------------------------------------------------- square off (by you)
+   Close open paper trades and demo positions now, at the live price: tick one, a few, or Square off all.
+   `focus`: a mode (its paper trades), 'demo' (the demo account's positions) or 'all' (both). What can't
+   close now (market shut, no live price) shows why and can't be ticked. The server prices each item
+   again when you confirm. */
+async function squareOffModal(focus = 'all', note = '') {
+    let D;
+    try { D = await api('/api/squareoff'); } catch (e) { toast('Could not load open positions: ' + e.message); return; }
+    const paper = D.paper.filter((x) => focus === 'all' || x.mode === focus);
+    const pos = focus === 'all' || focus === 'demo' ? D.demo : [];
+    const showPaper = focus !== 'demo';
+    const row = (kind, key, title, line, why) => `<label class="sq-row"${why ? ' data-off="1"' : ''}>
+        <input type="checkbox" data-sq-${kind}="${esc(key)}"${why ? ' disabled' : ''}>
+        <span class="sq-main"><b>${title}</b><span class="muted">${line}</span></span>
+        ${why ? `<span class="sq-why">${esc(why)}</span>` : ''}</label>`;
+    const paperRows = paper.map((x) => row('paper', x.ref, esc(x.label),
+        `in ${px(x.entry)} · stop ${px(x.stop)}${x.price != null ? ` · now <b>${px(x.price)}</b> · ${rfmt(x.r)}` : ''}`, x.why)).join('');
+    const posRows = pos.map((x) => row('demo', x.id, esc(x.instrument),
+        `${x.side} ${Number(x.qty).toLocaleString('en-IN')} · in ${px(x.entry)}${x.price != null ? ` · now <b>${px(x.price)}</b> · ${rupeePnl(x.unreal)}` : ''}`, x.why)).join('');
+    const section = (kind, title, rows, items) => `<div class="sq-sec"><div class="sq-head"><label><input type="checkbox" data-sq-all="${kind}"${
+        items.some((x) => !x.why) ? '' : ' disabled'}> <b>${title}</b>
+        <span class="muted">${items.length} open</span></label></div>${rows || `<p class="muted sq-none">None open.</p>`}</div>`;
+    const where = { swing: 'swing', intraday: 'intraday', options: 'options' }[focus];
+    openModal('Square off', where ? `Open ${where} paper trades` : focus === 'demo' ? 'Demo account positions' : 'Paper trades and demo positions',
+        `<div class="sq" id="sq-form">${note ? `<div class="sq-note">${note}</div>` : ''}
+            <p class="apps-foot">Closes at the live price when you confirm. A paper trade's demo position closes with it, at the same price;
+            a demo position closed on its own leaves its paper trade running. Your square-offs count in the journal, not in how the autopilot judges the rules.</p>
+            ${showPaper ? section('paper', 'Paper trades', paperRows, paper) : ''}
+            ${focus === 'demo' || focus === 'all' ? section('demo', 'Demo positions', posRows, pos) : ''}
+            <div class="apps-actions sq-acts"><button class="btn btn-danger" type="button" id="sq-sel" disabled>Square off selected</button>
+                <button class="btn" type="button" id="sq-every"${paper.concat(pos).some((x) => !x.why) ? '' : ' disabled'}>Square off all</button></div></div>`);
+    const F = $('sq-form');
+    const ticked = () => ({ paper: [...F.querySelectorAll('[data-sq-paper]:checked')].map((el) => el.dataset.sqPaper),
+                            demo: [...F.querySelectorAll('[data-sq-demo]:checked')].map((el) => +el.dataset.sqDemo) });
+    const sync = () => { const t = ticked(), n = t.paper.length + t.demo.length;
+        $('sq-sel').disabled = !n; $('sq-sel').textContent = n ? `Square off selected (${n})` : 'Square off selected'; };
+    F.addEventListener('change', (e) => {
+        const all = e.target.dataset.sqAll;
+        if (all) F.querySelectorAll(`[data-sq-${all}]:not([disabled])`).forEach((el) => { el.checked = e.target.checked; });
+        sync();
+    });
+    const go = async (body, n) => {
+        if (!await ask({ title: `Square off ${n} position${n === 1 ? '' : 's'}?`, ok: 'Square off', danger: true,
+                         body: 'At the live price now. A closed trade cannot be reopened.' })) return;
+        try {
+            const r = await api('/api/squareoff', body);
+            const fails = [...r.results.paper.filter((x) => !x.ok).map((x) => `${x.ref}: ${x.why}`),
+                           ...r.results.demo.filter((x) => !x.ok).map((x) => `position ${x.id}: ${x.why}`)];
+            toast(`${r.closed} squared off${r.failed ? `, ${r.failed} not` : ''}`);
+            refresh();
+            if (mode === 'demo') loadDemo();
+            squareOffModal(focus, fails.length ? `Not squared off: ${fails.map(esc).join('; ')}` : '');
+        } catch (e) { toast(e.message); }
+    };
+    $('sq-sel').addEventListener('click', () => { const t = ticked(); go(t, t.paper.length + t.demo.length); });
+    $('sq-every').addEventListener('click', () => {
+        const n = (showPaper ? paper.filter((x) => !x.why).length : 0) + pos.filter((x) => !x.why).length;
+        // Square off all, scoped to what this window shows (one mode's trades, or the demo account).
+        const body = focus === 'all' ? { all: 'both' } : focus === 'demo' ? { all: 'demo' }
+            : { paper: paper.filter((x) => !x.why).map((x) => x.ref) };
+        go(body, n);
+    });
+}
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sq]');
+    if (b) { e.preventDefault(); squareOffModal(b.dataset.sq); }
+});
+
 async function loadDemo() {
     clearTimeout(demoTimer);
     try { demoData = await api('/api/demo'); renderDemo(); demoLive(); }
@@ -6148,7 +6235,8 @@ function renderIntraday() {
         return `<tr data-intra-sym="${esc(z.symbol)}" data-click data-ref="intraday:${z.id}"><td class="num">${hhmm(t.choch_time)}</td>
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td><td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td>
             <td class="r num">${px(t.target)}</td>
-            <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span></td>
+            <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span>${
+                t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}</td>
             <td class="r num">${t.exit != null ? px(t.exit) + ' <span class="muted">' + tm(t.exit_time) + '</span>' : '—'}</td>
             <td class="r num">${rfmt(t.r != null ? t.r : t.r_open)}</td></tr>`;
     }).join('') : `<tr><td colspan="8"><div class="empty"><b>No intraday alerts yet</b>Each entry alert is followed on 5m candles
@@ -7893,6 +7981,7 @@ const CK_ACTIONS = [
     ['Add demo funds…', 'demo deposit money', CK_IC.money, () => { setMode('demo'); demoFundsModal('deposit'); }, 'demo'],
     ['Withdraw demo funds…', 'demo money out', CK_IC.money, () => { setMode('demo'); demoFundsModal('withdraw'); }, 'demo'],
     ['Demo funds settings', 'risk limits charges max open per day', CK_IC.gear, () => { setMode('demo'); demoSettingsModal(); }, 'demo'],
+    ['Square off positions…', 'square off close exit all bulk selected paper trades demo positions', CK_IC.money, () => squareOffModal('all'), 'demo'],
     ['Start the demo account over…', 'demo reset fresh', CK_IC.money, () => { setMode('demo'); demoResetModal(); }, 'demo'],
     ['Download the demo statement (CSV)', 'demo ledger export csv', CK_IC.doc, () => { location.href = '/api/demo/statement.csv'; }, 'demo'],
     ['Indicator settings', 'bollinger vwap orb delta colours colors', CK_IC.gear, () => openIndicatorSettings(), ''],

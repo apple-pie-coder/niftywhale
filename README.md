@@ -1129,6 +1129,22 @@ until a position closes or the next day starts), which modes are taken, and char
 The account checks for new and closed trades every minute during the session and every ten minutes otherwise. From the command
 palette (4.8), `add 50k` or `withdraw 1L` moves demo money directly.
 
+### 4.17 Square off by hand
+
+**Square off…** closes open positions now, at the live price: one, a few you tick, or **Square off all**. It is on the Demo
+funds tab (the demo account's positions), above each paper-trade journal (swing, intraday, options: that mode's trades), and in
+the command palette (*Square off positions*: everything). Each row shows the entry, the live price and where it stands (R, or
+open P&L in rupees); what cannot close now says why, and cannot be ticked.
+
+- **A paper trade** closes as *squared off*, marked *(you)* in its journal. Its demo position closes with it, at the same price,
+  charges included.
+- **A demo position** can be closed on its own: the paper trade behind it runs on to its target or stop.
+- **When:** only while the instrument trades (a stock with F&O until 15:15, the rest until 15:30, options until 15:40, weekdays),
+  and only at a live feed price (the Dhan feed gives it): a candle close minutes old is not what a square-off would get. The
+  server prices each item again when you confirm. A trade that hit its target or stop in the meantime is left as it closed.
+- **The autopilot** counts your square-offs in the journal and the Performance tab, but not when it judges the rules (rollback,
+  pause and resume look only at the rules' own exits): an exit you chose says nothing about the rules.
+
 ## 5. Intraday mode
 
 Intraday mode runs the same protocol **one timeframe down, inside one session**. The 15-minute
@@ -3223,6 +3239,47 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/demo
 ```
 
 ### 12.7 News and smart money
+
+#### `GET /api/squareoff`
+
+What you could square off now: open paper trades and demo positions, each at its live price, with `why` when it cannot close now.
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/squareoff
+```
+
+```json
+{
+  "at": "2026-10-12T11:02:41+05:30",
+  "demo": [
+    {"entry": 126.5, "id": 14, "instrument": "ABC (delivery)", "mode": "swing", "price": 130.32, "qty": 1976, "ref": "swing:211", "side": "long", "symbol": "ABC", "unreal": 7548.32, "why": null}
+  ],
+  "paper": [
+    {"entry": 126.5, "label": "Swing long · ABC", "mode": "swing", "price": 130.32, "r": 1.0, "ref": "swing:211", "side": "long", "stop": 122.68, "symbol": "ABC", "target": 151.0, "why": null}
+  ]
+}
+```
+
+#### `POST /api/squareoff`
+
+Squares off now, at the live price: the paper trades in `paper`, the demo positions in `demo`, or with `all` everything open. A paper trade's demo position follows at the same price. Each item is closed or says why not; the rest go ahead. A write token or a signed-in page.
+
+**Body:** `paper` (trade refs, `swing:<id>`, `intraday:<id>`, `options:<id>`), `demo` (position ids), or `all`: `paper`, `demo` or `both`
+
+```sh
+curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"paper": ["swing:211"]}' http://127.0.0.1:5058/api/squareoff
+```
+
+```json
+{
+  "closed": 1,
+  "failed": 0,
+  "results": {"demo": [], "paper": [{"ok": true, "price": 130.32, "r": 1.0, "ref": "swing:211", "why": null}]},
+  "demo": [],
+  "paper": []
+}
+```
 
 #### `GET /api/news`
 

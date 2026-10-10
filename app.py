@@ -1721,7 +1721,8 @@ def demo_sync() -> dict:
             res = demo.settle(p, float(t['exit']), st['charges'], t.get('exit_time') or t['entry_time'])
             fields = dict(status='closed', exit=float(t['exit']), exit_time=t.get('exit_time') or t['entry_time'],
                           gross=res['gross'], charges=res['charges'], net=res['net'], charges_detail=res['charges_detail'],
-                          last=float(t['exit']), unreal=None, note=DEMO_OUTCOME.get(t['status'], ''))
+                          last=float(t['exit']), unreal=None,
+                          note=store.MANUAL_NOTE if t.get('manual') else DEMO_OUTCOME.get(t['status'], ''))
             store.update_demo_position(p['id'], **fields)
             p.update(fields)
             got['closed'] += 1
@@ -2981,7 +2982,7 @@ def swing_trades_state() -> dict:
     # Newest entry first: a zone set early can trigger late, so not in zone order.
     journal = sorted((live_zone(z) for z in store.swing_trades(limit=500)), key=lambda z: z['trigger'].get('choch_time') or '',
                      reverse=True)
-    closed = [z for z in journal if z['status'] in ('won', 'lost')]
+    closed = [z for z in journal if z['status'] in ('won', 'lost', 'closed')]
     rs = [z['trigger'].get('r') or 0 for z in closed]
     return {'journal': journal,
             'stats': {'open': sum(z['status'] == 'triggered' for z in journal),
@@ -3474,6 +3475,142 @@ def api_demo_statement_csv():
 @app.route('/api/demo/sync', methods=['POST'])
 def api_demo_sync():
     return jsonify(safe({'sync': demo_sync(), **_demo_view()}))
+
+
+# ---------------------------------------------------------------- square off (by you)
+# Close open paper trades and demo positions now, at the live price: one, a selection, or all. A
+# paper trade closes as 'closed', marked yours (the autopilot judges the rules without it), and the
+# demo position that follows it settles at the same price. A demo position can also be closed on its
+# own; its paper trade then runs on. Only while the instrument trades (an F&O stock's continuous
+# trading ends at 15:15, the F&O segment at 15:40), and only at a live feed price: a candle close
+# minutes old is not what a square-off would get.
+def _tradable_why(mode: str, symbol: str, now: datetime):
+    """Why `symbol` cannot be traded now, or None when it can."""
+    if now.weekday() >= 5:
+        return 'the market is closed'
+    if now.time() < session.OPEN:
+        return 'the market is not open yet'
+    end = session.fo_close(now.date()) if mode == 'options' else \
+        session.cts_end(symbol in universe.fo_symbols(), now.date())
+    if now.time() >= end:
+        return f"{'the F&O segment' if mode == 'options' else symbol} stopped trading at {end:%H:%M}"
+    return None
+
+
+def squareoff_items(now: datetime = None) -> dict:
+    """Everything open that you could square off, with the live price, its R or open P&L, and why
+    not (`why`) when it cannot be closed now."""
+    now = now or data.now_ist()
+    paper, positions = [], []
+    for tr in _open_trades():
+        hit = live_px(tr['key'])
+        why = _tradable_why(tr['mode'], tr['symbol'], now) or (None if hit else 'no live price (the Dhan feed gives it)')
+        side = tr['side'] if tr['mode'] != 'options' else tr['t'].get('opt_side')
+        paper.append({'ref': tr['ref'], 'mode': tr['mode'], 'symbol': tr['symbol'], 'side': tr['side'],
+                      'label': _trade_label(tr['mode'], tr['symbol'], {**tr['t'], 'side': side}),
+                      'entry': tr['entry'], 'stop': tr['stop'], 'target': tr['target'],
+                      'price': hit[0] if hit else None, 'r': _r_at(hit[0], tr['entry'], tr['stop'], tr['side']) if hit else None,
+                      'why': why})
+    for p in store.demo_positions('open'):
+        hit = live_px(_pos_key(p))
+        why = _tradable_why(p['mode'], p['symbol'], now) or (None if hit else 'no live price (the Dhan feed gives it)')
+        positions.append({'id': p['id'], 'ref': p['ref'], 'mode': p['mode'], 'symbol': p['symbol'], 'instrument': p['instrument'],
+                          'side': p['side'], 'qty': p['qty'], 'entry': p['entry'], 'price': hit[0] if hit else None,
+                          'unreal': demo.mark(p, hit[0]) if hit else None, 'why': why})
+    return {'paper': paper, 'demo': positions, 'at': now.isoformat(timespec='seconds')}
+
+
+def _close_paper(item: dict, now: datetime) -> dict:
+    """Square off one paper trade at its live price. The status change is claimed (only while it is
+    still open), so a watcher closing it at its target or stop at the same moment wins or loses cleanly."""
+    if item.get('why'):
+        return {'ref': item['ref'], 'ok': False, 'why': item['why']}
+    px, r, stamp = float(item['price']), item['r'], now.isoformat(timespec='seconds')
+    mode, sid = item['ref'].split(':', 1)
+    if mode in ('swing', 'intraday'):
+        z = store.get_zone(int(sid))
+        t = json.loads(z['trigger']) if z and z.get('trigger') else {}
+        t.update(exit=px, exit_time=stamp, r=r, result='closed', by='you')
+        note = f"Squared off by you at {px:.2f} ({stamp[11:16]}) · {r:+.2f}R"
+        ok = bool(z) and store.update_zone(int(sid), only_if=('triggered',), status='closed', last_checked=stamp, trigger=t, note=note)
+        if ok:
+            notice_result(mode, item['ref'], item['symbol'], {**t, 'side': item['side']}, 'closed', px, r, stamp, 'Squared off by you')
+    else:
+        i = next((x for x in store.ideas(status='open') if x['id'] == int(sid)), None)
+        ok = bool(i) and store.update_idea(int(sid), only_if='open', status='closed', exit=px, exit_time=stamp, r=r,
+                                           note=store.MANUAL_NOTE, last=px, r_open=None)
+        if ok:
+            notice_result('options', item['ref'], item['symbol'], {**i, 'opt_side': i['side']}, 'closed', px, r, stamp,
+                          'Squared off by you')
+    if ok:
+        logger.info(f"Squared off by you: {item['ref']} {item['symbol']} at {px} ({r:+.2f}R)")
+    return {'ref': item['ref'], 'ok': bool(ok), 'price': px, 'r': r,
+            'why': None if ok else 'it closed meanwhile (target, stop or square-off)'}
+
+
+def _close_demo(item: dict, now: datetime, st: dict) -> dict:
+    """Square off one demo position at its live price, charges included. Call with DEMO_LOCK held."""
+    if item.get('why'):
+        return {'id': item['id'], 'ok': False, 'why': item['why']}
+    p = next((x for x in store.demo_positions('open') if x['id'] == item['id']), None)
+    if not p:
+        return {'id': item['id'], 'ok': False, 'why': 'it closed meanwhile'}
+    px, stamp = float(item['price']), now.isoformat(timespec='seconds')
+    res = demo.settle(p, px, st['charges'], stamp)
+    fields = dict(status='closed', exit=px, exit_time=stamp, gross=res['gross'], charges=res['charges'], net=res['net'],
+                  charges_detail=res['charges_detail'], last=px, unreal=None, note=store.MANUAL_NOTE)
+    ok = store.update_demo_position(p['id'], only_if='open', **fields)
+    if ok:
+        p.update(fields)
+        notice_demo_close(p)
+        logger.info(f"Demo position squared off by you: {p['instrument']} at {px} (net {res['net']:+.2f})")
+    return {'id': item['id'], 'ok': bool(ok), 'price': px, 'net': res['net'] if ok else None,
+            'why': None if ok else 'it closed meanwhile'}
+
+
+@app.route('/api/squareoff')
+def api_squareoff_list():
+    """What you could square off now: open paper trades and demo positions, each at its live price."""
+    return jsonify(safe(squareoff_items()))
+
+
+@app.route('/api/squareoff', methods=['POST'])
+def api_squareoff():
+    """Square off now, at the live price: {"paper": [refs], "demo": [position ids]}, or {"all": "paper" |
+    "demo" | "both"} for everything open. Each item is closed or says why not; the rest go ahead."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({'error': 'send {"paper": [...], "demo": [...]} or {"all": "paper" | "demo" | "both"}'}), 400
+    now = data.now_ist()
+    items = squareoff_items(now)
+    every = body.get('all')
+    if every is not None and every not in ('paper', 'demo', 'both'):
+        return jsonify({'error': 'all is paper, demo or both'}), 400
+    refs, ids = body.get('paper') or [], body.get('demo') or []
+    if not isinstance(refs, list) or not isinstance(ids, list) or not all(isinstance(x, str) for x in refs) \
+            or not all(isinstance(x, int) and not isinstance(x, bool) for x in ids):
+        return jsonify({'error': 'paper is a list of trade refs, demo a list of position ids'}), 400
+    if every in ('paper', 'both'):
+        refs = [x['ref'] for x in items['paper']]
+    if every in ('demo', 'both'):
+        ids = [x['id'] for x in items['demo']]
+    if not refs and not ids:
+        return jsonify({'error': 'nothing to square off'}), 400
+    by_ref, by_id = {x['ref']: x for x in items['paper']}, {x['id']: x for x in items['demo']}
+    results = {'paper': [], 'demo': []}
+    with DEMO_LOCK:                     # the demo positions first: a sync must not settle them meanwhile
+        st = demo_settings()
+        for pid in dict.fromkeys(ids):
+            results['demo'].append(_close_demo(by_id[pid], now, st) if pid in by_id
+                                   else {'id': pid, 'ok': False, 'why': 'not an open demo position'})
+    for ref in dict.fromkeys(refs):
+        results['paper'].append(_close_paper(by_ref[ref], now) if ref in by_ref
+                                else {'ref': ref, 'ok': False, 'why': 'not an open paper trade'})
+    if any(r['ok'] for r in results['paper']):
+        demo_sync()                     # their demo positions settle at the same price
+    done = sum(r['ok'] for rs in results.values() for r in rs)
+    return jsonify(safe({'results': results, 'closed': done, 'failed': sum(len(v) for v in results.values()) - done,
+                         **squareoff_items()}))
 
 
 @app.route('/api/smart')

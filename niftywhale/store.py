@@ -53,6 +53,7 @@ SETTING_DEFAULTS = {
     'lab_years_swing': '3',
     'lab_years_intraday': '1',      # intraday replays are the heavy ones (~0.5 s per stock-session)
 }
+MANUAL_NOTE = 'squared off by you'   # a trade or demo position you closed yourself (app.py, square off)
 ZONE_LIFETIME_DAYS = 10         # a setup that has not played out in two weeks is stale
 LIFETIME_NOTE = 'older than the zone lifetime'
 STRUCTURE_FAILED = 'structure failed'     # the tail of an intraday zone's note when its leg origin broke
@@ -569,12 +570,12 @@ def is_paper(z: Dict[str, Any]) -> bool:
     return bool((t or {}).get('paper'))
 
 
-SWING_TRADES = ('triggered', 'won', 'lost')
+SWING_TRADES = ('triggered', 'won', 'lost', 'closed')      # closed: squared off by you
 
 
 def swing_trades(statuses=SWING_TRADES, limit: int = 500) -> List[Dict[str, Any]]:
     """Swing paper trades, newest first: open ones ('triggered') and closed
-    ones ('won', 'lost'). Each row's `trigger` holds the trade."""
+    ones ('won', 'lost', or 'closed' when you squared one off). Each row's `trigger` holds the trade."""
     q = (f"SELECT * FROM zones WHERE COALESCE(mode, 'swing') = 'swing' "
          f"AND status IN ({','.join('?' * len(statuses))}) ORDER BY id DESC LIMIT ?")
     with connect() as c:
@@ -1469,15 +1470,19 @@ def add_demo_position(p: Dict[str, Any]) -> int:
                          f"VALUES ({','.join('?' * len(cols))}, ?, ?)", vals + [now, now]).lastrowid
 
 
-def update_demo_position(pid: int, **fields) -> None:
+def update_demo_position(pid: int, only_if: Optional[str] = None, **fields) -> int:
+    """Set fields; with `only_if`, only while the position still has that status. Returns whether it changed."""
     if not fields:
-        return
+        return 0
     if 'charges_detail' in fields and fields['charges_detail'] is not None:
         fields['charges_detail'] = json.dumps(fields['charges_detail'])
     fields['updated'] = _now()
+    q, args = f"UPDATE demo_positions SET {', '.join(k + ' = ?' for k in fields)} WHERE id = ?", list(fields.values()) + [pid]
+    if only_if:
+        q += ' AND status = ?'
+        args.append(only_if)
     with connect() as c:
-        c.execute(f"UPDATE demo_positions SET {', '.join(k + ' = ?' for k in fields)} WHERE id = ?",
-                  list(fields.values()) + [pid])
+        return c.execute(q, args).rowcount
 
 
 def clear_demo() -> None:
@@ -1558,7 +1563,8 @@ def live_trades(mode: str) -> List[Dict[str, Any]]:
                         'entry': t.get('entry'), 'stop': t.get('stop'), 'target': t.get('target'), 'status': status,
                         'exit': t.get('exit'), 'exit_time': t.get('exit_time'),
                         'r': t.get('r') if status != 'open' else None, 'r_open': t.get('r') if status == 'open' else None,
-                        'f': f, 'ref': f"{mode}:{z['id']}", 'last': t.get('last'), 'name': z.get('name')})
+                        'f': f, 'ref': f"{mode}:{z['id']}", 'last': t.get('last'), 'name': z.get('name'),
+                        'manual': t.get('by') == 'you'})
     elif mode == 'options':
         for i in ideas(limit=5000):
             f = json.loads(i['features']) if i.get('features') else {}
@@ -1567,6 +1573,6 @@ def live_trades(mode: str) -> List[Dict[str, Any]]:
                         'exit': i['exit'], 'exit_time': i['exit_time'], 'r': i['r'] if i['status'] != 'open' else None,
                         'r_open': i['r_open'] if i['status'] == 'open' else None, 'f': f,
                         'ref': f"options:{i['id']}", 'last': i.get('last'), 'strike': i.get('strike'), 'opt_side': i.get('side'),
-                        'expiry': i.get('expiry'), 'lot': i.get('lot')})
+                        'expiry': i.get('expiry'), 'lot': i.get('lot'), 'manual': i.get('note') == MANUAL_NOTE})
     out.sort(key=lambda t: t['entry_time'] or '')
     return out
