@@ -42,6 +42,9 @@ DEFAULT_POLICY: Dict[str, Any] = {
     'max_steps': 2,                 # how far one promotion may move each threshold (tuner steps)
     'search_steps': 4,              # how far the tuner looks either side of the current value
     'fold_months': 3,
+    # The last months of history, never seen by the tuning: a proposal must not do worse than the
+    # current rules there. The tuner tries hundreds of rule sets; the best of them is partly luck.
+    'holdout_months': 3,
     'min_train_folds': 2,
     # Swing's context gates can carve a handful of lucky trades out of the history, so a swing
     # rule set must keep a real sample, in training and out of sample, to count.
@@ -66,7 +69,7 @@ DEFAULT_POLICY: Dict[str, Any] = {
 POLICY_RANGES: Dict[str, Tuple[float, float]] = {
     'max_steps': (1, 6), 'search_steps': (1, 12), 'fold_months': (1, 12), 'min_train_folds': (1, 8),
     'min_gain_r': (0.0, 1.0), 'shadow_days': (5, 120), 'shadow_max_days': (5, 250), 'cooldown_days': (1, 90),
-    'pause_window': (5, 200),
+    'pause_window': (5, 200), 'holdout_months': (0, 12),
 }
 POLICY_MODE_RANGES: Dict[str, Tuple[float, float]] = {
     'min_oos_trades': (20, 2000), 'min_train_trades': (20, 5000), 'shadow_min_trades': (1, 200),
@@ -183,6 +186,9 @@ def tune(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], current: 
     return best, best_score
 
 
+HOLDOUT_MIN_TRADES = 10        # fewer in the holdout (either rule set) and it cannot judge: the check passes, said so
+
+
 def folds(first: date, last: date, months: int) -> List[Tuple[date, date]]:
     out, cur = [], first
     while cur <= last:
@@ -200,7 +206,17 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
     the current rules, and the proposal if the tuning earns it. on_step(n, total, what) is told as each
     fold starts (and the last step, the tuning on all history), for a progress bar."""
     months = 1 if mode == 'options' else pol['fold_months']     # options history is months, not years
-    fs = folds(date(first.year, first.month, 1), last, months)
+    # The holdout: the last `holdout_months`, left out of every fold and of the final tuning, then used
+    # once to check the proposal (options have weeks of history, not years: none there yet).
+    hold = 0 if mode == 'options' else int(pol.get('holdout_months') or 0)
+    hold_from = None
+    if hold:
+        m = last.year * 12 + last.month - 1 - hold + 1
+        hold_from = date(m // 12, m % 12 + 1, 1)
+        if hold_from <= first:
+            hold, hold_from = 0, None
+    fit_last = hold_from - timedelta(days=1) if hold_from else last
+    fs = folds(date(first.year, first.month, 1), fit_last, months)
     oos_tuned, oos_current, rows = [], [], []
     test_folds = list(range(pol['min_train_folds'], len(fs)))
     total = len(test_folds) + 1                                  # every fold, then the tuning on all history
@@ -245,12 +261,26 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
     if not reasons:
         if on_step:
             on_step(total, total, 'tuning on all history')
-        whole, _ = tune(evaluate, current, specs, pol, mode, (fs[0][0].isoformat(), None))
+        whole, _ = tune(evaluate, current, specs, pol, mode, (fs[0][0].isoformat(), hold_from.isoformat() if hold_from else None))
         proposal = clamp_steps(whole, current, specs, pol['max_steps'])
         if all(abs(proposal[k] - current[k]) < 1e-9 for k in current):
             proposal, reasons = None, ['tuning on all history lands on the current rules']
+    holdout = None
+    if proposal and hold_from:
+        start = hold_from.isoformat()
+        later = lambda ts: [t for t in ts if t['entry_time'][:10] >= start]
+        ph, ch = perf.summary(later(evaluate(proposal))), perf.summary(later(evaluate(current)))
+        enough = min(ph.get('trades', 0), ch.get('trades', 0)) >= HOLDOUT_MIN_TRADES
+        ok = not enough or (ph.get('total_r') or 0) >= (ch.get('total_r') or 0)
+        holdout = {'from': start, 'months': hold, 'proposal': ph, 'current': ch, 'ok': ok, 'judged': enough}
+        checks.append({'key': 'holdout', 'label': f'Last {hold} months, never tuned on', 'value': ph.get('total_r'),
+                       'need': ch.get('total_r') if enough else f'{HOLDOUT_MIN_TRADES}+ trades to judge', 'ok': ok})
+        if not ok:
+            reasons.append(f"on the last {hold} months, which tuning never saw, {ph.get('total_r')}R against the "
+                           f"current rules' {ch.get('total_r')}R")
+            proposal = None
     return {'folds': rows, 'oos_tuned': st, 'oos_current': sc, 'gain_r': round(gain, 3),
-            'proposal': proposal, 'reasons': reasons, 'checks': checks}
+            'proposal': proposal, 'reasons': reasons, 'checks': checks, 'holdout': holdout}
 
 
 # ---------------------------------------------------------------- shadow, rollback, pause

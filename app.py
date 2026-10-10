@@ -3040,6 +3040,14 @@ def api_settings():
                     raise ValueError
             except (TypeError, ValueError):
                 return jsonify({'error': f'{k} must be 0.5 to 5 years'}), 400
+    if 'lab_slippage_bps' in body:
+        try:
+            if not 0 <= float(body['lab_slippage_bps']) <= 50:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({'error': 'lab_slippage_bps is 0 to 50 basis points'}), 400
+    if 'lab_costs' in body and str(body['lab_costs']) not in ('0', '1', 'True', 'False'):
+        return jsonify({'error': 'lab_costs is 1 (count them) or 0'}), 400
     if 'scan_time' in body:
         try:
             datetime.strptime(str(body['scan_time']), '%H:%M')
@@ -3985,7 +3993,7 @@ def api_perf():
                              'run': {k: run[k] for k in (
             'id', 'created', 'params', 'period_from', 'period_to', 'universe')}, 'summary': run['summary'],
             'breakdown': run['breakdown'], 'equity': run['equity'], 'highlights': extra.get('highlights', []),
-            'by_symbol': extra.get('by_symbol'), 'symbols': extra.get('symbols')}))
+            'by_symbol': extra.get('by_symbol'), 'symbols': extra.get('symbols'), 'costs': extra.get('costs')}))
     trades = store.live_trades(mode)
     bd = perf.breakdown(trades)
     return jsonify(safe({'source': 'live', 'mode': mode, 'summary': perf.summary(trades), 'week': perf.by_period(trades, 7),
@@ -4025,7 +4033,7 @@ def api_lab():
         'jobs': [lab.job_view(j, runs=kept_runs) for j in store.jobs(12)], 'coverage': _COVERAGE['value'], 'modes': modes, 'log': log[:40], 'log_more': len(log) > 40, 'labels': change_labels(),
         'policy': lab.policy(), 'last_report': store.get_json('lab:last_report'),
         'settings': {**{k: st[k] for k in ('lab_swing_universe', 'lab_intraday_universe', 'lab_years_swing',
-                                           'lab_years_intraday', 'weekly_report', 'lab_alerts')},
+                                           'lab_years_intraday', 'weekly_report', 'lab_alerts', 'lab_costs', 'lab_slippage_bps')},
                      'swing_universe': lab.universe_key('swing'), 'intraday_universe': lab.universe_key('intraday')},
         'candidates': store.count_candidates(), 'upcoming': lab.next_runs(),
     }))

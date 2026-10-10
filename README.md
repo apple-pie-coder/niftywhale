@@ -1586,10 +1586,19 @@ Backtests run in a second container, `niftywhale-lab`, built from the same image
    - **Intraday:** zones refreshed each scan; tapped zones frozen; rejected or broken setups not re-armed that day; no entries after 14:30; square-off.
    - Triggers and trade outcomes come from the live functions and are cached, which is what makes trying hundreds of rule sets possible on a Raspberry Pi.
 
+3. **Costs** (`niftywhale/costs.py`, on by default; **Lab settings → Costs**). Every simulated trade gives up, in R:
+   - **Dhan's charges** (brokerage, STT, exchange, IPFT, SEBI fee, stamp duty, GST, the DP charge: the demo account's schedule,
+     4.16) on a position sized as the demo account sizes one for a ₹10 lakh account: swing longs delivery, swing shorts stock
+     futures, intraday MIS, options a premium buy;
+   - **slippage**, 5 basis points of the price a side by default: on the entry (the alert reaches you after the candle closed)
+     and on an exit at the stop or the square-off; none at a target, a limit order.
+   With stops a fraction of a percent away this is a large part of a trade: a 0.3 % intraday stop gives up about a third of R.
+   Baselines, tuning, shadow runs and rollbacks all judge rules after costs. The Backtest view says what costs took, with the
+   result before them.
+
 **What a backtest can't see:**
 
-- the live data's delays and gaps;
-- costs and slippage (fills are at the alert's prices, as in the paper journal);
+- the live data's delays and gaps (slippage stands in for part of them);
 - stocks that left the index since (it uses today's members, which flatters the results).
 
 Use backtests to compare rules, not as a forecast.
@@ -1702,6 +1711,12 @@ Saturday at 09:00, Telegram gets one message per mode:
 | Pause after losing | per mode | Over the last 30 closed paper trades |
 | Roll back after losing | per mode | Since the change |
 | Limits | the tuner ranges | Per threshold, the lowest and highest value the autopilot may ever use |
+
+**Holdout** (`holdout_months`, 3 by default, 0-12): the last months of history are left out of every tuning fold and of the
+final tuning. A proposal is then checked once on them: if it made less in total there than the current rules, it is not
+proposed ("on the last 3 months, which tuning never saw, ..."). The tuner tries hundreds of rule sets, and the best of them is
+partly luck; months it never saw are the check that luck cannot pass. With fewer than 10 trades there the check cannot judge,
+and passes. Options have weeks of history, not years: no holdout there yet.
 
 Every policy value is kept inside a range, so a saved value can never switch a safeguard off or stall the lab: most
 steps per change 1-6, tuner search 1-12 steps either side, shadow run 5-120 sessions, days between changes 1-90, out-of-sample

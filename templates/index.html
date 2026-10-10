@@ -7154,7 +7154,11 @@ function renderPerf() {
         `<option value="${r.id}"${d.run && r.id === d.run.id ? ' selected' : ''}>${esc(hhmm(r.created))} · ${r.trades || 0} trades, ${esc(sgnR(r.total_r))}${i ? '' : ' · latest'}</option>`).join('')}</select>` : '';
     const params = pfSrc === 'backtest' && d.run && d.run.params ? Object.entries(d.run.params) : [];
     $('pf-rules').hidden = !params.length;
-    $('pf-rules').innerHTML = params.length ? `Rules in this run: ${params.map(([k, v]) => `${esc(PARAM_LABEL[k] || k)} <b>${esc(fmtParam(k, v))}</b>`).join(' · ')}` : '';
+    const ck = pfSrc === 'backtest' && d.costs;          // what costs did, when the run counted them
+    $('pf-rules').innerHTML = (params.length ? `Rules in this run: ${params.map(([k, v]) => `${esc(PARAM_LABEL[k] || k)} <b>${esc(fmtParam(k, v))}</b>`).join(' · ')}` : '')
+        + (ck ? `<br>${ck.on ? `After costs: Dhan's charges and ${ck.slippage_bps} bps slippage a side, about <b>${sgnR(-(ck.avg_cost_r || 0))}</b> a trade.
+            Before costs: ${sgnR(ck.gross_avg_r)} a trade, ${sgnR(ck.gross_total_r, 1)} in all.` : '<b>Before costs</b> (switched off in Lab settings).'}`
+              : pfSrc === 'backtest' && d.run ? '<br><span class="muted">This run is from before costs were counted.</span>' : '');
     if (pfSrc === 'backtest' && !d.run) {
         $('pf-meta').textContent = 'No backtest yet';
         $('pf-stats').innerHTML = stat('Backtest', 'Not run yet', 'The lab runs one after the history has downloaded', 'warn');
@@ -7610,6 +7614,9 @@ function labSettingsModal() {
         <label class="ind-row"><span><b>Universe</b><small>the stocks its backtests and tuning use</small></span>${uniSelect('lab_intraday_universe', 'intraday')}</label>
         <label class="ind-row"><span><b>History</b><small>5m and 15m candles replayed</small></span>${years('lab_years_intraday')}</label>
         <p class="hint" id="labs-est"></p>
+        <h3 class="label">Costs</h3>
+        <label class="ind-row"><span><b>Count costs</b><small>Dhan's charges and slippage on every backtested trade, so rules are judged on what a trade keeps</small></span><input type="checkbox" data-labs="lab_costs"${st.lab_costs !== '0' ? ' checked' : ''}></label>
+        <label class="ind-row"><span><b>Slippage</b><small>basis points of the price, on the entry and on a stop or square-off (5 = 0.05 %)</small></span><input type="number" data-labs="lab_slippage_bps" min="0" max="50" step="1" value="${esc(st.lab_slippage_bps || '5')}"></label>
         <h3 class="label">Report</h3>
         <label class="ind-row"><span><b>Weekly report</b><small>Telegram, Saturday 09:00</small></span><input type="checkbox" data-labs="weekly_report"${st.weekly_report === '1' ? ' checked' : ''}></label>
         <label class="ind-row"><span><b>Job alerts</b><small>Telegram: 15 minutes before each scheduled run, then when a job starts (with when it should end) and ends</small></span><input type="checkbox" data-labs="lab_alerts"${st.lab_alerts !== '0' ? ' checked' : ''}></label>

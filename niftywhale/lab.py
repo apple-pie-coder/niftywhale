@@ -25,11 +25,11 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import replace
 from datetime import date, datetime, time as dtime, timedelta
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import autopilot, backtest, config, data, dhan, history, intraday, notify, options, perf, smc, store, universe
+from niftywhale import autopilot, backtest, config, costs, data, dhan, history, intraday, notify, options, perf, smc, store, universe
 
 logger = logging.getLogger('niftywhale.lab')
 
@@ -203,6 +203,16 @@ def build_records(mode: str, job: Dict[str, Any], progress: Callable[[str], None
 
 
 # ---------------------------------------------------------------- simulation
+def cost_settings() -> Tuple[bool, float]:
+    """Whether backtests count costs (Lab settings, on by default), and the slippage a side in bps."""
+    st = store.settings()
+    try:
+        slip = min(50.0, max(0.0, float(st.get('lab_slippage_bps') or costs.DEFAULT_SLIPPAGE_BPS)))
+    except ValueError:
+        slip = costs.DEFAULT_SLIPPAGE_BPS
+    return st.get('lab_costs', '1') != '0', slip
+
+
 class Bench:
     """Everything needed to simulate one mode, loaded once, with a memo shared by all
     the rule sets tried (most of them see the same zones)."""
@@ -212,13 +222,16 @@ class Bench:
         self.rules = current_rules(mode)
         self.memo: Dict = {}
         self.cache: Dict = {}
+        self.costs, self.slippage_bps = cost_settings()
         if mode == 'options':
             self.cands = [c for c in store.option_candidates() if c.get('outcomes')]
+            self.lots = {s: dhan.lot_size(s) for s in {c['symbol'] for c in self.cands}}
             return
         self.symbols = [m['symbol'] for m in universe_for(mode)]
         self.records = {s: backtest.load_records(mode, s) for s in self.symbols}
         key = backtest.structural_key(mode, self.rules)
         self.records = {s: r for s, r in self.records.items() if r and r.get('key') == key}
+        self.lots = {s: dhan.lot_size(s) for s in self.records} if mode == 'swing' else {}     # swing shorts are futures
         self.market = history.load('market', 'NIFTY_VIX')
         self.dailies = {s: history.load('1d', s) for s in self.records}
         self.d15 = backtest.Data('15m')
@@ -234,10 +247,13 @@ class Bench:
         fp = tuple(sorted((k, round(v, 6)) for k, v in thr.items()))
         if fp not in self.cache:
             if self.mode == 'options':
-                self.cache[fp] = options.simulate_candidates(self.cands, thr)
+                trades = options.simulate_candidates(self.cands, thr)
             else:
-                self.cache[fp] = backtest.simulate(self.mode, list(self.records), thr, self.rules, self.memo, self.d15,
-                                                   self.d5, self.records, self.market, self.dailies)
+                trades = backtest.simulate(self.mode, list(self.records), thr, self.rules, self.memo, self.d15,
+                                           self.d5, self.records, self.market, self.dailies)
+            # After costs (costs.py): every rule set is judged on what a trade would have kept.
+            self.cache[fp] = costs.apply(trades, self.mode, self.slippage_bps, thr.get('stop_pct'), self.lots) \
+                if self.costs else trades
         return self.cache[fp]
 
     def span(self):
@@ -257,12 +273,18 @@ def baseline(mode: str, bench: Optional['Bench'] = None) -> Optional[Dict[str, A
     trades = bench.run(thr)
     first, last = bench.span()
     s = perf.summary(trades)
+    # The same trades before costs, and what costs took, for the Performance view.
+    gross = perf.summary([{**t, 'r': t.get('r_gross', t.get('r'))} for t in trades])
+    paid = [t['cost_r'] for t in trades if t.get('cost_r') is not None]
+    cost_note = {'on': bench.costs, 'slippage_bps': bench.slippage_bps,
+                 'gross_avg_r': gross.get('avg_r'), 'gross_total_r': gross.get('total_r'),
+                 'avg_cost_r': round(sum(paid) / len(paid), 3) if paid else None}
     run_id = store.add_run(mode, 'baseline', thr, (str(first), str(last)),
                            universe_key(mode) if mode != 'options' else 'options candidates',
                            s, perf.breakdown(trades), perf.equity(trades),
                            {'highlights': perf.highlights(perf.breakdown(trades)),
                             'symbols': len(bench.records) if mode != 'options' else None,
-                            'by_symbol': _by_symbol(trades)})
+                            'by_symbol': _by_symbol(trades), 'costs': cost_note})
     store.prune_runs()
     return {'run_id': run_id, **s}
 

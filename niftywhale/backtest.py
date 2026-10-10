@@ -23,8 +23,9 @@ Two stages, so the autopilot can try hundreds of rule sets on a Raspberry Pi:
 
 What a backtest cannot see: the live data's delays and gaps, today's universe
 applied to the past (stocks that left the index are missing: survivorship
-bias), costs and slippage (fills are at the alert's prices, as in the paper
-journal). Results are a guide to how rules compare, not a forecast.
+bias). Fills here are at the alert's prices, as in the paper journal; the lab
+takes costs and slippage off every trade afterwards (costs.py, lab.Bench).
+Results are a guide to how rules compare, not a forecast.
 """
 import hashlib
 import json

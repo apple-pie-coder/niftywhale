@@ -52,6 +52,8 @@ SETTING_DEFAULTS = {
     'lab_intraday_universe': '',    # empty: the live intraday universe (`intraday_universe`)
     'lab_years_swing': '3',
     'lab_years_intraday': '1',      # intraday replays are the heavy ones (~0.5 s per stock-session)
+    'lab_costs': '1',               # backtests count Dhan's charges and slippage (costs.py)
+    'lab_slippage_bps': '5',        # slippage a side, in basis points of the price
 }
 MANUAL_NOTE = 'squared off by you'   # a trade or demo position you closed yourself (app.py, square off)
 ZONE_LIFETIME_DAYS = 10         # a setup that has not played out in two weeks is stale
