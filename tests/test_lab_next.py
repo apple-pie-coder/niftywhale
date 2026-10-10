@@ -14,6 +14,10 @@ os.environ['NIFTYWHALE_SCHEDULER'] = '0'
 os.environ.setdefault('DB_PATH', os.path.join(_tmp, 'test.db'))
 os.environ.setdefault('UNIVERSE_PATH', os.path.join(_tmp, 'universe.json'))
 
+from niftywhale import store as _store  # noqa: E402
+assert os.path.realpath(_store.DB_PATH).startswith(os.path.realpath(tempfile.gettempdir())), \
+    f'tests would write to {_store.DB_PATH}; run them with DB_PATH set to a temporary file'
+
 from niftywhale import autopilot, lab  # noqa: E402
 
 POL = autopilot.policy({})

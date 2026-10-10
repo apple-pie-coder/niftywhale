@@ -19,6 +19,10 @@ os.environ.setdefault('UNIVERSE_PATH', os.path.join(_tmp, 'universe.json'))
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
+from niftywhale import store as _store  # noqa: E402
+assert os.path.realpath(_store.DB_PATH).startswith(os.path.realpath(tempfile.gettempdir())), \
+    f'tests would write to {_store.DB_PATH}; run them with DB_PATH set to a temporary file'
+
 from niftywhale import features, history, intraday, smc  # noqa: E402
 
 IST = 'Asia/Kolkata'
