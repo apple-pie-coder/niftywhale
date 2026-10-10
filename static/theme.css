@@ -166,6 +166,32 @@
     background: color-mix(in srgb, var(--surface) 84%, white 10%);
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.30), inset 0 1px 0 var(--spec);
 }
+/* Phones and tablets: the sidebar slides in over the page as a sheet. Over the dimmed page a panel as clear as the
+   desktop's turns grey, so the sheet is denser frosted glass with an edge highlight; its sticky header is the same
+   glass (not a solid band); the page behind it blurs a little. */
+@media (max-width: 960px) {
+    :root:not([data-style="classic"]) .sidebar {
+        background-color: color-mix(in srgb, var(--surface) 88%, transparent);
+        background-image: linear-gradient(180deg, var(--sheen) 0, transparent 160px);
+        border-color: var(--glass-edge);
+        box-shadow: 18px 0 50px rgba(5, 12, 18, 0.28), inset -1px 0 0 var(--rim), inset 0 1px 0 var(--spec);
+        -webkit-backdrop-filter: blur(34px) saturate(190%);
+        backdrop-filter: blur(34px) saturate(190%);
+    }
+    :root:not([data-style="classic"]) .sb-bar {
+        background: color-mix(in srgb, var(--surface) 72%, transparent);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(20px) saturate(180%);
+        margin: 0 -18px 2px; padding-left: 18px; padding-right: 18px;
+    }
+    :root:not([data-style="classic"]) .sb-scrim {
+        background: rgba(5, 12, 18, 0.32);
+        -webkit-backdrop-filter: blur(3px);
+        backdrop-filter: blur(3px);
+    }
+    :root[data-style="classic"] .sidebar { border-radius: 0; box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2); }
+}
+
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :root .topbar, :root .ticker, :root .card, :root #doc, :root section[data-for], :root .table-wrap, :root .smf-card,
     :root .box, :root .fullchart, :root .modal, :root .ask, :root .drawer, :root .nb-panel, :root .ch-pal, :root .tm-menu,
