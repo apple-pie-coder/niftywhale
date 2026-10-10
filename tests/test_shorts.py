@@ -139,7 +139,7 @@ class IntradayTuner(unittest.TestCase):
         r = IntradayRules().with_overrides({'min_rr': 99, 'swing_len': 2.6, 'square_off': '11:00', 'bogus': 1})
         self.assertEqual(r.min_rr, intraday.TUNABLE['min_rr']['max'])
         self.assertEqual(r.swing_len, 3)
-        self.assertEqual(r.square_off, '15:20')
+        self.assertEqual(r.square_off, '15:10')
 
     def test_looser_discount_admits_a_shallow_pullback(self):
         f = session_frame(BULLISH[:-1] + [(6, 143)])

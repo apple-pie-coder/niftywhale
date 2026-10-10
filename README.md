@@ -6,7 +6,7 @@ filtering protocol from `stockpulse/INSTRUCTIONS.md` mechanically, long and shor
 - **Swing:** daily candles every evening, then 15-minute candles during market hours, so you are
   told when a setup actually triggers. Trades last days to weeks.
 - **Intraday:** the same protocol on 15-minute and 5-minute candles, inside one session: zones set
-  every 15 minutes, entries until 14:30, everything out by 15:20 (section 5).
+  every 15 minutes, entries until 14:30, everything out by 15:10 (section 5).
 
 Around them: an **options** chain scanner with option-buying ideas (6), a **news desk** with FinBERT tone and the price
 reaction (4.14), **smart money** from what NSE publishes after each session (4.15), a **demo funds** account that takes every
@@ -969,8 +969,17 @@ wait for the next pass.
 | **next day** | the next session's close |
 
 15-minute candles are used while they reach back to the item (about a week); older items get the close and next-day figures from
-daily closes (marked *daily closes*; the base is then the previous close even for news that came mid-session). Items are measured
-oldest first, up to 500 a pass.
+daily closes (marked *daily closes*; the base is then the previous close even for news that came mid-session). Each item is
+measured when it arrives, then again at the moment its next figure is due (a minute after the candle it needs ends), by a loop that
+looks every 30 seconds: not at the next news pass. A figure is read only once that candle is in the data, else the item is tried
+again two minutes later. A session that brings no candles by 30 minutes after it was due is taken for a holiday, and the item
+waits for the next weekday. Never-measured items go first, then oldest first, up to 500 a pass.
+
+The closing auction (5.9) shapes the close and next-day figures. An F&O stock's last trade is at 15:15 and its close comes from
+the auction after it, while Nifty's value from 15:15 is built from indicative auction prices. So candle prices are read for the
+stock and Nifty at the same moment, never later than 15:15. At 15:31 the close figure shows from those prices, and at 15:46 it is
+replaced by the **official closes** (the daily candles) of both. An item is done once its next-day figure comes from the official
+closes. If they are still missing six hours after the close, the last traded prices stand.
 
 **On the News tab:**
 
@@ -1135,7 +1144,7 @@ trigger. Every trade is over by the end of the day.
 | Minimum R:R | 1:3 | 1:2 |
 | Scans | Once, in the evening | Every 15 minutes, 09:30–14:15 |
 | Trigger checks | Every 15 minutes | Every 5 minutes |
-| Trade ends at | Stop or target, days later | Stop, target, or the **15:20 square-off** |
+| Trade ends at | Stop or target, days later | Stop, target, or the **15:10 square-off** |
 
 Both modes run side by side. Each has its own zones and alerts, so an intraday scan never
 expires a swing zone, or the reverse. Choose which one you're looking at with the
@@ -1162,7 +1171,7 @@ funnel and setups, but no zones are set.
 | Every 15 min | A new 15m scan, 10 seconds after the candle closes (90 s on yfinance). New setups are added, and zones that are still only *watching* get fresh levels or expire. A watching zone whose levels move starts its watch again from then. The scan runs in the background, so it never delays the 5m check. |
 | Every 5 min | A 5m check: zones move along (tap, trigger, fail), and open trades are followed. |
 | **14:30** | **Entry cutoff.** A CHoCH whose candle closes after 14:30 is rejected, and zones still waiting expire. |
-| **15:20** | **Square-off.** Any trade still open is closed at the 15:15 candle's close, as soon as that candle arrives (on delayed data, a check or two later). Only if it never arrives is the trade closed at the last price seen, at 15:30. |
+| **15:10** | **Square-off**, when Dhan auto-squares off intraday equity since the closing auction. Any trade still open is closed at the 15:05 candle's close, as soon as that candle arrives (on delayed data, a check or two later). Only if it never arrives is the trade closed at the last price seen, once the stock's continuous trading is over (15:15 for an F&O stock, 15:30 otherwise). `INTRADAY_SQUARE_OFF` can move it, but never past an F&O stock's 15:15: after that it only trades in the closing auction. |
 | 15:30 | Anything left is settled and expired. Intraday scans older than a week are pruned. |
 
 ### 5.3 The 15-minute scan (Steps 1–8)
@@ -1219,7 +1228,7 @@ the sweep high.
 ```
  watching ──► tapped ──► open trade ──┬─► target   (won:  +R:R)
     │            │                    ├─► stop     (lost: −1R)
-    │            │                    └─► squared off at 15:20 (whatever it was worth)
+    │            │                    └─► squared off at 15:10 (whatever it was worth)
     │            └──► rejected  (R:R < 1:2, or after 14:30)
     ├──► expired  (no longer a 15m setup · broke below the leg origin · no CHoCH by 14:30)
     └──► dismissed (by you)
@@ -1326,10 +1335,31 @@ Every threshold can also be set in `.env` as `INTRADAY_<NAME>`:
 | `INTRADAY_MIN_RR` | 2.0 | Final R:R for an entry alert. |
 | `INTRADAY_START` | 09:30 | First scan (after the opening range). |
 | `INTRADAY_NO_ENTRY_AFTER` | 14:30 | Entry cutoff. |
-| `INTRADAY_SQUARE_OFF` | 15:20 | Square-off time. |
+| `INTRADAY_SQUARE_OFF` | 15:10 | Square-off time (F&O stocks: never after 15:15, see 5.2). |
 
 Restart the container after changing them (`docker compose up -d`). A typo falls back to the
 default rather than stopping the app.
+
+### 5.9 The closing auction
+
+Since 3 August 2026 a stock with F&O contracts stops continuous trading at **15:15**, and its closing price
+comes from a **closing auction** (CAS) that ends with one match at about 15:35. Nothing trades in it between
+15:15 and that match, so its candles stop at 15:15, and Nifty's value in that window is built from the
+auction's indicative prices. A stock without F&O trades on to 15:30. The F&O segment trades to 15:40.
+NiftyWhale follows this everywhere (`niftywhale/session.py`): the intraday square-off (5.2), the news
+reactions (4.14), and the options passes (6). Days before 3 August keep the old session.
+
+SEBI's consultation of 12 September 2026 proposes moving these times again, so each can be set in `.env`:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NSE_CTS_END_FO` | 15:15 | Continuous trading ends for F&O stocks; the auction follows. |
+| `NSE_CLOSES_FINAL` | 15:45 | Every official close is out, the auction's included. |
+| `NSE_FO_CLOSE` | 15:40 | The F&O segment closes. |
+| `NSE_CAS_START` | 2026-08-03 | The auction's first day. |
+
+Under SEBI's Option A (continuous trading to 15:30, the auction 15:31-15:40, F&O to 15:45) they would be
+15:30, 15:50 (say) and 15:45; under Option B (the auction 15:15-15:25, F&O to 15:30), 15:15, 15:35 and 15:30.
 
 ---
 
@@ -1350,7 +1380,7 @@ It needs **Dhan** (section 4.10): option chains come only from Dhan's API. Witho
 |---|---|
 | Indices | NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and SENSEX: every pass |
 | Stocks | 30 liquid F&O stocks by default (edit the list in the sidebar, up to 60). Ten are read each pass, so each is seen about every 9 minutes; a stock with an open idea is read on every pass |
-| Passes | Every 3 minutes from 09:15 to 15:30, plus one after the close that reads every chain (the day's closing numbers) |
+| Passes | Every 3 minutes from 09:15 to 15:40 (the F&O segment trades on after the cash market's 15:30), plus one at 15:42 that reads every chain (the day's closing numbers) |
 | Expiries | The nearest expiry. On an expiry day also the next one, because ideas never use an option that expires today |
 | Strikes kept | Within 8 % of spot for indices, 15 % for stocks (at most 60) |
 
@@ -1674,7 +1704,7 @@ the weekly report switch. The same settings can also be sent to `POST /api/setti
 | Every 5 min | A 5m check: taps, CHoCHs, open trades. | Nothing. |
 | **On a 5m CHoCH ≥ 1:2** | An **INTRADAY ENTRY** alert, with the target pool named and the square-off time. | Decide, size it in the planner, place it yourself, and set your stop. |
 | **On target or stop** | A short Telegram message with the result in R. The journal records it. | Close it in your broker if your order didn't. |
-| **15:20** | Open trades are squared off in the journal, with a "square off now" message. | Exit anything still open. |
+| **15:10** | Open trades are squared off in the journal, with a "square off now" message. | Exit anything still open. |
 
 ---
 
@@ -1702,7 +1732,7 @@ the weekly report switch. The same settings can also be sent to `POST /api/setti
 
 Every entry alert names its direction: **SMC ENTRY · LONG** / **SHORT**, and **INTRADAY LONG** /
 **SHORT**. A short alert says *Sell* instead of *Buy*, and a swing short adds "Short via F&O".
-- **Intraday result:** when an intraday trade hits its target or stop, or is squared off at 15:20,
+- **Intraday result:** when an intraday trade hits its target or stop, or is squared off at 15:10,
   with the exit and the result in R.
 - **Swing result:** when a swing paper trade (3.7) hits its target or stop, with the entry, the
   exit, when it happened and the result in R, and a note when price gapped through the stop.
@@ -1721,6 +1751,7 @@ Rejected triggers are never sent. The **Entry alerts** switch controls both mode
 | `WATCH_DELAY_SECONDS` | `90` | Wait after each 15-minute candle closes before reading it from yfinance. |
 | `SMC_*` | see 11 | Any protocol threshold, e.g. `SMC_MIN_RR=2.5`. |
 | `INTRADAY_*` | see 5.8 | Any intraday threshold or time, e.g. `INTRADAY_MIN_RR=2.5`, `INTRADAY_NO_ENTRY_AFTER=14:00`. |
+| `NSE_*` | see 5.9 | NSE's session clock around the closing auction, e.g. `NSE_CTS_END_FO=15:30` if SEBI moves it. |
 | `DHAN_CLIENT_ID`, `DHAN_PIN`, `DHAN_TOTP_SECRET` | empty | Automatic Dhan login for real-time data (4.10). |
 | `DHAN_ACCESS_TOKEN` | empty | A Dhan token to start with, instead of pasting one in the dashboard. |
 | `LIVE_WATCH_DELAY_SECONDS` | `10` | Delay after each candle (swing watcher, intraday scan and check) when Dhan is live. Without Dhan, `WATCH_DELAY_SECONDS` applies. |
@@ -2534,7 +2565,7 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
     "ob_search": 5,
     "pre_min_rr": 1.0,
     "sessions": 5,
-    "square_off": "15:20",
+    "square_off": "15:10",
     "start": "09:30",
     "stop_buffer_pct": 0.05,
     "swing_len": 2,
@@ -4409,9 +4440,9 @@ Every abbreviation, code and symbol the dashboard shows. The same list is in the
 | **Short (down triangle)** | Sell setup | Bearish structure; profit if price falls. |
 | **F&O** | Futures & options | NSE stocks with derivatives. A swing short (held overnight) needs them. |
 | **MIS** | Margin intraday square-off | An intraday product: positions, shorts included, must close the same day. Any stock can be shorted this way. |
-| **Square-off** | Closing out | Exiting an intraday position. NiftyWhale squares off open intraday trades at 15:20. |
+| **Square-off** | Closing out | Exiting an intraday position. NiftyWhale squares off open intraday trades at 15:10, Dhan's auto square-off since the closing auction (an F&O stock's continuous trading ends at 15:15). |
 | **Entry cutoff** | No new entries | Intraday CHoCHs after 14:30 are rejected. |
-| **Paper trade** | An alert taken on paper | Every entry alert, followed as if taken exactly: in at the CHoCH close, out at the target or the stop (or the 15:20 square-off, intraday), no costs. Nothing is ever ordered. |
+| **Paper trade** | An alert taken on paper | Every entry alert, followed as if taken exactly: in at the CHoCH close, out at the target or the stop (or the 15:10 square-off, intraday), no costs. Nothing is ever ordered. |
 
 ### Chart indicators and levels
 
@@ -4461,7 +4492,7 @@ Every abbreviation, code and symbol the dashboard shows. The same list is in the
 | **dismissed** | Removed by you | You stopped watching it. |
 | **target / won** | Hit the target | A paper trade (swing or intraday) that reached its target. |
 | **stop / lost** | Hit the stop | A paper trade that reached its stop: −1R, or worse when price gapped through it overnight. |
-| **squared off / closed** | Closed at 15:20 | An intraday trade still open at square-off, closed at that price. |
+| **squared off / closed** | Closed at 15:10 | An intraday trade still open at square-off, closed at that price. |
 | **≈** | Approximate result | Part of a swing paper trade was judged on daily candles: the app was off for longer than 15m candles go back. |
 | **tick · cross · … · –** | Checklist marks | A tick: passed. A cross: failed. …: waiting. –: not applicable. |
 | **−N here** | Funnel drop | How many stocks stopped at that funnel step. Click the card to see which. |

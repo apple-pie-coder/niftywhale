@@ -278,7 +278,7 @@ class IntradayLifecycle(unittest.TestCase):
             return dict(triggers.get(now.strftime('%H:%M'), {'tapped': False, 'triggered': False}))
         out = {'status': 'won', 'exit': 1, 'exit_time': f'{self.D}T12:00:00+05:30', 'r': 2.0}
         with mock.patch.object(backtest.intraday, 'trigger', trig), \
-             mock.patch.object(backtest.intraday, 'outcome', lambda *a: dict(out)):
+             mock.patch.object(backtest.intraday, 'outcome', lambda *a, **k: dict(out)):
             trades = backtest.simulate_intraday('X', rec, thr, FakeData(), intraday.IntradayRules(), {})
         return trades, calls
 

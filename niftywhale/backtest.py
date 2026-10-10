@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from niftywhale import features, history, intraday, smc
+from niftywhale import features, history, intraday, smc, universe
 
 logger = logging.getLogger(__name__)
 
@@ -326,7 +326,8 @@ def simulate_intraday(symbol: str, rec: Dict[str, Any], thr: Dict[str, float], f
                 if ok:
                     okey = ('io', symbol, t['choch_time'], t['entry'], t['stop'], t['target'])
                     if okey not in memo:
-                        o = intraday.outcome(frame5, t, rules, ts(d, dtime(15, 30)))
+                        o = intraday.outcome(frame5, t, rules, ts(d, dtime(15, 30)),
+                                             fo=symbol in universe.fo_symbols())
                         memo[okey] = {k: o.get(k) for k in ('status', 'exit', 'exit_time', 'r')}
                     o = memo[okey]
                     s = z['s']

@@ -9,7 +9,7 @@ The intraday mode: the same SMC protocol, one timeframe down, inside one session
                                         day's high, the opening range high, or an
                                         untaken 15m swing high
     R:R >= 1:3                          R:R >= 1:2
-    held until stop or target           no entries after 14:30, out by 15:20
+    held until stop or target           no entries after 14:30, out by 15:10
 
 Shorts work exactly as in swing mode (smc.py mirrors the chart): a bearish 15m
 structure, a zone in premium, the nearest pool BELOW as the target (previous
@@ -25,13 +25,13 @@ Pure functions, like smc.py: frames in, dicts out. The clock is always passed in
 """
 from dataclasses import dataclass, fields
 import os
-from datetime import datetime, time as dtime
+from datetime import date, datetime, time as dtime
 from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
-from niftywhale import smc
+from niftywhale import session, smc
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ class IntradayRules:
     # The clock (IST)
     start: str = '09:30'                  # first scan, once the first 15m candle has closed
     no_entry_after: str = '14:30'
-    square_off: str = '15:20'
+    square_off: str = '15:10'             # Dhan's auto square-off of intraday equity since the closing auction
 
     @classmethod
     def from_env(cls) -> 'IntradayRules':
@@ -90,6 +90,11 @@ class IntradayRules:
 
     def clock(self, name: str) -> dtime:
         return datetime.strptime(getattr(self, name), '%H:%M').time()
+
+    def square_off_at(self, fo: bool, day: date) -> dtime:
+        """A stock's square-off on `day`: `square_off`, but never after its continuous trading
+        ends (an F&O stock's last candle ends at 15:15 since the closing auction, session.py)."""
+        return min(self.clock('square_off'), session.cts_end(fo, day))
 
     def screen_rules(self) -> smc.Rules:
         """The smc.Rules that make evaluate() read 15m candles. Liquidity and
@@ -127,7 +132,6 @@ TUNABLE: Dict[str, Dict[str, Any]] = {
 }
 
 
-SESSION_END = dtime(15, 30)      # NSE's close: after it, no more candles are coming today
 
 STEPS = (
     ('history',     'Enough 15m candles'),
@@ -310,7 +314,7 @@ def trigger(frame5: pd.DataFrame, zone_low: float, zone_high: float, target: flo
     return t
 
 
-def outcome(frame5: pd.DataFrame, t: Dict[str, Any], rules: IntradayRules, now) -> Dict[str, Any]:
+def outcome(frame5: pd.DataFrame, t: Dict[str, Any], rules: IntradayRules, now, fo: bool = False) -> Dict[str, Any]:
     """
     What happened to a triggered trade, from the 5m candles after the entry:
       won     a candle reached the target
@@ -319,7 +323,8 @@ def outcome(frame5: pd.DataFrame, t: Dict[str, Any], rules: IntradayRules, now) 
       closed  neither by the square-off time; out at that candle's close
       open    still running
     Returns {'status', 'exit', 'exit_time', 'r'} (r = result in multiples of risk).
-    Works for either side: a short's stop is above and its target below.
+    Works for either side: a short's stop is above and its target below. `fo`: the stock has
+    F&O contracts, so its continuous trading may end before 15:30 (session.py).
     """
     df = completed(frame5, now, 5)
     entry_at = pd.Timestamp(t['choch_time'])
@@ -330,7 +335,7 @@ def outcome(frame5: pd.DataFrame, t: Dict[str, Any], rules: IntradayRules, now) 
     sign = -1 if short else 1
     risk = (entry - stop) * sign
     r_of = (lambda px: (px - entry) * sign / risk) if risk > 0 else (lambda px: 0.0)
-    cutoff = rules.clock('square_off')
+    cutoff = rules.square_off_at(fo, day)
     for ts, bar in df.iterrows():
         bar_close_time = (ts + pd.Timedelta(minutes=5)).time()
         stopped = bar['High'] >= stop if short else bar['Low'] <= stop
@@ -344,7 +349,7 @@ def outcome(frame5: pd.DataFrame, t: Dict[str, Any], rules: IntradayRules, now) 
             return {'status': 'closed', 'exit': px, 'exit_time': ts.isoformat(), 'r': r_of(px)}
     last = float(df['Close'].iloc[-1]) if len(df) else entry
     now_ts = pd.Timestamp(now)
-    if now_ts.date() > day or now_ts.time() >= SESSION_END:
+    if now_ts.date() > day or now_ts.time() >= session.cts_end(fo, day):      # no more candles coming today
         # The session is over and no candle covered the square-off (data gap):
         # out at the last price we have. Before then, the square-off candle may
         # just not have arrived yet (delayed data): an earlier candle's close

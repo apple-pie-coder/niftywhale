@@ -15,13 +15,13 @@ from typing import Callable, Dict, List, Optional
 import pandas as pd
 import yfinance as yf
 
-from niftywhale import dhan
+from niftywhale import dhan, session
 
 logger = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
-MARKET_OPEN = (9, 15)
-MARKET_CLOSE = (15, 30)
+MARKET_OPEN = (session.OPEN.hour, session.OPEN.minute)
+MARKET_CLOSE = (session.CLOSE.hour, session.CLOSE.minute)       # the cash market; the F&O segment: session.FO_CLOSE
 BATCH = 50
 
 _cache: Dict[str, tuple] = {}          # ticker -> (fetched_at, frame)
@@ -45,7 +45,9 @@ def market_open(when: Optional[datetime] = None) -> bool:
 
 LIVE_TTL = 600             # during the session today's candle changes: refresh often
 CLOSED_TTL = 3 * 3600      # after it the close is final, but refresh so a late print lands
-SETTLE = 15 * 60           # how long after 15:30 the closing candle takes to be final
+# How long after 15:30 the closing candle takes to be final: an F&O stock's close comes from the
+# closing auction's match, a few minutes after 15:30 (session.py).
+SETTLE = (session.CLOSES_FINAL.hour * 60 + session.CLOSES_FINAL.minute - session.CLOSE.hour * 60 - session.CLOSE.minute) * 60
 
 
 def last_close(when: Optional[datetime] = None) -> datetime:

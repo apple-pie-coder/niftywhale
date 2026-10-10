@@ -159,7 +159,7 @@ class Outcome(unittest.TestCase):
         self.assertEqual(intraday.outcome(f, self.t, R, mid)['status'], 'open')
         o = intraday.outcome(f, self.t, R, AFTER)
         self.assertEqual(o['status'], 'closed')
-        self.assertEqual(o['exit_time'][11:16], '15:15')     # the candle that closes at 15:20
+        self.assertEqual(o['exit_time'][11:16], '15:05')     # the candle that closes at 15:10
         self.assertGreater(o['r'], 0)
 
 
@@ -171,7 +171,7 @@ class Rules(unittest.TestCase):
             r = IntradayRules.from_env()
         self.assertEqual(r.min_rr, 2.5)
         self.assertEqual(r.no_entry_after, '14:00')
-        self.assertEqual(r.square_off, '15:20')
+        self.assertEqual(r.square_off, '15:10')
         self.assertEqual(r.swing_len, 3)
         self.assertEqual(r.screen_rules().swing_len, 3)
 

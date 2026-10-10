@@ -13,7 +13,7 @@ Swing mode, two jobs:
 Intraday mode (niftywhale/intraday.py), the same protocol one timeframe down:
   every 15 minutes in the session a 15m scan sets the day's zones, and every
   5 minutes a 5m sweep + CHoCH inside one is an entry at R:R >= 1:2. No
-  entries after 14:30; open trades are tracked to target, stop or the 15:20
+  entries after 14:30; open trades are tracked to target, stop or the 15:10
   square-off, which makes a journal of how the alerts actually played out.
 
 Analysis only. Nothing here places an order.
@@ -38,7 +38,7 @@ from flask import Flask, g, jsonify, redirect, render_template, request  # noqa:
 from flask_sock import Sock  # noqa: E402
 
 from niftywhale import (auth, autopilot, charts, config, data, demo, dhan, features, glossary, history, hub, indicators, intraday, news, notify,  # noqa: E402
-                        options, patterns, perf, smart, smc, store, ticker, universe)
+                        options, patterns, perf, session, smart, smc, store, ticker, universe)
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
                     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
@@ -601,6 +601,8 @@ NEWS_FULL_S = 60 * 60           # every followed stock (setups too), and the onl
 NEWS_ONE_GAP_S = 5 * 60         # an on-demand refresh of one stock, at most this often
 NEWS_PER_STOCK = 15             # media headlines per stock in the every-stock view
 NEWS_REACT_DAYS = 35            # reactions are measured for items this recent (filings go back 30)
+NEWS_REACT_S = 30               # how often the reaction loop looks for an item with a figure due
+REACT_LOCK = threading.Lock()
 NEWS_WHY = ('trade', 'tapped', 'board', 'intraday', 'options', 'setup')     # most important first
 NEWS_HOURLY = ('options', 'setup')      # followed on the hourly pass only
 
@@ -723,18 +725,36 @@ def news_score_backlog(limit: int = 150) -> int:
 
 
 def news_reactions() -> int:
-    """Measure, or finish measuring, how each recent item's stock moved afterwards (news.reaction)."""
+    """Measure, or finish measuring, how each recent item's stock moved afterwards (news.reaction):
+    the items with a figure due now, each of which is then told when to come back."""
+    if not REACT_LOCK.acquire(blocking=False):
+        return 0
+    try:
+        return _news_reactions()
+    finally:
+        REACT_LOCK.release()
+
+
+def _news_reactions() -> int:
     now = data.now_ist()
     # Filings are fetched 30 days back, so look back a little further than that. At most 500 a pass:
     # a first pass over weeks of items would otherwise hold the app for minutes.
-    rows = store.news_unreacted((now - timedelta(days=NEWS_REACT_DAYS)).isoformat(timespec='seconds'), limit=500)
+    rows = store.news_unreacted((now - timedelta(days=NEWS_REACT_DAYS)).isoformat(timespec='seconds'), limit=500,
+                                now=now.isoformat(timespec='seconds'))
     if not rows:
         return 0
     symbols = sorted({r['symbol'] for r in rows})
     frames = data.intraday_cached([s + '.NS' for s in symbols] + ['^NSEI'])
-    # Daily closes for items older than the 15m candles reach: the app's own daily cache (a year,
-    # any stock, one batched download for what it lacks), else the lab's history files.
-    daily = data.frames_for([s + '.NS' for s in symbols] + ['^NSEI'])
+    # Daily closes: the official closes for the close and next-day figures (an F&O stock's comes
+    # from the closing auction, after its last trade), and the figures of items older than the
+    # 15m candles reach. The app's own daily cache (a year, any stock, one batched download for
+    # what it lacks), else the lab's history files. Only today's items during the session need
+    # none yet; for any other, the cache must be fresh (a frame from before a close holds that
+    # day's last price, not its close), so it is refreshed.
+    tickers = [s + '.NS' for s in symbols] + ['^NSEI']
+    final_today = datetime.combine(now.date(), session.CLOSES_FINAL, now.tzinfo)
+    older = any(datetime.fromisoformat(r['published']).astimezone(now.tzinfo).date() < now.date() for r in rows)
+    daily = data.daily(tickers) if older or now >= final_today else data.frames_for(tickers)
 
     def closes(sym):
         f = daily.get(sym + '.NS')
@@ -755,10 +775,22 @@ def news_reactions() -> int:
         except Exception as e:
             logger.warning(f"News reaction {r['symbol']}: {e}")
             continue
-        if got['basis'] or got['done']:
-            store.set_reaction(r['id'], got)
-            done += 1
+        store.set_reaction(r['id'], got)
+        done += bool(got['basis'] or got['done'])
     return done
+
+
+def reactions_loop() -> None:
+    """Measure each news item's reaction the moment a figure is due (an hour after it could be traded
+    on, that session's close, the next one's), not at the next news pass."""
+    time.sleep(120)
+    while True:
+        try:
+            if store.settings().get('news') == '1':
+                news_reactions()
+        except Exception:
+            logger.exception('News reactions failed')
+        time.sleep(NEWS_REACT_S)
 
 
 def news_impact(days: int = 30) -> dict:
@@ -1500,15 +1532,20 @@ def live_warnings(trades: list, now: datetime) -> None:
                              f"{_f(p)} now · target {_f(target)} · {r:+.2f}R. Live price; {decides} decides.",
                              tr['symbol'], tr['mode'], _trade_link(tr['mode'], tr['symbol'], tr['ref']))
     day = now.date().isoformat()
-    for mode, at in (('intraday', irules().clock('square_off')),
-                     ('options', datetime.strptime(orules()['square_off'], '%H:%M').time())):
-        n = sum(1 for tr in trades if tr['mode'] == mode)
+    opt_at = datetime.strptime(orules()['square_off'], '%H:%M').time()
+    due: dict = {}                  # (mode, time) -> the symbols squaring off then
+    for tr in trades:
+        at = square_off_for(tr['symbol'], now) if tr['mode'] == 'intraday' else opt_at if tr['mode'] == 'options' else None
+        if at is not None:
+            due.setdefault((tr['mode'], at), []).append(tr['symbol'])
+    for (mode, at), syms in sorted(due.items()):
+        n = len(syms)
         until = (datetime.combine(now.date(), at, now.tzinfo) - now).total_seconds() / 60
-        if n and 0 < until <= SQUARE_OFF_WARN_MIN:
+        if 0 < until <= SQUARE_OFF_WARN_MIN:
             word = 'intraday trade' if mode == 'intraday' else 'option idea'
-            store.add_notice(f'squareoff:{mode}:{day}', 'squareoff', 'warn',
+            store.add_notice(f'squareoff:{mode}:{day}:{at:%H%M}', 'squareoff', 'warn',
                              f"{n} {word}{'s' if n > 1 else ''} square off at {at.strftime('%H:%M')}",
-                             ', '.join(sorted({tr['symbol'] for tr in trades if tr['mode'] == mode})) +
+                             ', '.join(sorted(set(syms))) +
                              '. Paper trades close by themselves; square off any real position you hold.',
                              None, mode, {'tab': mode})
 
@@ -1796,6 +1833,11 @@ def _at(now: datetime, hhmm) -> datetime:
     return now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
 
 
+def square_off_for(symbol: str, now: datetime = None) -> dtime:
+    """An intraday trade's square-off: F&O stocks end continuous trading early (session.py)."""
+    return irules().square_off_at(symbol in universe.fo_symbols(), (now or data.now_ist()).date())
+
+
 def intraday_phase(now: datetime = None) -> dict:
     """Where the session is, for the scheduler and the dashboard."""
     now = now or data.now_ist()
@@ -1808,8 +1850,10 @@ def intraday_phase(now: datetime = None) -> dict:
         return {'key': 'opening', 'label': f'Opening range forming · first scan at {r.start}'}
     if now < _at(now, r.no_entry_after):
         return {'key': 'live', 'label': f'Scanning · entries until {r.no_entry_after}'}
-    if now < _at(now, r.square_off):
-        return {'key': 'manage', 'label': f'No new entries · square off at {r.square_off}'}
+    fo_at, cash_at = r.square_off_at(True, now.date()), r.square_off_at(False, now.date())
+    if now < _at(now, max(fo_at, cash_at)):
+        return {'key': 'manage', 'label': f'No new entries · square off at {cash_at:%H:%M}'
+                + (f' (F&O stocks {fo_at:%H:%M})' if fo_at != cash_at else '')}
     if now < _at(now, '15:30'):
         return {'key': 'squared', 'label': 'Squared off'}
     return {'key': 'closed', 'label': 'Session over'}
@@ -2038,7 +2082,7 @@ def _follow_trade(z, frame, now, tg) -> int:
     t = dict(z['trigger'] or {})
     if not t.get('entry'):
         return 0
-    o = intraday.outcome(frame, t, irules(), now)
+    o = intraday.outcome(frame, t, irules(), now, fo=z['symbol'] in universe.fo_symbols())
     stamp = now.isoformat(timespec='seconds')
     if o['status'] == 'open':
         t.update(last=o['last'], r_open=o['r'])
@@ -2075,7 +2119,7 @@ def intraday_entry_message(z, t) -> str:
             f"<b>Stop</b> {t['stop']:.2f}  (risk {risk:.2f}, {risk / t['entry'] * 100:.2f}%)\n"
             f"<b>Target</b> {t['target']:.2f}  ({h(label.lower())})\n"
             f"<b>R:R</b> 1:{t['rr']:.1f}\n\n"
-            f"15m zone {z['zone_low']:.2f}–{z['zone_high']:.2f}. Square off by {irules().square_off}.\n"
+            f"15m zone {z['zone_low']:.2f}–{z['zone_high']:.2f}. Square off by {square_off_for(z['symbol']):%H:%M}.\n"
             f"Analysis only — no order was placed. Not investment advice.")
 
 
@@ -2419,7 +2463,7 @@ def options_loop() -> None:
             s = store.settings()
             if s['options'] != '1':
                 st.update(next_run=None, _next=None, message='Options mode is off')
-            elif data.market_open(now):
+            elif session.fo_open(now):                     # the F&O segment trades past the cash close
                 if st.get('_next') is None:
                     st['_next'] = now                          # first pass right away
                 if now >= st['_next']:
@@ -2429,8 +2473,9 @@ def options_loop() -> None:
             else:
                 st.update(next_run=None, _next=None)
                 # Once after each session: every chain's closing numbers (the IV history),
-                # settle anything still open, and prune.
-                after = now.weekday() < 5 and now.hour * 60 + now.minute >= 15 * 60 + 32
+                # settle anything still open, and prune. Two minutes after the F&O close.
+                end = datetime.combine(now.date(), session.fo_close(now.date()), now.tzinfo)
+                after = now.weekday() < 5 and now >= end + timedelta(minutes=2)
                 if after and st.get('_closed') != now.date() and dhan.available():
                     run_options_cycle('close', everything=True)
                     settle_ideas(now)
@@ -4186,6 +4231,7 @@ if os.getenv('NIFTYWHALE_SCHEDULER', '1') == '1':      # off for tests and secon
     threading.Thread(target=intraday_loop, daemon=True, name='intraday').start()
     threading.Thread(target=options_loop, daemon=True, name='options').start()
     threading.Thread(target=news_loop, daemon=True, name='news').start()
+    threading.Thread(target=reactions_loop, daemon=True, name='news-reactions').start()
     threading.Thread(target=smart_loop, daemon=True, name='smart').start()
     threading.Thread(target=demo_loop, daemon=True, name='demo').start()
     threading.Thread(target=marks_loop, daemon=True, name='marks').start()

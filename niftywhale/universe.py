@@ -180,6 +180,26 @@ def load(path: Path = None) -> Dict[str, object]:
     return u
 
 
+_fo = {'key': None, 'symbols': frozenset()}
+
+
+def fo_symbols(path: Path = None) -> frozenset:
+    """The stocks with F&O contracts (the ones that close by auction, session.py), read again
+    only when the universe file changes."""
+    p = Path(path or UNIVERSE_PATH)
+    try:
+        key = (str(p), p.stat().st_mtime)
+    except OSError:
+        return _fo['symbols']
+    if key != _fo['key']:
+        try:
+            _fo['symbols'] = frozenset(s['symbol'] for s in load(p).get('stocks', []) if s.get('fo'))
+            _fo['key'] = key
+        except (OSError, ValueError) as e:
+            logger.warning(f'F&O list: {e}')
+    return _fo['symbols']
+
+
 def _in(stock: Dict, which: str) -> bool:
     if which == 'nifty100':
         return stock.get('nifty100', False)

@@ -148,7 +148,7 @@ class Live(unittest.TestCase):
         cut = app.irules().clock('square_off')
         at = datetime.combine(datetime(2026, 10, 8).date(), cut, app.data.IST)
         app.live_warnings([tr], at.replace(minute=cut.minute - 5) if cut.minute >= 5 else at.replace(hour=cut.hour - 1, minute=55))
-        n = store.notice('squareoff:intraday:2026-10-08')
+        n = store.notice(f"squareoff:intraday:2026-10-08:{cut.strftime('%H%M')}")
         self.assertEqual(n['title'], f"1 intraday trade square off at {cut.strftime('%H:%M')}")
 
     def test_feed_down_then_back(self):

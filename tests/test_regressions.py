@@ -625,21 +625,53 @@ class SecretsStayOutOfErrors(unittest.TestCase):
 
 class SquareOffWaitsForItsCandle(unittest.TestCase):
     """At 15:21 with the 15:15 candle not yet delivered, a trade was squared off
-    at the 15:05 candle's close for good."""
+    at the 15:05 candle's close for good. (A 15:20 square-off, a stock without F&O.)"""
+    R = IntradayRules(square_off='15:20')
+
     def setUp(self):
         self.t = intraday.trigger(m5(CHOCH), 122, 125, 135, IntradayRules(), AFTER)
 
     def test_before_the_close_it_stays_open(self):
         f = m5(CHOCH + [(127, 127.5, 126.6, 127.2)] * 49)               # last candle 15:05
         at = pd.Timestamp('2026-10-05 15:21', tz='Asia/Kolkata')
-        self.assertEqual(intraday.outcome(f, self.t, IntradayRules(), at)['status'], 'open')
-        o = intraday.outcome(f, self.t, IntradayRules(), pd.Timestamp('2026-10-05 15:31', tz='Asia/Kolkata'))
+        self.assertEqual(intraday.outcome(f, self.t, self.R, at)['status'], 'open')
+        o = intraday.outcome(f, self.t, self.R, pd.Timestamp('2026-10-05 15:31', tz='Asia/Kolkata'))
         self.assertEqual(o['status'], 'closed')
 
     def test_the_square_off_candle_when_it_is_there(self):
         f = m5(CHOCH + [(127, 127.5, 126.6, 127.2)] * 51)               # last candle 15:15
-        o = intraday.outcome(f, self.t, IntradayRules(), pd.Timestamp('2026-10-05 15:21', tz='Asia/Kolkata'))
+        o = intraday.outcome(f, self.t, self.R, pd.Timestamp('2026-10-05 15:21', tz='Asia/Kolkata'))
         self.assertEqual((o['status'], o['exit_time'][11:16]), ('closed', '15:15'))
+
+
+class SquareOffInTheClosingAuction(unittest.TestCase):
+    """Since 3 Aug 2026 an F&O stock's continuous trading ends at 15:15 (its last 5m candle is
+    15:10's): a 15:20 square-off never came, and the trade stayed open to 15:30."""
+    def setUp(self):
+        self.t = intraday.trigger(m5(CHOCH), 122, 125, 135, IntradayRules(), AFTER)
+        self.f = m5(CHOCH + [(127, 127.5, 126.6, 127.2)] * 50)          # last candle 15:10, as Dhan gives it
+
+    def test_default_is_dhans_15_10(self):
+        o = intraday.outcome(self.f, self.t, IntradayRules(), pd.Timestamp('2026-10-05 15:16', tz='Asia/Kolkata'), fo=True)
+        self.assertEqual((o['status'], o['exit_time'][11:16]), ('closed', '15:05'))       # the candle ending 15:10
+
+    def test_a_later_setting_stops_at_15_15_for_fo(self):
+        r = IntradayRules(square_off='15:20')
+        o = intraday.outcome(self.f, self.t, r, pd.Timestamp('2026-10-05 15:16', tz='Asia/Kolkata'), fo=True)
+        self.assertEqual((o['status'], o['exit_time'][11:16]), ('closed', '15:10'))
+        self.assertEqual(intraday.outcome(self.f, self.t, r, pd.Timestamp('2026-10-05 15:16', tz='Asia/Kolkata'))['status'],
+                         'open')                                         # without F&O: trades to 15:30
+
+    def test_no_more_candles_after_15_15(self):
+        f = m5(CHOCH + [(127, 127.5, 126.6, 127.2)] * 49)                # 15:10's candle never came
+        o = intraday.outcome(f, self.t, IntradayRules(square_off='15:20'),
+                             pd.Timestamp('2026-10-05 15:16', tz='Asia/Kolkata'), fo=True)
+        self.assertEqual(o['status'], 'closed')
+
+    def test_before_the_auction_began(self):
+        r = IntradayRules(square_off='15:20')
+        self.assertEqual(r.square_off_at(True, datetime(2026, 7, 31).date()).strftime('%H:%M'), '15:20')
+        self.assertEqual(r.square_off_at(True, datetime(2026, 8, 3).date()).strftime('%H:%M'), '15:15')
 
 
 class LiveBoardAndCharts(unittest.TestCase):

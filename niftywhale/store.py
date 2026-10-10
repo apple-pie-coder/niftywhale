@@ -241,9 +241,10 @@ def init() -> None:
         have = {r[1] for r in c.execute('PRAGMA table_info(news)')}
         for col, typ in (('sentiment', 'REAL'), ('sent_label', 'TEXT'), ('sent_model', 'TEXT'),
                          ('react_1h', 'REAL'), ('react_close', 'REAL'), ('react_next', 'REAL'),
-                         ('react_basis', 'TEXT'), ('react_done', 'INTEGER DEFAULT 0')):
+                         ('react_basis', 'TEXT'), ('react_done', 'INTEGER DEFAULT 0'), ('react_due', 'TEXT')):
             if col not in have:
                 c.execute(f'ALTER TABLE news ADD COLUMN {col} {typ}')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_news_react ON news(react_done, react_due)')
         # Change counters for the page's WebSocket (hub.py): a trigger per shown table, so a write from
         # any process (the lab's container too) tells open pages which panel to load again.
         hub.install_triggers(c)
@@ -1163,20 +1164,26 @@ def set_sentiment(scores: Dict[int, Dict[str, Any]], model: str) -> None:
                       [(r['score'], r['label'], model, i) for i, r in scores.items()])
 
 
-def news_unreacted(since: str, limit: int = 2000) -> List[Dict[str, Any]]:
-    """Items whose price reaction is still being measured (published since `since`), oldest first:
-    today's items stay unfinished until tomorrow's close, and newest-first would let them hold
-    every slot while older ones never got measured."""
+def news_unreacted(since: str, limit: int = 2000, now: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Items whose price reaction is still being measured (published since `since`); with `now`, only
+    those due by then (react_due, set by news.reaction). Never-measured items first, then oldest
+    first: today's items stay unfinished until tomorrow's close, and newest-first would let them
+    hold every slot while older ones never got measured."""
+    q, args = ('SELECT id, symbol, published FROM news WHERE react_done = 0 AND routine = 0 AND published >= ?',
+               [since])
+    if now is not None:
+        q += ' AND (react_due IS NULL OR react_due <= ?)'
+        args.append(now)
     with connect() as c:
-        return _rows(c.execute('SELECT id, symbol, published FROM news WHERE react_done = 0 AND routine = 0 '
-                               'AND published >= ? ORDER BY published ASC LIMIT ?', (since, limit)))
+        return _rows(c.execute(q + ' ORDER BY react_due IS NOT NULL, published ASC LIMIT ?', args + [limit]))
 
 
 def set_reaction(item_id: int, r: Dict[str, Any]) -> None:
     with connect() as c:
-        c.execute('UPDATE news SET react_1h = ?, react_close = ?, react_next = ?, react_basis = ?, react_done = ? '
-                  'WHERE id = ?', (r.get('react_1h'), r.get('react_close'), r.get('react_next'), r.get('basis'),
-                                   int(r.get('done') or 0), item_id))
+        c.execute('UPDATE news SET react_1h = ?, react_close = ?, react_next = ?, react_basis = ?, react_done = ?, '
+                  'react_due = ? WHERE id = ?',
+                  (r.get('react_1h'), r.get('react_close'), r.get('react_next'), r.get('basis'),
+                   int(r.get('done') or 0), r.get('due'), item_id))
 
 
 def news_graded(since: str) -> List[Dict[str, Any]]:

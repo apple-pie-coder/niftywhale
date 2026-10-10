@@ -282,6 +282,84 @@ class Reaction(unittest.TestCase):
         r = news.reaction('2026-10-07T11:40:00+05:30', self.stock, up, now=datetime(2026, 10, 9, 10, 0, tzinfo=IST))
         self.assertEqual(r['react_1h'], 5.0)
 
+    def test_due_when_the_next_figure_can_be_read(self):
+        r = news.reaction('2026-10-07T11:40:00+05:30', self.stock, self.nifty, now=datetime(2026, 10, 7, 12, 0, tzinfo=IST))
+        self.assertEqual(r['due'], '2026-10-07T12:41:00+05:30')            # an hour on, plus a minute for the candle
+        r = news.reaction('2026-10-07T11:40:00+05:30', self.stock, self.nifty, now=datetime(2026, 10, 7, 13, 0, tzinfo=IST))
+        self.assertEqual((r['react_1h'], r['due']), (10.0, '2026-10-07T15:31:00+05:30'))     # then the close
+
+    def test_waits_for_the_candle_not_an_older_close(self):
+        stale = self.stock[self.stock.index < datetime(2026, 10, 7, 11, 45, tzinfo=IST)]
+        r = news.reaction('2026-10-07T11:40:00+05:30', stale, self.nifty, now=datetime(2026, 10, 7, 12, 45, tzinfo=IST))
+        self.assertEqual((r['basis'], r['react_1h'], r['due']), ('15m', None, '2026-10-07T12:47:00+05:30'))
+
+    def test_closes_from_the_official_closes_once_out(self):
+        import pandas as pd
+        days = pd.DatetimeIndex(['2026-10-06', '2026-10-07', '2026-10-08'])
+        sd = pd.Series([100.0, 108.0, 125.0], index=days)       # the auction closed it at 108, its last trade 110
+        nd = pd.Series([1000.0, 1000.0, 1000.0], index=days)
+        pub = '2026-10-07T11:40:00+05:30'
+
+        def at(d, hh, mm):
+            return news.reaction(pub, self.stock, self.nifty, sd, nd, now=datetime(2026, 10, d, hh, mm, tzinfo=IST))
+        r = at(7, 15, 32)                                         # the last trade stands in until 15:45
+        self.assertEqual((r['react_close'], r['due']), (10.0, '2026-10-07T15:46:00+05:30'))
+        r = at(7, 15, 45)
+        self.assertEqual((r['react_close'], r['due']), (8.0, '2026-10-08T15:31:00+05:30'))
+        r = at(8, 15, 32)
+        self.assertEqual((r['react_next'], r['done'], r['due']), (20.0, False, '2026-10-08T15:46:00+05:30'))
+        r = at(8, 15, 45)
+        self.assertEqual((r['react_close'], r['react_next'], r['done'], r['due']), (8.0, 25.0, True, None))
+
+    def test_a_close_from_today_is_not_official_mid_session(self):
+        import pandas as pd
+        days = pd.DatetimeIndex(['2026-10-06', '2026-10-07'])
+        sd, nd = pd.Series([100.0, 150.0], index=days), pd.Series([1000.0, 1000.0], index=days)     # 150: a live price
+        r = news.reaction('2026-10-07T11:40:00+05:30', self.stock, self.nifty, sd, nd,
+                          now=datetime(2026, 10, 7, 15, 40, tzinfo=IST))
+        self.assertEqual(r['react_close'], 10.0)
+
+    def test_without_official_closes_the_traded_prices_stand(self):
+        pub = '2026-10-07T11:40:00+05:30'
+        r = news.reaction(pub, self.stock, self.nifty, now=datetime(2026, 10, 8, 15, 45, tzinfo=IST))
+        self.assertEqual((r['react_next'], r['done'], r['due']), (20.0, False, '2026-10-08T15:46:00+05:30'))
+        r = news.reaction(pub, self.stock, self.nifty, now=datetime(2026, 10, 8, 21, 45, tzinfo=IST))
+        self.assertEqual((r['done'], r['due']), (True, None))
+
+    def test_stock_candles_that_stop_at_15_15(self):
+        # An F&O stock has no 15:15 candle (the closing auction), and Nifty's is built from the
+        # auction's indicative prices: the close is read at 15:15 for both.
+        dhan = self.stock[[t.time() != news.session.CTS_END_FO for t in self.stock.index]]
+        up = candles(self.D1, [1000.0] * 24 + [1100.0] + [1100.0] * 25)   # Nifty +10% in the last 15 minutes
+        r = news.reaction('2026-10-07T11:40:00+05:30', dhan, up, now=datetime(2026, 10, 7, 15, 31, tzinfo=IST))
+        self.assertEqual((r['react_close'], r['due']), (10.0, '2026-10-07T15:46:00+05:30'))     # then the official close
+        # Out of hours: the base is the previous day's 15:15 for both, so Nifty's last-15-minute jump
+        # counts against the stock (against Nifty's 15:30 it would read +9.091).
+        r = news.reaction('2026-10-07T19:00:00+05:30', dhan, up, now=datetime(2026, 10, 8, 10, 20, tzinfo=IST))
+        self.assertEqual(r['react_1h'], -0.909)
+
+    def test_due_with_no_candles_from_its_session_yet(self):
+        # Friday evening's news: first measurable an hour after Monday's open.
+        r = news.reaction('2026-10-09T19:00:00+05:30', self.stock, self.nifty, now=datetime(2026, 10, 10, 9, 0, tzinfo=IST))
+        self.assertEqual((r['basis'], r['due']), (None, '2026-10-12T10:16:00+05:30'))
+        # Monday a holiday (no candles by 10:45): try Tuesday.
+        r = news.reaction('2026-10-09T19:00:00+05:30', self.stock, self.nifty, now=datetime(2026, 10, 12, 11, 0, tzinfo=IST))
+        self.assertEqual(r['due'], '2026-10-13T10:16:00+05:30')
+        # Waiting on the next session's close: that close, not every pass before it.
+        r = news.reaction('2026-10-07T19:00:00+05:30', self.stock, self.nifty, now=datetime(2026, 10, 9, 10, 0, tzinfo=IST))
+        self.assertEqual(r['due'], '2026-10-09T15:31:00+05:30')
+
+    def test_only_due_items_are_picked_never_measured_first(self):
+        with store.connect() as c:
+            c.execute('DELETE FROM news')
+            for i, (pub, due) in enumerate((('2026-10-07T10:00:00+05:30', '2026-10-09T15:31:00+05:30'),
+                                            ('2026-10-08T10:00:00+05:30', '2026-10-09T10:16:00+05:30'),
+                                            ('2026-10-09T10:00:00+05:30', None))):
+                c.execute("INSERT INTO news (uid, symbol, kind, title, published, react_due) VALUES (?, 'X', 'media', 't', ?, ?)",
+                          (f'u{i}', pub, due))
+        got = store.news_unreacted('2026-10-01', now='2026-10-09T12:00:00+05:30')
+        self.assertEqual([r['published'][:10] for r in got], ['2026-10-09', '2026-10-08'])
+
     def test_daily_fallback_and_too_old(self):
         import pandas as pd
         days = pd.DatetimeIndex(['2026-09-28', '2026-09-29', '2026-09-30'])
