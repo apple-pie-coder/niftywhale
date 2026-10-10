@@ -48,6 +48,10 @@ SETTING_DEFAULTS = {
     'indicators': '{}',         # JSON: chart indicator settings (indicators.SETTINGS); {} = the defaults
     'demo': '{}',               # JSON: demo funds settings (demo.DEFAULTS); {} = the defaults
     'demo_since': '',           # ISO time the demo account started: trades from then on are taken
+    'exec': '{}',               # JSON: live trading (execution.DEFAULTS): each mode's level, sizing and limits
+    'exec_since': '',           # ISO time live trading was first set up: earlier trades are never taken
+    'exec_send': '0',           # '1': real orders may be sent (set from a fresh sign-in once the static IP is confirmed)
+    'exec_halt': '',            # why everything was disarmed (the kill switch, a limit, a mismatch); '' = not halted
     'lab_swing_universe': '',       # empty: backtest what the live mode trades (`universe`)
     'lab_intraday_universe': '',    # empty: the live intraday universe (`intraday_universe`)
     'lab_years_swing': '3',
@@ -211,6 +215,18 @@ def init() -> None:
                 last REAL, unreal REAL, note TEXT, created TEXT, updated TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_demo_status ON demo_positions(status, entry_time);
+            -- Live trading (execution.py): one row per trade taken at shadow, confirm or auto, the order it was
+            -- (or would be) and how it went; and every request to Dhan's order APIs with its answer.
+            CREATE TABLE IF NOT EXISTS exec_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT UNIQUE, mode TEXT, symbol TEXT, instrument TEXT,
+                side TEXT, level TEXT, status TEXT, segment TEXT, product TEXT, security_id TEXT, qty INTEGER,
+                price REAL, stop REAL, target REAL, risk REAL, entry_time TEXT, correlation_id TEXT, order_id TEXT,
+                protect_id TEXT, fill REAL, exit REAL, exit_time TEXT, gross REAL, charges REAL, net REAL,
+                last REAL, unreal REAL, expires TEXT, body TEXT, note TEXT, created TEXT, updated TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_exec_status ON exec_orders(status, entry_time);
+            CREATE TABLE IF NOT EXISTS broker_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, method TEXT, path TEXT,
+                                                   body TEXT, ok INTEGER, answer TEXT);
             -- In-app notices (the bell): one row per thing worth a look. `key` keeps each event
             -- once (a later step may add to it: the demo position to its trade's entry); `seq` grows
             -- on every insert and update, so the page asks only for what changed since it last looked.
@@ -1543,6 +1559,72 @@ def update_demo_position(pid: int, only_if: Optional[str] = None, **fields) -> i
         args.append(only_if)
     with connect() as c:
         return c.execute(q, args).rowcount
+
+
+EXEC_COLS = ('ref', 'mode', 'symbol', 'instrument', 'side', 'level', 'status', 'segment', 'product', 'security_id', 'qty',
+             'price', 'stop', 'target', 'risk', 'entry_time', 'correlation_id', 'order_id', 'protect_id', 'fill', 'exit',
+             'exit_time', 'gross', 'charges', 'net', 'last', 'unreal', 'expires', 'body', 'note')
+
+
+def exec_orders(statuses: Optional[List[str]] = None, limit: int = 500) -> List[Dict[str, Any]]:
+    """Live-trading rows, newest first; `body` (the order sent or planned) parsed."""
+    q, args = 'SELECT * FROM exec_orders', []
+    if statuses:
+        q += f" WHERE status IN ({','.join('?' * len(statuses))})"
+        args = list(statuses)
+    with connect() as c:
+        rows = _rows(c.execute(q + ' ORDER BY id DESC LIMIT ?', args + [limit]))
+    for r in rows:
+        try:
+            r['body'] = json.loads(r['body']) if r.get('body') else None
+        except ValueError:
+            r['body'] = None
+    return rows
+
+
+def exec_refs() -> set:
+    with connect() as c:
+        return {r[0] for r in c.execute('SELECT ref FROM exec_orders')}
+
+
+def add_exec_order(o: Dict[str, Any]) -> int:
+    """A new row; a trade already taken (its ref) is left as it was and 0 returned."""
+    vals = [json.dumps(o[k]) if k == 'body' and o.get(k) is not None else o.get(k) for k in EXEC_COLS]
+    now = _now()
+    with connect() as c:
+        cur = c.execute(f"INSERT OR IGNORE INTO exec_orders ({','.join(EXEC_COLS)}, created, updated) "
+                        f"VALUES ({','.join('?' * len(EXEC_COLS))}, ?, ?)", vals + [now, now])
+        return cur.lastrowid if cur.rowcount else 0
+
+
+def update_exec_order(oid: int, only_if: Optional[Any] = None, **fields) -> int:
+    """Set fields; with `only_if` (a status or a list of them), only while the row still has one of them:
+    two clicks, or a click and the reconciler, can never both move the same order."""
+    fields = {k: v for k, v in fields.items() if k in EXEC_COLS}
+    if not fields:
+        return 0
+    if 'body' in fields and fields['body'] is not None:
+        fields['body'] = json.dumps(fields['body'])
+    fields['updated'] = _now()
+    q, args = f"UPDATE exec_orders SET {', '.join(k + ' = ?' for k in fields)} WHERE id = ?", list(fields.values()) + [oid]
+    if only_if:
+        allowed = [only_if] if isinstance(only_if, str) else list(only_if)
+        q += f" AND status IN ({','.join('?' * len(allowed))})"
+        args += allowed
+    with connect() as c:
+        return c.execute(q, args).rowcount
+
+
+def add_broker_log(method: str, path: str, body: Any, ok: bool, answer: str) -> None:
+    with connect() as c:
+        c.execute('INSERT INTO broker_log (ts, method, path, body, ok, answer) VALUES (?, ?, ?, ?, ?, ?)',
+                  (_now(), method, path, json.dumps(body) if body is not None else None, 1 if ok else 0, answer))
+        c.execute('DELETE FROM broker_log WHERE id <= (SELECT MAX(id) - 5000 FROM broker_log)')
+
+
+def broker_log(limit: int = 100) -> List[Dict[str, Any]]:
+    with connect() as c:
+        return _rows(c.execute('SELECT * FROM broker_log ORDER BY id DESC LIMIT ?', (limit,)))
 
 
 def clear_demo() -> None:

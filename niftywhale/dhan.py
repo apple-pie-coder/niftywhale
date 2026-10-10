@@ -53,6 +53,7 @@ SCRIP_URL = 'https://images.dhan.co/api-data/api-scrip-master.csv'
 IDS_PATH = Path(os.getenv('DHAN_IDS_PATH', os.path.join(os.path.dirname(store.DB_PATH) or '.', 'dhan_ids.json')))
 LOTS_PATH = IDS_PATH.with_name('dhan_lots.json')     # option lot sizes, from the same download
 OPTS_PATH = IDS_PATH.with_name('dhan_opts.json')     # option contract -> security ID, same download
+FUTS_PATH = IDS_PATH.with_name('dhan_futs.json')     # stock futures: symbol -> {expiry: security ID}, same download
 IDS_MAX_AGE = 7 * 86400          # new listings appear; refresh the map weekly
 RENEW_BEFORE = 2 * 3600          # renew a token this long before it expires
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -341,7 +342,7 @@ def _load_ids() -> Dict[str, str]:
     with _lock:
         if _ids and time.time() - _ids_at < IDS_MAX_AGE:
             return _ids
-        fresh = (IDS_PATH.exists() and LOTS_PATH.exists() and OPTS_PATH.exists()
+        fresh = (IDS_PATH.exists() and LOTS_PATH.exists() and OPTS_PATH.exists() and FUTS_PATH.exists()
                  and time.time() - IDS_PATH.stat().st_mtime < IDS_MAX_AGE)
         # A failed download is retried every IDS_RETRY, not on every call: it can take 2 minutes.
         if not fresh and time.time() - _state['ids_tried'] > IDS_RETRY:
@@ -349,11 +350,14 @@ def _load_ids() -> Dict[str, str]:
             try:
                 r = requests.get(SCRIP_URL, timeout=120)
                 r.raise_for_status()
-                ids, fallback, lots, opts = {}, {}, {}, {}
+                ids, fallback, lots, opts, futs = {}, {}, {}, {}, {}
                 for row in csv.DictReader(io.StringIO(r.text)):
                     if row.get('SEM_INSTRUMENT_NAME') in ('OPTIDX', 'OPTSTK'):
                         _lot_row(row, lots)
                         _opt_row(row, opts)
+                        continue
+                    if row.get('SEM_INSTRUMENT_NAME') == 'FUTSTK':
+                        _fut_row(row, futs)
                         continue
                     if row.get('SEM_EXM_EXCH_ID') != 'NSE' or row.get('SEM_SEGMENT') != 'E':
                         continue
@@ -370,6 +374,7 @@ def _load_ids() -> Dict[str, str]:
                 IDS_PATH.write_text(json.dumps(ids))
                 LOTS_PATH.write_text(json.dumps(lots))
                 OPTS_PATH.write_text(json.dumps(opts, separators=(',', ':')))
+                FUTS_PATH.write_text(json.dumps(futs, separators=(',', ':')))
                 _opt_ids.clear()
                 fresh = True
                 logger.info(f'Dhan: {len(ids)} NSE equity IDs refreshed')
@@ -422,6 +427,34 @@ def _opt_row(row: Dict[str, str], opts: Dict[str, str]) -> None:
         return
     if key not in opts or exch == 'NSE':
         opts[key] = sid + (':N' if exch == 'NSE' else ':B')
+
+
+def _fut_row(row: Dict[str, str], futs: Dict[str, Dict[str, str]]) -> None:
+    """One NSE stock future's security ID: futs['RELIANCE']['2026-10-27'] = '52175'. Trading symbols
+    look like RELIANCE-Oct2026-FUT, so the stock is everything before the last two parts."""
+    parts = (row.get('SEM_TRADING_SYMBOL') or '').rsplit('-', 2)
+    sid, exp = (row.get('SEM_SMST_SECURITY_ID') or '').strip(), (row.get('SEM_EXPIRY_DATE') or '')[:10]
+    if row.get('SEM_EXM_EXCH_ID') != 'NSE' or len(parts) != 3 or parts[2] != 'FUT' or not sid or not exp:
+        return
+    futs.setdefault(parts[0], {})[exp] = sid
+
+
+def future_id(symbol: str, on: Any = None, roll_days: int = 3) -> Optional[tuple]:
+    """(security id, expiry) of a stock's near-month future as of `on` (a date, default today): the first
+    expiry more than `roll_days` days away, so a new position is never opened into its expiry week's last days."""
+    _load_ids()
+    try:
+        futs = json.loads(FUTS_PATH.read_text()).get(symbol.upper().replace('.NS', ''), {})
+    except (OSError, ValueError):
+        return None
+    on = on or datetime.now().date()
+    for exp in sorted(futs):
+        try:
+            if (datetime.fromisoformat(exp).date() - on).days > roll_days:
+                return futs[exp], exp
+        except ValueError:
+            continue
+    return None
 
 
 def option_ids(und: str, expiry: str, contracts: List[tuple]) -> Dict[tuple, tuple]:

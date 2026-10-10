@@ -38,8 +38,8 @@ load_dotenv()
 from flask import Flask, g, jsonify, redirect, render_template, request  # noqa: E402
 from flask_sock import Sock  # noqa: E402
 
-from niftywhale import (auth, autopilot, charts, config, data, demo, dhan, features, glossary, history, hub, indicators, intraday, news, notify,  # noqa: E402
-                        options, patterns, perf, session, smart, smc, store, ticker, universe)
+from niftywhale import (auth, autopilot, broker, charts, config, costs, data, demo, dhan, execution, features, glossary,  # noqa: E402
+                        history, hub, indicators, intraday, news, notify, options, patterns, perf, session, smart, smc, store, ticker, universe)
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
                     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
@@ -1861,6 +1861,346 @@ def demo_statement(positions: list = None, ledger: list = None) -> dict:
     return {'lines': lines, 'summary': summary}
 
 
+# ---------------------------------------------------------------- live trading (execution.py, broker.py)
+# The same trades the paper journal and the demo account follow, taken on the real Dhan account at each mode's
+# level: shadow (planned, logged, followed in rupees; nothing sent), confirm (offered: sent when you press
+# Place) or auto. exec_sync runs beside demo_sync every minute; reconcile follows what was sent at Dhan.
+EXEC_LOCK = threading.Lock()
+EXEC_OPEN = ('placing', 'placed', 'open')            # sent (or being sent) and not finished
+EXEC_HOLD = ('shadow', 'placing', 'placed', 'open')  # count against the limits
+EXEC_STALE_S = 300                                     # an alert older than this is never sent
+_exec_cache: dict = {'funds': (0.0, None), 'ip': (0.0, None)}
+
+
+def exec_settings() -> dict:
+    try:
+        return execution.settings_from(json.loads(store.settings().get('exec') or '{}'))
+    except ValueError:
+        return execution.settings_from({})
+
+
+def exec_halted() -> str:
+    return store.settings().get('exec_halt') or ''
+
+
+def exec_capital(st: dict) -> float:
+    """What sizing works from: the set capital, else Dhan's available balance (read at most once a minute)."""
+    if st['capital']:
+        return float(st['capital'])
+    at, v = _exec_cache['funds']
+    if time.time() - at > 60:
+        v = broker.funds() if dhan.available() else None
+        _exec_cache['funds'] = (time.time(), v)
+    return float(v or 0)
+
+
+def exec_static_ip() -> dict:
+    """Dhan's whitelisted IPs (asked at most every 10 minutes)."""
+    at, v = _exec_cache['ip']
+    if time.time() - at > 600:
+        v = broker.static_ip() if dhan.available() else None
+        _exec_cache['ip'] = (time.time(), v)
+    return v or {}
+
+
+def exec_evidence(mode: str) -> dict:
+    """What the gate reads: the latest backtest after costs (and its last 3 months), and the paper record after costs."""
+    run = store.latest_run(mode, 'baseline') or {}
+    since = (data.now_ist() - timedelta(days=91)).strftime('%Y-%m-%d')
+    paper = perf.closed(store.live_trades(mode))
+    paper = costs.apply(paper, mode, cost_settings_slip()) if paper else []
+    return {'bt': run.get('summary') or {}, 'hold_r': execution.hold_r(run.get('equity') or [], since),
+            'paper': {'trades': len(paper), 'total_r': round(sum(float(t['r']) for t in paper), 2) if paper else None}}
+
+
+def cost_settings_slip() -> float:
+    try:
+        return float(store.settings().get('lab_slippage_bps') or costs.DEFAULT_SLIPPAGE_BPS)
+    except ValueError:
+        return costs.DEFAULT_SLIPPAGE_BPS
+
+
+def exec_book(rows: list) -> dict:
+    """Open positions, entries today and today's P&L (closed net + open marks) of the live rows."""
+    today = data.now_ist().date().isoformat()
+    real = [r for r in rows if r['level'] in execution.REAL]
+    return {'open': sum(1 for r in real if r['status'] in EXEC_OPEN),
+            'today': sum(1 for r in real if r['status'] in EXEC_OPEN + ('closed',) and (r.get('entry_time') or '')[:10] == today),
+            'day_pnl': round(sum(r['net'] or 0 for r in real if r['status'] == 'closed' and (r.get('exit_time') or '')[:10] == today)
+                             + sum(r['unreal'] or 0 for r in real if r['status'] == 'open'), 2)}
+
+
+def _exec_instrument(t: dict, product: str) -> dict:
+    """The Dhan instrument of a trade, with its latest price and (a future) its basis over the share."""
+    if t['mode'] == 'options':
+        hit = dhan.option_id(t['symbol'], t.get('expiry'), t.get('strike'), t.get('opt_side'))
+        if not hit:
+            return {}
+        sid, seg = hit
+        q = dhan.quotes_full({seg: [int(sid)]}).get((seg, int(sid))) or {}
+        return {'security_id': sid, 'segment': seg, 'last': q.get('ltp') or None}
+    eq = dhan.security_id(t['symbol'])
+    if not eq:
+        return {}
+    if product == 'FUT':
+        fut = dhan.future_id(t['symbol'])
+        if not fut:
+            return {}
+        q = dhan.quotes_full({'NSE_EQ': [int(eq)], 'NSE_FNO': [int(fut[0])]})
+        spot, f = (q.get(('NSE_EQ', int(eq))) or {}).get('ltp'), (q.get(('NSE_FNO', int(fut[0]))) or {}).get('ltp')
+        return {'security_id': fut[0], 'segment': 'NSE_FNO', 'last': spot or None,
+                'basis': round(f - spot, 2) if f and spot else 0.0, 'expiry': fut[1]}
+    q = dhan.quotes_full({'NSE_EQ': [int(eq)]}).get(('NSE_EQ', int(eq))) or {}
+    return {'security_id': eq, 'segment': 'NSE_EQ', 'last': q.get('ltp') or None}
+
+
+def _exec_session_open(t: dict) -> bool:
+    now = data.now_ist()
+    if now.weekday() >= 5:
+        return False
+    if t['mode'] == 'options' or (t['mode'] == 'swing' and t.get('side') == 'short'):
+        return session.fo_open(now.replace(tzinfo=None))
+    fo = dhan.lot_size(t['symbol']) is not None
+    return session.OPEN <= now.time() < session.cts_end(fo, now.date())
+
+
+def exec_sync() -> dict:
+    """Take each new trade at its mode's level, settle shadow rows whose trades closed, lapse old offers,
+    and reconcile what was sent. Idempotent: a trade is taken once (exec_orders.ref)."""
+    since = _when(store.settings().get('exec_since'))
+    st = exec_settings()
+    if not since or not any(st[m] != 'off' for m in execution.MODES):
+        return {'skipped': 'live trading is off'}
+    if not EXEC_LOCK.acquire(blocking=False):
+        return {'skipped': 'already syncing'}
+    try:
+        got = {'new': 0, 'settled': 0, 'expired': 0}
+        have = store.exec_refs()
+        trades = [t for m in execution.MODES if st[m] != 'off' for t in store.live_trades(m) if t.get('ref') and t.get('entry')]
+        by_ref = {t['ref']: t for t in trades}
+        rows = store.exec_orders()
+        halt = exec_halted()
+        for t in sorted((t for t in trades if t['ref'] not in have and (_when(t['entry_time']) or since) >= since),
+                        key=lambda t: _when(t['entry_time'])):
+            exec_take(t, st, rows, halt)
+            got['new'] += 1
+            rows = store.exec_orders()
+        now = data.now_ist()
+        for r in rows:
+            t = by_ref.get(r['ref'])
+            if r['status'] == 'shadow' and t and t['status'] != 'open' and t.get('exit') is not None:
+                exec_settle_shadow(r, t, st)
+                got['settled'] += 1
+            elif r['status'] == 'offered' and (_when(r['expires']) or now) <= now:
+                if store.update_exec_order(r['id'], only_if='offered', status='expired', note='not placed in time'):
+                    got['expired'] += 1
+        if any(r['status'] in EXEC_OPEN for r in rows):
+            got['reconcile'] = exec_reconcile(st)
+        return got
+    finally:
+        EXEC_LOCK.release()
+
+
+def exec_take(t: dict, st: dict, rows: list, halt: str) -> None:
+    """One new trade: sized and planned; recorded at its level (shadow), offered (confirm) or sent (auto),
+    unless a guard stops it (then recorded as blocked, with the reason)."""
+    level = st[t['mode']]
+    product_side = 'long' if t['mode'] == 'options' else (t.get('side') or 'long')
+    lot = (t.get('lot') or dhan.lot_size(t['symbol'])) if t['mode'] == 'options' else \
+        dhan.lot_size(t['symbol']) if t['mode'] == 'swing' and t.get('side') == 'short' else None
+    capital = exec_capital(st)
+    tied = sum(float((r.get('body') or {}).get('price') or 0) * (r.get('qty') or 0) for r in rows if r['status'] in EXEC_HOLD)
+    base = {'ref': t['ref'], 'mode': t['mode'], 'symbol': t['symbol'], 'side': product_side, 'level': level,
+            'entry_time': t['entry_time'], 'stop': t.get('stop'), 'target': t.get('target'), 'instrument': _instrument(t)}
+    sz = demo.size(t, capital, max(0.0, capital - tied), st, lot) if capital > 0 else {'skip': 'no capital to size from (Trading settings, or Dhan funds)'}
+    if 'skip' in sz:
+        store.add_exec_order({**base, 'status': 'skipped', 'note': sz['skip']})
+        return
+    inst = _exec_instrument(t, sz['product']) if dhan.available() else {}
+    p = execution.plan(t, sz, inst, st, dhan.client_id() or '') if inst else {'skip': 'Dhan is not connected, or the instrument is unknown'}
+    if 'skip' in p:
+        store.add_exec_order({**base, 'status': 'skipped', 'note': p['skip'], 'qty': sz['qty']})
+        return
+    row = {**base, **{k: p[k] for k in ('segment', 'product', 'security_id', 'qty', 'price', 'stop', 'target', 'correlation_id')},
+           'instrument': _instrument(t, sz['product']), 'risk': sz['risk'], 'body': p['body'], 'last': inst.get('last')}
+    if level == 'shadow':
+        store.add_exec_order({**row, 'status': 'shadow', 'note': 'planned only: nothing sent'})
+        return
+    why = ([f'live trading is halted: {halt}'] if halt else []) + ([broker.sending()] if broker.sending() else [])
+    age = (data.now_ist() - (_when(t['entry_time']) or data.now_ist())).total_seconds()
+    if age > EXEC_STALE_S:
+        why.append(f'the alert is {age / 60:.0f} minutes old')
+    why += execution.guards({**p, 'risk': sz['risk']}, t, exec_book(rows), st, capital, inst.get('last'), _exec_session_open(t))
+    if why:
+        store.add_exec_order({**row, 'status': 'blocked', 'note': '; '.join(why)})
+        exec_notice(row, 'blocked', '; '.join(why))
+        return
+    if level == 'confirm':
+        exp = (data.now_ist() + timedelta(minutes=st['offer_minutes'])).isoformat(timespec='seconds')
+        oid = store.add_exec_order({**row, 'status': 'offered', 'expires': exp, 'note': 'waiting for you to place it'})
+        exec_notice({**row, 'id': oid}, 'offered', f"Place within {st['offer_minutes']} min: Trading tab")
+        return
+    oid = store.add_exec_order({**row, 'status': 'placing'})
+    if oid:
+        exec_send(oid)
+
+
+def exec_send(oid: int) -> dict:
+    """Send one row's super order. Asks Dhan for its correlation ID first: a row that was sent and whose answer
+    was lost is picked up, never sent twice."""
+    row = next((r for r in store.exec_orders(['placing']) if r['id'] == oid), None)
+    if not row:
+        return {'error': 'not waiting to be sent'}
+    known = broker.order_by_correlation(row['correlation_id'])
+    if known and known.get('orderId'):
+        store.update_exec_order(oid, only_if='placing', status='placed', order_id=str(known['orderId']), note='found at Dhan')
+        return {'placed': known['orderId']}
+    ok, ans, err = broker.place_super(row['body'])
+    if ok and isinstance(ans, dict) and ans.get('orderId'):
+        store.update_exec_order(oid, only_if='placing', status='placed', order_id=str(ans['orderId']),
+                                note=f"sent: {ans.get('orderStatus') or 'accepted'}")
+        exec_notice(row, 'placed', f"{row['qty']} at {row['price']:g}, stop {row['stop']:g}, target {row['target']:g}")
+        return {'placed': ans['orderId']}
+    store.update_exec_order(oid, only_if='placing', status='rejected', note=err or 'Dhan did not accept it')
+    exec_notice(row, 'rejected', err or '')
+    if err and ('DH-905' in err or 'IP' in err.upper()):
+        exec_halt(f'Dhan refused an order ({err}): check the static IP')
+    return {'error': err}
+
+
+def exec_settle_shadow(r: dict, t: dict, st: dict) -> None:
+    """A shadow row whose trade closed: the rupees it would have made, after charges (demo.settle)."""
+    pos = {'mode': r['mode'], 'side': r['side'], 'product': {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if r['mode'] == 'options' else 'FUT'}
+           .get(r['product'], 'CNC'), 'qty': r['qty'], 'entry': float(t['entry']), 'entry_time': r['entry_time']}
+    res = demo.settle(pos, float(t['exit']), True, t.get('exit_time') or r['entry_time'])
+    store.update_exec_order(r['id'], only_if='shadow', status='shadow_closed', exit=float(t['exit']),
+                            exit_time=t.get('exit_time'), gross=res['gross'], charges=res['charges'], net=res['net'],
+                            fill=float(t['entry']), note=DEMO_OUTCOME.get(t['status'], t['status']))
+
+
+def exec_reconcile(st: dict) -> dict:
+    """What was sent, against Dhan: a filled entry opens the row, a finished super order closes it (at the leg
+    that filled), a refused or cancelled one ends it. A swing holding whose legs are gone the next session gets
+    its stop and target back (a forever OCO). An open row Dhan does not hold halts everything."""
+    sent = store.exec_orders(list(EXEC_OPEN))
+    if not sent:
+        return {}
+    supers = {str(o.get('orderId')): o for o in broker.super_orders()}
+    pos = broker.positions()
+    hold = broker.holdings()
+    if pos is None or hold is None:
+        return {'error': 'Dhan did not answer'}
+    held = {str(p.get('securityId')): int(p.get('netQty') or 0) for p in pos}
+    for h in hold:
+        held[str(h.get('securityId'))] = held.get(str(h.get('securityId')), 0) + int(h.get('totalQty') or 0)
+    out = {'opened': 0, 'closed': 0, 'ended': 0, 'protected': 0}
+    for r in sent:
+        if r['status'] == 'placing':                 # sent, but the answer was lost (or the app stopped): ask again
+            if (data.now_ist() - (_when(r['updated']) or data.now_ist())).total_seconds() > 60:
+                exec_send(r['id'])
+            continue
+        o = supers.get(str(r.get('order_id')))
+        if o:
+            status = o.get('orderStatus')
+            legs = {l.get('legName'): l for l in o.get('legDetails') or []}
+            if r['status'] == 'placed' and status in ('TRADED', 'CLOSED', 'TRIGGERED') or (r['status'] == 'placed' and (o.get('filledQty') or 0) > 0):
+                store.update_exec_order(r['id'], only_if='placed', status='open', fill=float(o.get('averageTradedPrice') or r['price']))
+                r['status'], r['fill'] = 'open', float(o.get('averageTradedPrice') or r['price'])
+                out['opened'] += 1
+                exec_notice(r, 'filled', f"filled at {r['fill']:g}")
+            if status == 'CLOSED':
+                leg = next((legs[k] for k in ('TARGET_LEG', 'STOP_LOSS_LEG') if k in legs and legs[k].get('orderStatus') == 'TRADED'), None)
+                exec_close(r, float(leg.get('price')) if leg else None, 'target' if leg and leg.get('legName') == 'TARGET_LEG' else 'stop')
+                out['closed'] += 1
+            elif status in ('REJECTED', 'CANCELLED') and r['status'] == 'placed':
+                store.update_exec_order(r['id'], only_if='placed', status=status.lower(), note=o.get('omsErrorDescription') or status.lower())
+                out['ended'] += 1
+            continue
+        if r['status'] == 'open' and r['product'] == 'CNC' and held.get(str(r['security_id']), 0) >= (r['qty'] or 0):
+            if not r.get('protect_id'):                          # a holding from an earlier session: its legs are gone
+                ok, ans, err = broker.place_forever(execution.protect_body(r, dhan.client_id() or ''))
+                if ok and isinstance(ans, dict) and ans.get('orderId'):
+                    store.update_exec_order(r['id'], protect_id=str(ans['orderId']), note='stop and target re-placed (forever OCO)')
+                    out['protected'] += 1
+                else:
+                    exec_halt(f"could not re-place the stop on {r['instrument']}: {err}")
+            continue
+        if r['status'] == 'open' and held.get(str(r['security_id']), 0) == 0:
+            exec_close(r, None, 'closed at Dhan')
+            out['closed'] += 1
+        elif r['status'] == 'open':
+            exec_halt(f"{r['instrument']} is open here but Dhan's order {r.get('order_id')} was not found")
+    return out
+
+
+def exec_close(r: dict, px, how: str) -> None:
+    """A real row finished: its rupees from the fill and the exit (the paper trade's exit when Dhan's leg price is
+    not known), after charges."""
+    t = next((t for t in store.live_trades(r['mode']) if t['ref'] == r['ref']), {})
+    exit_px = px if px is not None else (float(t['exit']) if t.get('exit') is not None else r.get('last'))
+    if exit_px is None:
+        return
+    pos = {'mode': r['mode'], 'side': r['side'], 'product': {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if r['mode'] == 'options' else 'FUT'}
+           .get(r['product'], 'CNC'), 'qty': r['qty'], 'entry': float(r.get('fill') or r['price']), 'entry_time': r['entry_time']}
+    res = demo.settle(pos, float(exit_px), True, data.now_ist().isoformat(timespec='seconds'))
+    if store.update_exec_order(r['id'], only_if=['open', 'placed'], status='closed', exit=float(exit_px),
+                               exit_time=data.now_ist().isoformat(timespec='seconds'), gross=res['gross'], charges=res['charges'],
+                               net=res['net'], note=how):
+        exec_notice({**r, 'net': res['net']}, 'closed', f"{how}: ₹{res['net']:,.0f} after charges")
+        st = exec_settings()
+        book = exec_book(store.exec_orders())
+        cap = exec_capital(st)
+        if cap and book['day_pnl'] <= -cap * st['daily_loss_pct'] / 100:
+            exec_halt(f"today's loss ₹{-book['day_pnl']:,.0f} reached the daily limit")
+
+
+def exec_halt(why: str) -> None:
+    """Stop everything new: no offer, no send, until a fresh sign-in resumes. Open positions keep their stops."""
+    if exec_halted():
+        return
+    store.set_settings({'exec_halt': f"{why} ({data.now_ist():%d %b %H:%M})"})
+    for r in store.exec_orders(['offered']):
+        store.update_exec_order(r['id'], only_if='offered', status='dismissed', note='halted')
+    store.add_notice(f"exec-halt:{int(time.time())}", 'exec', 'bad', 'Live trading halted', why, None, None, {'tab': 'trade'})
+    notify.send(f'<b>Live trading halted</b>\n{html_escape(why)}\nResume from the Trading tab once it is checked.')
+    logger.warning(f'Live trading halted: {why}')
+
+
+def exec_notice(r: dict, what: str, detail: str) -> None:
+    """The bell, and Telegram for what needs you (an offer, a fill, a refusal, a close)."""
+    title = {'offered': 'Order to confirm', 'placed': 'Order sent', 'filled': 'Order filled', 'rejected': 'Order refused',
+             'blocked': 'Order not sent', 'closed': 'Position closed'}.get(what, what)
+    store.add_notice(f"exec:{what}:{r['ref']}", 'exec', 'bad' if what in ('rejected', 'blocked') else 'info',
+                     f"{title} · {r.get('instrument') or r['symbol']}", detail, r['symbol'], r['mode'], {'tab': 'trade', 'ref': r['ref']})
+    if r.get('level') in execution.REAL or what == 'offered':
+        notify.send(f"<b>{html_escape(title)}</b> · {html_escape(r.get('instrument') or r['symbol'])} ({r['mode']})\n{html_escape(detail)}")
+
+
+def html_escape(s) -> str:
+    return str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def exec_view() -> dict:
+    st = exec_settings()
+    rows = store.exec_orders(limit=300)
+    gates = {m: execution.gate(m, exec_evidence(m)) for m in execution.MODES}
+    ip = exec_static_ip() if dhan.available() else {}
+    shadow = [r for r in rows if r['status'] == 'shadow_closed']
+    real = [r for r in rows if r['status'] == 'closed']
+    return {'settings': st, 'levels': {m: st[m] for m in execution.MODES}, 'labels': execution.LEVEL_LABEL,
+            'since': store.settings().get('exec_since') or None, 'halt': exec_halted() or None,
+            'sending': {'on': store.settings().get('exec_send') == '1', 'why_not': broker.sending(),
+                        'primary_ip': ip.get('primaryIP') or None, 'secondary_ip': ip.get('secondaryIP') or None},
+            'dhan': dhan.available(), 'capital': exec_capital(st) if dhan.available() or st['capital'] else None,
+            'gates': gates, 'book': exec_book(rows),
+            'offers': [r for r in rows if r['status'] == 'offered'],
+            'rows': rows,
+            'totals': {'shadow': {'trades': len(shadow), 'net': round(sum(r['net'] or 0 for r in shadow), 2)},
+                       'real': {'trades': len(real), 'net': round(sum(r['net'] or 0 for r in real), 2)}},
+            'log': store.broker_log(40)}
+
+
+
 def demo_loop() -> None:
     """Every minute during the session, every ten minutes otherwise."""
     time.sleep(60)
@@ -1869,6 +2209,10 @@ def demo_loop() -> None:
             demo_sync()
         except Exception:
             logger.exception('Demo sync failed')
+        try:
+            exec_sync()
+        except Exception:
+            logger.exception('Live trading sync failed')
         DEMO_WAKE.wait(60 if data.market_open() else 600)
         DEMO_WAKE.clear()
         time.sleep(1)                    # let the watcher finish writing the rest of its pass
@@ -3034,7 +3378,7 @@ def api_watch_check():
     return jsonify(check_zones('manual'))
 
 
-OWN_ENDPOINT = {'rules', 'intraday_rules', 'options_rules', 'autopilot_policy', 'paused_swing', 'paused_intraday',
+OWN_ENDPOINT = {'rules', 'intraday_rules', 'options_rules', 'autopilot_policy', 'paused_swing', 'paused_intraday', 'exec', 'exec_since', 'exec_send', 'exec_halt',
                 'paused_options', 'demo', 'demo_since'}
 
 
@@ -3495,6 +3839,146 @@ def api_demo_statement_csv():
     name = f"niftywhale-demo-statement-{data.now_ist():%Y-%m-%d}.csv"
     return app.response_class(buf.getvalue(), mimetype='text/csv',
                               headers={'Content-Disposition': f'attachment; filename="{name}"'})
+
+
+@app.route('/api/exec')
+def api_exec():
+    return jsonify(safe(exec_view()))
+
+
+def _exec_arm_check(mode: str, level: str) -> list:
+    """Why `mode` may not go to `level` (empty: it may)."""
+    if level not in execution.REAL:
+        return []
+    why = []
+    if exec_halted():
+        why.append('live trading is halted: resume it first')
+    if broker.sending():
+        why.append(broker.sending())
+    g = execution.gate(mode, exec_evidence(mode))
+    why += [f"{c['label']}: {c['value'] if c['value'] is not None else 'none'} (needs {c['need']})" for c in g['checks'] if not c['ok']]
+    return why
+
+
+@app.route('/api/exec/settings', methods=['POST'])
+def api_exec_settings():
+    """Levels, sizing and limits. A signed-in browser, fresh (as for the broker settings); a level that sends
+    needs real sending on, no halt, and the mode's evidence (execution.gate)."""
+    bad = auth._need_session(fresh=True)
+    if bad:
+        return bad
+    body = request.get_json(silent=True) or {}
+    body = body.get('settings') if isinstance(body.get('settings'), dict) else {}
+    cur = exec_settings()
+    new = execution.settings_from({**cur, **body})
+    refused = {m: why for m in execution.MODES if new[m] != cur[m] for why in [_exec_arm_check(m, new[m])] if why}
+    if refused:
+        return jsonify({'error': '; '.join(f"{m}: {', '.join(w)}" for m, w in refused.items()), 'refused': refused}), 400
+    upd = {'exec': new}
+    if not store.settings().get('exec_since') and any(new[m] != 'off' for m in execution.MODES):
+        upd['exec_since'] = data.now_ist().isoformat(timespec='seconds')
+    store.set_settings(upd)
+    changed = sorted(k for k in new if new[k] != cur[k])
+    if changed:
+        logger.info('Live trading settings changed: ' + ', '.join(changed))
+        store.add_notice(f"exec-settings:{int(time.time())}", 'exec', 'info', 'Live trading settings changed',
+                         ', '.join(f"{k}: {cur[k]} → {new[k]}" for k in changed), None, None, {'tab': 'trade'})
+    return jsonify(safe(exec_view()))
+
+
+@app.route('/api/exec/send', methods=['POST'])
+def api_exec_send():
+    """Real sending on or off. On needs Dhan connected with a static IP whitelisted; off also lowers every
+    sending level to shadow."""
+    bad = auth._need_session(fresh=True)
+    if bad:
+        return bad
+    on = bool((request.get_json(silent=True) or {}).get('on'))
+    if on:
+        if not dhan.available():
+            return jsonify({'error': 'connect Dhan first'}), 400
+        _exec_cache['ip'] = (0.0, None)
+        if not (exec_static_ip().get('primaryIP')):
+            return jsonify({'error': 'no static IP is whitelisted at Dhan (web.dhan.co → Profile → DhanHQ APIs → Static IP)'}), 400
+        store.set_settings({'exec_send': '1'})
+    else:
+        st = exec_settings()
+        store.set_settings({'exec_send': '0', 'exec': {**st, **{m: 'shadow' for m in execution.MODES if st[m] in execution.REAL}}})
+    logger.info(f"Live trading: real sending {'on' if on else 'off'}")
+    return jsonify(safe(exec_view()))
+
+
+@app.route('/api/exec/offer/<int:oid>', methods=['POST'])
+def api_exec_offer(oid):
+    """Place or dismiss an offered order (confirm level). A signed-in browser only: never an API token."""
+    bad = auth._need_session()
+    if bad:
+        return bad
+    action = (request.get_json(silent=True) or {}).get('action')
+    row = next((r for r in store.exec_orders(['offered']) if r['id'] == oid), None)
+    if not row:
+        return jsonify({'error': 'that order is no longer waiting (placed, lapsed or dismissed)'}), 409
+    if action == 'dismiss':
+        store.update_exec_order(oid, only_if='offered', status='dismissed', note='dismissed by you')
+        return jsonify(safe(exec_view()))
+    if action != 'place':
+        return jsonify({'error': 'action is place or dismiss'}), 400
+    if (_when(row['expires']) or data.now_ist()) <= data.now_ist():
+        store.update_exec_order(oid, only_if='offered', status='expired', note='not placed in time')
+        return jsonify({'error': 'the offer lapsed'}), 409
+    st = exec_settings()
+    t = next((t for t in store.live_trades(row['mode']) if t['ref'] == row['ref']), None)
+    if not t or t['status'] != 'open':
+        store.update_exec_order(oid, only_if='offered', status='expired', note='the trade is no longer open')
+        return jsonify({'error': 'the trade has already closed'}), 409
+    inst = _exec_instrument(t, {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if row['mode'] == 'options' else 'FUT'}.get(row['product'], 'CNC'))
+    others = [r for r in store.exec_orders() if r['id'] != oid]
+    why = ([f'live trading is halted: {exec_halted()}'] if exec_halted() else []) + ([broker.sending()] if broker.sending() else [])
+    why += execution.guards(row, t, exec_book(others), st, exec_capital(st), inst.get('last'), _exec_session_open(t))
+    if why:
+        return jsonify({'error': '; '.join(why)}), 409
+    if not store.update_exec_order(oid, only_if='offered', status='placing'):
+        return jsonify({'error': 'that order is no longer waiting'}), 409
+    res = exec_send(oid)
+    if res.get('error'):
+        return jsonify({'error': res['error']}), 502
+    return jsonify(safe(exec_view()))
+
+
+@app.route('/api/exec/kill', methods=['POST'])
+def api_exec_kill():
+    """The kill switch: halt, lower every sending level to shadow, cancel entries not yet filled, and with
+    `flatten` exit every position at Dhan too. A signed-in browser, not fresh: it has to be quick."""
+    bad = auth._need_session()
+    if bad:
+        return bad
+    flatten = bool((request.get_json(silent=True) or {}).get('flatten'))
+    exec_halt('kill switch' + (' (everything exited)' if flatten else ''))
+    st = exec_settings()
+    store.set_settings({'exec': {**st, **{m: 'shadow' for m in execution.MODES if st[m] in execution.REAL}}})
+    errors = []
+    for r in store.exec_orders(['placed']):
+        ok, _, err = broker.cancel_super(r['order_id'], 'ENTRY_LEG')
+        if ok:
+            store.update_exec_order(r['id'], only_if='placed', status='cancelled', note='kill switch')
+        else:
+            errors.append(f"{r['instrument']}: {err}")
+    if flatten:
+        ok, _, err = broker.exit_all()
+        if not ok:
+            errors.append(f'exit all: {err}')
+    return jsonify(safe({**exec_view(), 'errors': errors}))
+
+
+@app.route('/api/exec/resume', methods=['POST'])
+def api_exec_resume():
+    bad = auth._need_session(fresh=True)
+    if bad:
+        return bad
+    store.set_settings({'exec_halt': ''})
+    logger.info('Live trading resumed')
+    return jsonify(safe(exec_view()))
+
 
 
 @app.route('/api/demo/sync', methods=['POST'])

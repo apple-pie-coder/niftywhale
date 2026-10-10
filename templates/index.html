@@ -353,6 +353,26 @@
     .sm-line { font-size: 13px; line-height: 1.5; margin: 0 0 6px; }
     .sm-dl { list-style: none; padding: 0; margin: 0; font-size: 12.5px; display: grid; gap: 5px; }
     .dm-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+    /* Live trading (the Trading tab). */
+    [data-trx][hidden] { display: none; }
+    .trx-note { white-space: normal; min-width: 200px; max-width: 340px; }
+    .trx-halt { margin: 0 0 12px; padding: 10px 14px; border-radius: var(--r-md); background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+    .trx-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 1100px) { .trx-modes { grid-template-columns: minmax(0, 1fr); } }
+    .trx-mode { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px; background: var(--surface); display: grid; gap: 10px; align-content: start; }
+    .trx-mode[data-level="confirm"], .trx-mode[data-level="auto"] { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad) inset; }
+    .trx-mode h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .trx-mode .seg button { font-size: 12px; padding: 6px 4px; }
+    .trx-mode .seg button[data-real][aria-pressed="true"] { background: var(--bad); color: #fff; }
+    .trx-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; }
+    .trx-checks li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+    .trx-checks li[data-ok="1"] i { color: var(--good); } .trx-checks li[data-ok="0"] i { color: var(--bad); }
+    .trx-checks .muted { white-space: nowrap; }
+    .trx-live { display: inline-block; padding: 1px 7px; border-radius: var(--r-pill); font-size: 10.5px; font-weight: 750; letter-spacing: .05em; }
+    .trx-live[data-l="shadow"] { background: var(--sunk); color: var(--ink-2); }
+    .trx-live[data-l="confirm"], .trx-live[data-l="auto"] { background: var(--bad); color: #fff; }
+    .trx-log summary { cursor: pointer; font-weight: 650; padding: 4px 0 10px; }
+    .trx-log td { font-size: 12px; vertical-align: top; } .trx-log code { font-size: 11.5px; overflow-wrap: anywhere; }
     .dm-actions .btn { width: auto; padding: 7px 14px; }
     .dm-start { grid-column: 1 / -1; background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--r-lg);
                 padding: 16px; display: grid; gap: 10px; }
@@ -1732,6 +1752,7 @@
                 <button type="button" role="tab" data-mode="news" aria-selected="false">News<small id="news-badge"></small></button>
                 <button type="button" role="tab" data-mode="smart" aria-selected="false">Smart money</button>
                 <button type="button" role="tab" data-mode="demo" aria-selected="false">Demo funds<small id="demo-badge"></small></button>
+                <button type="button" role="tab" data-mode="trade" aria-selected="false">Trading<small id="trade-badge"></small></button>
                 <button type="button" role="tab" data-mode="perf" aria-selected="false">Performance<small id="perf-badge"></small></button>
             </div>
             <span class="panel-meta" id="mode-meta"></span>
@@ -2027,6 +2048,45 @@
                 in a day), block deals (₹10 cr+ in the block window), FII/DII cash flows, participant-wise derivatives open interest and
                 every stock's delivery. Nothing here is real time and nothing names who is buying today. Client types are read from
                 the client's name, so treat them as a good guess. <a class="more" href="/docs#415-smart-money" target="_blank" rel="noopener">How Smart money works</a></p>
+        </section>
+        </div>
+
+        <div class="view" id="trade-view" hidden>
+        <section>
+            <div class="panel-head">
+                <h2 class="panel-title">Live trading</h2>
+                <span class="panel-meta" id="tr-meta">Loading…</span>
+                <div class="dm-actions">
+                    <button class="btn" type="button" data-trx="settings">Settings</button>
+                    <button class="btn" type="button" data-trx="resume" hidden>Resume…</button>
+                    <button class="btn btn-danger" type="button" data-trx="kill">Kill switch</button>
+                </div>
+            </div>
+            <div class="trx-halt" id="trx-halt" hidden></div>
+            <div class="stats" id="trx-stats"></div>
+        </section>
+        <section>
+            <div class="panel-head"><h2 class="panel-title">Each mode</h2>
+                <span class="panel-meta">Shadow plans every order and follows it in rupees, sending nothing. Confirm each and Automatic send real orders: they need sending on and the evidence below.</span></div>
+            <div class="trx-modes" id="trx-modes"></div>
+        </section>
+        <section id="trx-offers-sec" hidden>
+            <div class="panel-head"><h2 class="panel-title">Waiting for you</h2><span class="panel-meta">Orders to place: each lapses if not placed in time</span></div>
+            <div class="table-wrap"><table><thead><tr><th>Alert</th><th>Mode</th><th>Instrument</th><th>Side</th><th class="r">Quantity</th>
+                <th class="r">Limit</th><th class="r">Stop · target</th><th class="r">Risks</th><th class="r">Lapses</th><th></th></tr></thead>
+                <tbody id="trx-offers"></tbody></table></div>
+        </section>
+        <section>
+            <div class="panel-head"><h2 class="panel-title">Orders</h2><span class="panel-meta" id="trx-orders-meta"></span></div>
+            <div class="table-wrap"><table><thead><tr><th>Alert</th><th>Mode</th><th>Instrument</th><th>Level</th><th>Status</th><th class="r">Quantity</th>
+                <th class="r">Limit</th><th class="r">Stop · target</th><th class="r">Fill → exit</th><th class="r">Net</th><th>Note</th></tr></thead>
+                <tbody id="trx-orders"></tbody></table></div>
+            <div class="pager" id="pg-trx" aria-label="Pages"></div>
+        </section>
+        <section>
+            <details class="trx-log"><summary>Requests to Dhan <span class="muted" id="trx-log-n"></span></summary>
+                <div class="table-wrap"><table><thead><tr><th>When</th><th>Request</th><th>Answer</th></tr></thead><tbody id="trx-log"></tbody></table></div>
+            </details>
         </section>
         </div>
 
@@ -2635,7 +2695,8 @@ const PAGED = { setups: () => renderSetups(), zones: () => renderZones(), signal
                 ijournal: () => renderIntraday(), sjournal: () => renderSwingTrades(),
                 orows: () => O && renderOptions(), ojournal: () => O && renderOptions(),
                 news: () => renderNews(), smstocks: () => renderSmartStocks(), smdeals: () => renderDeals(),
-                dmopen: () => renderDemo(), dmclosed: () => renderDemo(), dmskipped: () => renderDemo(), dmledger: () => renderDemo() };
+                dmopen: () => renderDemo(), dmclosed: () => renderDemo(), dmskipped: () => renderDemo(), dmledger: () => renderDemo(),
+                trx: () => renderTrade() };
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-pg]');
     if (!b || b.disabled) return;
@@ -4858,6 +4919,148 @@ document.addEventListener('click', (e) => {
     squareOffOne(b.dataset.sqOne, b.dataset.sqKey, b.dataset.sqWhat);
 }, true);
 
+/* ------------------------------------------------------------- live trading (the Trading tab)
+   The same trades as the paper journal and the demo account, on the real Dhan account at each mode's level
+   (app.exec_*, niftywhale/execution.py). Shadow plans and follows every order in rupees and sends nothing;
+   Confirm each and Automatic send. Raising a level, sending and resuming need a recent sign-in; Place and the
+   kill switch only a signed-in browser. Reloads every 5 s on the tab (the offers count down). */
+let trxData = null, trxTimer = null;
+const TRX_STATUS = { shadow: 'Shadow, open', shadow_closed: 'Shadow, closed', offered: 'Waiting for you', placing: 'Sending',
+    placed: 'Sent', open: 'Open', closed: 'Closed', blocked: 'Not sent', skipped: 'Skipped', rejected: 'Refused',
+    expired: 'Lapsed', dismissed: 'Dismissed', cancelled: 'Cancelled' };
+const TRX_OK = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>';
+const TRX_NO = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+
+async function loadTrade() {
+    clearTimeout(trxTimer);
+    try { trxData = await api('/api/exec'); renderTrade(); }
+    catch (e) { $('tr-meta').textContent = 'Live trading unavailable: ' + e.message; }
+    if (mode === 'trade') trxTimer = setTimeout(loadTrade, 5000);
+}
+
+function trxBadge(d) {
+    const real = Object.values(d.levels).some((l) => l === 'confirm' || l === 'auto'), shadow = Object.values(d.levels).some((l) => l === 'shadow');
+    $('trade-badge').innerHTML = d.offers.length ? String(d.offers.length) : real ? 'LIVE' : shadow ? 'SHADOW' : '';
+}
+
+function renderTrade() {
+    const d = trxData;
+    if (!d) return;
+    trxBadge(d);
+    const st = d.settings, snd = d.sending;
+    $('tr-meta').textContent = d.since ? `Taking trades since ${dmWhen(d.since)}` : 'Not set up: pick a level for a mode below';
+    $('trx-halt').hidden = !d.halt;
+    $('trx-halt').textContent = d.halt ? `Halted: ${d.halt}. Nothing new is offered or sent until you resume.` : '';
+    document.querySelector('[data-trx="resume"]').hidden = !d.halt;
+    const box = (k, v, sub, tone) => `<div class="stat"${tone ? ` data-tone="${tone}"` : ''}><div class="stat-k">${k}</div><div class="stat-v num">${v}</div><div class="stat-s">${sub || ''}</div></div>`;
+    $('trx-stats').innerHTML =
+        box('Real sending', snd.on ? 'On' : 'Off', snd.on ? `static IP ${esc(snd.primary_ip || '?')}` : esc(snd.why_not || ''), snd.on ? 'warn' : '')
+        + box('Capital', d.capital ? rs(d.capital) : '—', st.capital ? 'set in Settings' : d.dhan ? 'Dhan available balance' : 'connect Dhan or set it')
+        + box('Today', rsSigned(d.book.day_pnl), `${d.book.today} entr${d.book.today === 1 ? 'y' : 'ies'} · ${d.book.open} open · loss limit ${st.daily_loss_pct}%`, d.book.day_pnl < 0 ? 'bad' : '')
+        + box('Shadow so far', rsSigned(d.totals.shadow.net), `${d.totals.shadow.trades} closed · real ${rsSigned(d.totals.real.net)} over ${d.totals.real.trades}`);
+    $('trx-modes').innerHTML = ['swing', 'intraday', 'options'].map((m) => {
+        const lvl = d.levels[m], g = d.gates[m];
+        return `<div class="trx-mode" data-level="${lvl}"><h3>${MODE_NAME[m]} ${lvl !== 'off' ? `<span class="trx-live" data-l="${lvl}">${lvl === 'shadow' ? 'SHADOW' : 'LIVE'}</span>` : ''}</h3>
+            <div class="seg" role="group" aria-label="${MODE_NAME[m]} level">${['off', 'shadow', 'confirm', 'auto'].map((l) =>
+                `<button type="button" data-trl="${m}:${l}" aria-pressed="${l === lvl}"${l === 'confirm' || l === 'auto' ? ' data-real' : ''}>${esc(d.labels[l])}</button>`).join('')}</div>
+            <ul class="trx-checks">${g.checks.map((c) => `<li data-ok="${c.ok ? 1 : 0}"><i>${c.ok ? TRX_OK : TRX_NO}</i><span>${esc(c.label)}</span>
+                <span class="muted num">${c.value == null ? 'none' : esc(String(c.value))} · ${esc(c.need)}</span></li>`).join('')}</ul>
+            <div class="muted">${g.ok ? 'The evidence allows real orders.' : 'Real orders stay locked until every check passes; Shadow is always open.'}</div></div>`;
+    }).join('');
+    const offers = d.offers || [];
+    $('trx-offers-sec').hidden = !offers.length;
+    const lapse = (iso) => { const s = Math.max(0, Math.round((new Date(iso) - Date.now()) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    const px = (v) => v == null ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    $('trx-offers').innerHTML = offers.map((r) => `<tr><td class="num">${dmWhen(r.entry_time)}</td><td>${MODE_NAME[r.mode]}</td><td><b>${esc(r.instrument)}</b> <span class="muted">${esc(r.product)}</span></td>
+        <td>${r.side === 'short' ? 'Short' : 'Long'}</td><td class="r num">${r.qty}</td><td class="r num">${px(r.price)}</td><td class="r num">${px(r.stop)} · ${px(r.target)}</td>
+        <td class="r num">${rs(r.risk)}</td><td class="r num">${lapse(r.expires)}</td>
+        <td class="r"><button class="btn btn-primary" type="button" data-trp="${r.id}" style="width:auto">Place</button> <button class="btn-link" type="button" data-trd="${r.id}">Dismiss</button></td></tr>`).join('');
+    const rows = d.rows || [];
+    const net = rows.filter((r) => r.status === 'closed').reduce((t, r) => t + (r.net || 0), 0);
+    $('trx-orders-meta').textContent = rows.length ? `${rows.length} order(s) · real closed ${net >= 0 ? '+' : ''}${rs(net)} net` : '';
+    if (!rows.length) paged('trx', []);
+    $('trx-orders').innerHTML = rows.length ? paged('trx', rows).map((r) => `<tr data-sym="${esc(r.symbol)}"><td class="num">${dmWhen(r.entry_time)}</td><td>${MODE_NAME[r.mode]}</td>
+        <td><b>${esc(r.instrument || r.symbol)}</b> <span class="muted">${esc(r.product || '')}</span></td><td><span class="trx-live" data-l="${esc(r.level)}">${esc(d.labels[r.level] || r.level)}</span></td>
+        <td>${esc(TRX_STATUS[r.status] || r.status)}</td><td class="r num">${r.qty || '—'}</td><td class="r num">${px(r.price)}</td>
+        <td class="r num">${px(r.stop)} · ${px(r.target)}</td><td class="r num">${r.fill != null ? px(r.fill) : '—'} → ${r.exit != null ? px(r.exit) : '—'}</td>
+        <td class="r num">${r.net != null ? `<b>${rsSigned(r.net)}</b>` : '—'}</td><td class="muted trx-note">${esc(r.note || '')}</td></tr>`).join('')
+        : '<tr><td colspan="11"><div class="empty">No orders yet. Set a mode to Shadow to see what each alert would send.</div></td></tr>';
+    $('trx-log-n').textContent = `(${(d.log || []).length})`;
+    $('trx-log').innerHTML = (d.log || []).map((l) => `<tr><td class="num">${dmWhen(l.ts)}</td><td><code>${esc(l.method)} ${esc(l.path)}</code>${l.body ? `<div><code>${esc(l.body)}</code></div>` : ''}</td>
+        <td><code>${l.ok ? '' : 'refused: '}${esc((l.answer || '').slice(0, 300))}</code></td></tr>`).join('');
+}
+
+async function trxPost(path, body, done, fresh) {
+    try {
+        trxData = await (fresh ? apiConfirmed(path, body, 'Live trading changes only with a recent sign-in.') : api(path, body));
+        renderTrade();
+        if (done) toast(done);
+        return true;
+    } catch (e) { toast(e.message); loadTrade(); return false; }
+}
+// The tab's badge (offers waiting, LIVE or SHADOW) on every tab: once a minute.
+function trxPoll() { if (mode !== 'trade') api('/api/exec').then((d) => { trxData = d; trxBadge(d); }).catch(() => {}); }
+setTimeout(trxPoll, 4000);
+setInterval(trxPoll, 60000);
+
+function trxSettingsModal() {
+    const st = trxData.settings;
+    const f = (k, label, step, unit, help) => `<label class="ind-row"><span>${label}<small class="muted">${help || ''}</small></span>
+        <span><input type="number" step="${step}" name="${k}" value="${st[k]}"> ${unit}</span></label>`;
+    openModal('Live trading settings', 'Sizing and the limits that stop new orders', `<div class="ind-form" id="trs-form">
+        ${f('capital', 'Capital to size from', 1000, '₹', '0: the account balance Dhan reports')}
+        ${f('risk_pct', 'Risk a trade', 0.05, '% of capital', 'between entry and stop')}
+        ${f('max_alloc_pct', 'Most in one position', 1, '% of capital')}
+        ${f('max_trade_loss', 'Most a trade may risk', 500, '₹')}
+        ${f('max_open', 'Positions open at once', 1, '')}
+        ${f('max_per_day', 'New entries a day', 1, '')}
+        ${f('daily_loss_pct', "Day's loss that halts everything", 0.1, '% of capital')}
+        ${f('buffer_bps', 'Entry limit past the alert price', 1, 'bps', '10 bps = 0.1 %')}
+        ${f('max_drift_pct', 'Skip if price ran past entry by', 0.05, '%')}
+        ${f('offer_minutes', 'Offer lapses after', 1, 'min', 'Confirm each')}
+        <label class="ind-row"><span>Swing shorts live<small class="muted">stock futures</small></span><span><input type="checkbox" name="shorts"${st.shorts ? ' checked' : ''}></span></label>
+        <div class="ind-row"><span>Real sending<small class="muted">${trxData.sending.on ? 'orders can be sent' : esc(trxData.sending.why_not || '')}</small></span>
+            <span><button class="btn" type="button" id="trs-send">${trxData.sending.on ? 'Turn off' : 'Turn on…'}</button></span></div>
+        <div class="dm-actions"><button class="btn btn-primary" type="button" id="trs-save" style="width:auto">Save</button></div></div>`);
+    $('trs-save').addEventListener('click', () => {
+        const out = {};
+        $('trs-form').querySelectorAll('input').forEach((i) => { out[i.name] = i.type === 'checkbox' ? i.checked : +i.value; });
+        trxPost('/api/exec/settings', { settings: out }, 'Live trading settings saved', true).then((ok) => ok && closeModal());
+    });
+    $('trs-send').addEventListener('click', async () => {
+        const on = !trxData.sending.on;
+        if (on && !await ask({ title: 'Turn on real sending?', ok: 'Turn on', danger: true,
+            body: 'Real orders can then be sent from a mode at Confirm each or Automatic. Dhan accepts them only from the static IP whitelisted on your account.' })) return;
+        trxPost('/api/exec/send', { on }, on ? 'Real sending on' : 'Real sending off: every mode lowered to Shadow', true).then((ok) => ok && closeModal());
+    });
+}
+
+document.getElementById('trade-view').addEventListener('click', async (e) => {
+    const lv = e.target.closest('[data-trl]'), pl = e.target.closest('[data-trp]'), dm = e.target.closest('[data-trd]'), x = e.target.closest('[data-trx]');
+    if (lv) {
+        const [m, l] = lv.dataset.trl.split(':');
+        if ((l === 'confirm' || l === 'auto') && !await ask({ title: `${MODE_NAME[m]}: ${trxData.labels[l]}?`, ok: 'Arm it', danger: true,
+            body: l === 'auto' ? 'Real orders will be sent on each trigger, within your limits, without asking.' : 'Each trigger will offer a real order for you to place.' })) return;
+        trxPost('/api/exec/settings', { settings: { [m]: l } }, `${MODE_NAME[m]}: ${trxData.labels[l]}`, true);
+    } else if (pl) {
+        pl.disabled = true;
+        trxPost(`/api/exec/offer/${pl.dataset.trp}`, { action: 'place' }, 'Order sent');
+    } else if (dm) {
+        trxPost(`/api/exec/offer/${dm.dataset.trd}`, { action: 'dismiss' }, 'Dismissed');
+    } else if (x && x.dataset.trx === 'settings') {
+        trxSettingsModal();
+    } else if (x && x.dataset.trx === 'resume') {
+        if (await ask({ title: 'Resume live trading?', ok: 'Resume', body: 'New trades are offered and sent again at each mode\'s level.' }))
+            trxPost('/api/exec/resume', {}, 'Resumed', true);
+    } else if (x && x.dataset.trx === 'kill') {
+        if (!await ask({ title: 'Kill switch', ok: 'Halt and cancel', danger: true,
+            body: 'Halts live trading, lowers every mode to Shadow and cancels entries not yet filled. Open positions keep their stops.' })) return;
+        const flatten = await ask({ title: 'Also exit every open position at Dhan?', ok: 'Exit everything', cancel: 'Keep them', danger: true,
+            body: 'Dhan exits every position on the account and cancels the day\'s open orders, including ones this app did not place.' });
+        trxPost('/api/exec/kill', { flatten }, flatten ? 'Halted, everything exited' : 'Halted');
+    }
+});
+
 async function loadDemo() {
     clearTimeout(demoTimer);
     try { demoData = await api('/api/demo'); renderDemo(); demoLive(); }
@@ -6195,10 +6398,12 @@ function setMode(m) {
     $('news-view').hidden = m !== 'news';
     $('smart-view').hidden = m !== 'smart';
     $('demo-view').hidden = m !== 'demo';
+    $('trade-view').hidden = m !== 'trade';
     $('charts-view').hidden = m !== 'charts';
     if (m === 'charts' && window.LiveCharts) LiveCharts.open($('charts-view'));
     if (S) renderModeMeta();
     if (m === 'demo') loadDemo(); else { clearTimeout(demoTimer); clearTimeout(demoLiveTimer); WS.unsub('demo'); }
+    if (m === 'trade') loadTrade(); else clearTimeout(trxTimer);
     if (m === 'news') loadNews();
     if (m === 'smart') loadSmart();
     if (m === 'options') loadOptions(); else clearTimeout(optTimer);
@@ -8013,12 +8218,11 @@ function ask({ title, body = '', ok = 'OK', cancel = 'Cancel', danger = false, p
 $('ask-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter' && askDone) { e.preventDefault(); askDone(true); } });
 // A change the server wants a recent sign-in for (need_password: signed in over 10 minutes ago, on
 // where alerts go and how Dhan is logged in to): ask for the password, then send it once more with it.
-async function apiConfirmed(path, body) {
+async function apiConfirmed(path, body, why = 'Where alerts go and how Dhan is logged in to change only with a recent sign-in.') {
     try { return await api(path, body); }
     catch (e) {
         if (!(e.data && e.data.need_password)) throw e;
-        const pw = await ask({ title: 'Enter your password to confirm', ok: 'Confirm', password: true,
-            body: 'Where alerts go and how Dhan is logged in to change only with a recent sign-in.' });
+        const pw = await ask({ title: 'Enter your password to confirm', ok: 'Confirm', password: true, body: why });
         if (!pw) throw new Error('Not changed: confirm with your password');
         return api(path, { ...body, password: pw });
     }
@@ -8230,7 +8434,7 @@ const CK_IC = {
 };
 const CK_TABS = [['swing', 'Swing', 'zones setups board daily'], ['intraday', 'Intraday', '15m mis day trading'],
     ['options', 'Options', 'option chain oi pcr iv fno'], ['news', 'News', 'filings headlines sentiment'],
-    ['smart', 'Smart money', 'fii dii institutions deals delivery positioning'], ['demo', 'Demo funds', 'paper money account ledger statement pnl'],
+    ['smart', 'Smart money', 'fii dii institutions deals delivery positioning'], ['demo', 'Demo funds', 'paper money account ledger statement pnl'], ['trade', 'Trading', 'live real orders dhan shadow confirm automatic broker'],
     ['perf', 'Performance', 'results backtest autopilot lab'], ['charts', 'Charts', 'live chart candles realtime tradingview multi grid']];
 const ckClick = (id) => () => { const b = $(id); if (b) b.click(); };
 const CK_ACTIONS = [
@@ -8262,6 +8466,8 @@ const CK_ACTIONS = [
     ...NWTheme.STYLES.map((m) => [`Style: ${NWTheme.STYLE_LABEL[m]}`, `theme style ${m} ${m === 'glass' ? 'glossy translucent liquid' : 'plain flat simple'}`,
         NWTheme.STYLE_ICON[m], () => NWTheme.setStyle(m), '']),
     ['Theme manager', 'theme palette colours colors appearance', CK_IC.gear, () => openThemes(), ''],
+    ['Live trading settings', 'real orders sizing limits risk capital sending', CK_IC.gear, () => { setMode('trade'); loadTrade().then(() => trxData && trxSettingsModal()); }, 'trade'],
+    ['Kill switch: halt live trading', 'stop panic cancel exit all real orders', CK_IC.gear, () => { setMode('trade'); document.querySelector('[data-trx="kill"]').click(); }, 'trade'],
     ...NWTheme.PALETTES.map((p) => [`Palette: ${p.name}`, `theme palette colours colors ${p.note}`, CK_IC.gear, () => NWTheme.setPalette(p.id), '']),
 ];
 

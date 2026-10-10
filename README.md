@@ -1163,6 +1163,53 @@ open P&L in rupees); what cannot close now says why, and cannot be ticked.
 - **The autopilot** counts your square-offs in the journal and the Performance tab, but not when it judges the rules (rollback,
   pause and resume look only at the rules' own exits): an exit you chose says nothing about the rules.
 
+### 4.18 Live trading
+
+The **Trading** tab takes the same trades as the paper journal and the demo account on your real Dhan account. Each
+mode (swing, intraday, options) has its own level:
+
+| Level | What happens |
+|---|---|
+| **Off** | Nothing beyond the paper journal and the demo account. |
+| **Shadow** | Every trade becomes the exact order it would send (instrument, quantity, prices, legs), logged and followed to its exit in rupees after charges. Nothing is sent. |
+| **Confirm each** | The order is offered (in the tab, the bell and Telegram) and sent only when you press **Place**, within the offer's minutes and while the price is still near the alert's. |
+| **Automatic** | Sent on the trigger, within the limits. |
+
+**Orders** (`niftywhale/execution.py`, `niftywhale/broker.py`, Dhan's v2 API):
+- Every entry is one **super order**: the entry, the target and the stop loss together. It is a limit order a few ticks
+  through the alert's price (10 bps by default), never a market order.
+- Instrument and product:
+  - swing long: the shares, `CNC`;
+  - swing short: the near-month stock future, `MARGIN`, its prices moved by the future's basis over the share (off until **Shorts** is on);
+  - intraday: the shares, `INTRADAY`;
+  - options: the option bought, `MARGIN`.
+- Sized as the demo account sizes (4.16): `risk_pct` of the capital between entry and stop (0.25 % by default), at
+  most `max_alloc_pct` of it in one position. The capital is the balance Dhan reports, or a fixed amount.
+- Each order carries a correlation ID made from the trade. Before any retry the app asks Dhan for it, so a lost
+  answer never becomes two orders.
+- A swing holding whose super-order legs did not carry over to the next session gets its stop and target back as a
+  forever OCO order. Dhan's documentation describes the OCO's legs two ways: test it in Dhan's sandbox before real money.
+- A reconciler compares every minute: a filled entry opens the row, a finished super order closes it at the leg that
+  filled, a refused or cancelled one ends it. A position open here that Dhan does not hold halts everything.
+
+**Safety:**
+- **Arming** Confirm each or Automatic needs a recent sign-in (the password otherwise), real sending on, no halt, and
+  the mode's evidence: the backtest positive after costs over enough trades, positive on its last 3 months, and the paper
+  record positive after costs over at least 30 trades. API tokens can never arm, place or resume.
+- **Limits** (Trading → Settings): positions open at once, entries a day, the most a trade may risk, and a day's loss
+  (1 % of the capital by default) that halts everything. Also the most the price may have run past the entry, and how
+  long an offer waits.
+- **Kill switch:** halts, lowers every mode to Shadow and cancels entries not yet filled. Optionally it also exits every
+  position at Dhan, which cancels the day's open orders too, including ones the app did not place.
+- **Requests to Dhan:** every request and answer is kept (without the token) and shown at the bottom of the tab.
+
+**Real sending** (Trading → Settings) stays off until you turn it on, from a recent sign-in, with Dhan connected and a
+static IP whitelisted. Dhan accepts orders only from a whitelisted static IP (SEBI's retail algo framework, since
+April 2026). A whitelisted IP cannot be changed for 7 days. Set it at web.dhan.co (Profile → DhanHQ APIs). A home
+connection's IP usually changes: use an ISP static IP, or a small server with a fixed IP that the Pi sends its order
+calls through. Market data needs no static IP, so **Shadow works without any of this**. If Dhan refuses an order for
+its IP, live trading halts.
+
 ## 5. Intraday mode
 
 Intraday mode runs the same protocol **one timeframe down, inside one session**. The 15-minute
