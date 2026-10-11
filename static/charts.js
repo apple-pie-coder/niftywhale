@@ -83,6 +83,7 @@
 @media (pointer:coarse){.ch-tools button{width:36px;height:34px}}
 `;
     const IC = {
+        camera: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M2 5.2c0-.7.5-1.2 1.2-1.2h1.6l1-1.5h4.4l1 1.5h1.6c.7 0 1.2.5 1.2 1.2v6.6c0 .7-.5 1.2-1.2 1.2H3.2C2.5 13 2 12.5 2 11.8z"/><circle cx="8" cy="8.3" r="2.4"/></svg>',
         plus: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>',
         x: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
         max: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>',
@@ -549,6 +550,7 @@
                 <input list="ch-syms" value="${esc(labelOf(spec.symbol))}" title="${esc((instOf(spec.symbol) || {}).name || '')}" aria-label="Instrument" spellcheck="false" autocomplete="off">
                 <select aria-label="Timeframe">${tfOptions(spec.tf)}</select>
                 <span class="ch-px">—</span><span class="ch-chg"></span><span class="ch-sp"></span>
+                <button type="button" class="ch-ib" data-a="shot" title="Save a picture of this chart as it shows" aria-label="Save a picture of this chart">${IC.camera}</button>
                 <button type="button" class="ch-ib" data-a="fit" title="Back to the latest candles">${IC.fit}</button>
                 <button type="button" class="ch-ib" data-a="lv" aria-pressed="${c.levels}" title="The app's zones, entries, stops and targets">${IC.lv}</button>
                 <button type="button" class="ch-ib" data-a="max" title="Enlarge (Esc to return)">${IC.max}</button>
@@ -605,6 +607,10 @@
             if (a === 'x') removeChart(c);
             else if (a === 'max') { maxed = maxed === c ? null : c; b.innerHTML = maxed ? IC.min : IC.max; relayout(); if (maxed) root.scrollIntoView({ block: 'start' }); }
             else if (a === 'fit') c.chart.timeScale().scrollToRealTime();
+            else if (a === 'shot') {
+                const leg = c.el.querySelector('.ch-leg').textContent.trim() || c.el.querySelector('.ch-px').textContent;
+                snapshot(c.chart, { title: `${labelOf(c.symbol)} · ${tfLabel(c.tf)}`, sub: leg, name: `${c.symbol}-${tfLabel(c.tf)}` }, b);
+            }
             else if (a === 'lv') { c.levels = !c.levels; b.setAttribute('aria-pressed', String(c.levels)); drawLevels(c); save(); }
         });
         relayout();
@@ -945,5 +951,47 @@
     }
     // Open the tab: build it the first time, catch up after that.
     function open(el) { if (started) shown(); else start(el); }
-    window.LiveCharts = { start, shown, open };
+    // A picture of a chart as it shows: its candles, lines, levels and drawings (the library draws them all on its own
+    // canvas: chart.takeScreenshot), under a title line (`title`, the time it was taken, NiftyWhale) and `sub` (the
+    // legend). A PNG, shared where the device can share files (a phone: Save image, AirDrop, a chat), else downloaded.
+    // `btn` shows it is working. Used by the Charts tab and the stock chart (LiveCharts.snapshot).
+    async function snapshot(chart, meta, btn) {
+        if (btn) btn.disabled = true;
+        try {
+            const shot = chart.takeScreenshot(), css = getComputedStyle(document.documentElement);
+            const v = (n, d) => css.getPropertyValue(n).trim() || d;
+            const k = shot.width / Math.max(1, chart.timeScale().width() + (chart.priceScale('right').width() || 0)), pad = 14 * k;
+            const head = (meta.sub ? 52 : 34) * k;
+            const out = document.createElement('canvas');
+            out.width = shot.width; out.height = shot.height + head;
+            const g = out.getContext('2d'), font = v('--font', 'sans-serif');
+            g.fillStyle = v('--surface', '#ffffff'); g.fillRect(0, 0, out.width, out.height);
+            g.textBaseline = 'top';
+            g.fillStyle = v('--ink', '#111'); g.font = `700 ${15 * k}px ${font}`;
+            g.fillText(meta.title || '', pad, 10 * k);
+            const stamp = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST · NiftyWhale';
+            g.fillStyle = v('--ink-3', '#667'); g.font = `500 ${11.5 * k}px ${font}`;
+            g.textAlign = 'right'; g.fillText(stamp, out.width - pad, 12 * k); g.textAlign = 'left';
+            if (meta.sub) { g.fillStyle = v('--ink-2', '#334'); g.font = `500 ${12 * k}px ${v('--mono', 'monospace')}`; g.fillText(meta.sub, pad, 31 * k); }
+            g.drawImage(shot, 0, head);
+            const blob = await new Promise((res) => out.toBlob(res, 'image/png'));
+            if (!blob) throw new Error('the browser could not make the picture');
+            const when = new Date(), z = (x) => String(x).padStart(2, '0');
+            const file = `${(meta.name || 'chart').replace(/[^A-Za-z0-9_-]+/g, '-')}-${when.getFullYear()}${z(when.getMonth() + 1)}${z(when.getDate())}-${z(when.getHours())}${z(when.getMinutes())}.png`;
+            const f = typeof File === 'function' ? new File([blob], file, { type: 'image/png' }) : null;
+            if (f && matchMedia('(pointer: coarse)').matches && navigator.canShare && navigator.canShare({ files: [f] })) {
+                try { await navigator.share({ files: [f], title: meta.title || 'Chart' }); return; }
+                catch (e) { if (e && e.name === 'AbortError') return; }          // closed the share sheet: nothing more
+            }
+            const url = URL.createObjectURL(blob), a = document.createElement('a');
+            a.href = url; a.download = file; document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+        } catch (e) {
+            alert('Could not save the chart picture: ' + (e && e.message || e));
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    window.LiveCharts = { start, shown, open, snapshot };
 })();

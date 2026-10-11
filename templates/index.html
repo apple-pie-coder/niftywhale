@@ -3394,6 +3394,7 @@ document.addEventListener('click', (e) => {
     const zb = e.target.closest('[data-zoom]');
     if (zb) { zb.dataset.zoom === 'fit' ? zoomReset() : zoomBy(zb.dataset.zoom === 'in' ? 0.7 : 1.4, 1); return; }
     if (e.target.closest('[data-magnet]')) { toggleMagnet(); return; }
+    if (e.target.closest('[data-shot]')) { chartPicture(e.target.closest('[data-shot]')); return; }
     if (e.target.closest('[data-full]')) { $('fullchart').hidden ? openFull() : closeFull(); }
 });
 $('fcscrim').addEventListener('click', closeFull);
@@ -3529,6 +3530,8 @@ function chartBtns() {
             <button type="button" class="cbtn" data-zoom="out" title="Zoom out (−)" aria-label="Zoom out">${IC.minus}</button>
             <button type="button" class="cbtn" data-zoom="in" title="Zoom in (+)" aria-label="Zoom in">${IC.plus}</button>
             <button type="button" class="cbtn" data-zoom="fit" title="Fit everything again (0, or double-click the chart)">Fit</button></span>
+        <button type="button" class="cbtn" data-shot title="Save a picture of the chart as it shows" aria-label="Save a picture of the chart">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M2 5.2c0-.7.5-1.2 1.2-1.2h1.6l1-1.5h4.4l1 1.5h1.6c.7 0 1.2.5 1.2 1.2v6.6c0 .7-.5 1.2-1.2 1.2H3.2C2.5 13 2 12.5 2 11.8z"/><circle cx="8" cy="8.3" r="2.4"/></svg>Picture</button>
         <button type="button" class="cbtn" data-magnet aria-pressed="${magnet}" title="Magnet (M): snap the crosshair to the candle's open, high, low or close">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
                 <path d="M3 2v6a5 5 0 0 0 10 0V2"/><path d="M3 5h3M10 5h3"/></svg>Magnet</button>
@@ -3903,6 +3906,15 @@ function lwcZoom(c, factor, at = 1) {
     ts.setVisibleLogicalRange({ from: pivot - at * nw, to: pivot + (1 - at) * nw });
 }
 const lwcActive = () => (!$('fullchart').hidden ? LWC['full-wrap'] : LWC['chart-wrap']);
+// A picture of the stock chart as it shows (LiveCharts.snapshot): the stock, timeframe and the last candle on top.
+function chartPicture(btn) {
+    const c = lwcActive();
+    if (!c || !c.n || !current || !window.LiveCharts) return;
+    const b = c.spec.bars[c.n - 1], d = (v) => (v == null ? '—' : (+v).toLocaleString('en-IN', { maximumFractionDigits: 2 }));
+    const frame = current.intra ? itf : (tf === 'D' ? 'Daily' : tf);
+    LiveCharts.snapshot(c.chart, { title: `${current.symbol} · ${frame}`, name: `${current.symbol}-${frame}`,
+        sub: `O ${d(b.o)}  H ${d(b.h)}  L ${d(b.l)}  C ${d(b.c)}  ${b.c >= b.o ? '+' : ''}${d(b.c - b.o)}` }, btn);
+}
 function zoomBy(factor, at = 1) { lwcZoom(lwcActive(), factor, at); }
 function zoomReset() { const c = lwcActive(); if (c) lwcFit(c); }
 
