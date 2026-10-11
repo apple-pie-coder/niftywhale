@@ -101,13 +101,13 @@
     /* Sidebar: four sections, each a small header (label + one text action)
        over rows of one shape: title (+ one-line sub) on the left, control on the right. */
     .sidebar { padding: 4px 18px; display: flex; flex-direction: column; }
-    .sb { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+    .sb { display: flex; flex-direction: column; gap: 4px; padding: 7px 0; }
     .sb + .sb { border-top: 1px solid var(--line); }
     .sb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
     .sb-head .label { margin: 0; }
     .sb-note { font-size: 11.5px; color: var(--ink-3); margin-top: -2px; line-height: 1.35; }
     /* A setting is one line: its title, then what it does (cut short to fit, in full on hover: sbTitles), then its control. */
-    .row { display: flex; align-items: center; gap: 8px; min-height: 25px; }
+    .row { display: flex; align-items: center; gap: 8px; min-height: 22px; }
     .row-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px; }
     .row > .row-title { flex: 1; }
     .row-title { font-size: 13px; font-weight: 620; color: var(--ink); white-space: nowrap; flex: none; }
@@ -116,7 +116,7 @@
     .row input[type="time"]:disabled { opacity: 0.5; }
     .btn-link:disabled { color: var(--ink-3); cursor: not-allowed; }
     .uni-select { width: 100%; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink);
-                  padding: 6px 9px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
+                  padding: 5px 9px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
                   background: var(--surface); cursor: pointer; }
     .uni-select:disabled { opacity: 0.6; cursor: not-allowed; }
     .dhan-form { display: flex; flex-direction: column; gap: 10px; }
@@ -125,12 +125,20 @@
     .dhan-form textarea { width: 100%; min-height: 84px; font: 12px var(--mono); padding: 8px;
                           border: 1px solid var(--line-strong); border-radius: var(--r-sm);
                           background: var(--surface); color: var(--ink); resize: vertical; }
-    #rules-summary[data-custom="1"], #i-rules-summary[data-custom="1"] { color: var(--warn); }
+    #rules-summary[data-custom="1"], #i-rules-summary[data-custom="1"], #o-rules-summary[data-custom="1"] { color: var(--warn); }
+    .sb-acts { display: inline-flex; align-items: baseline; gap: 5px; color: var(--ink-3); white-space: nowrap; }
+    /* Rules: the summary and "Show all" share a line; opened, the list takes the width below. */
+    .sb[aria-labelledby="sb-rules"] { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
+    .sb[aria-labelledby="sb-rules"] > .sb-head { flex-basis: 100%; }
+    .sb[aria-labelledby="sb-rules"] > #rules-summary { flex: 1 1 auto; min-width: 0; }
+    .sb[aria-labelledby="sb-rules"] > details.rules { margin-top: 0; }
+    .sb[aria-labelledby="sb-rules"] > details.rules[open] { flex-basis: 100%; }
     details.rules { margin-top: -4px; }
     details.rules summary { font-size: 12px; color: var(--ink-3); font-weight: 600; }
     details.rules[open] summary { margin-bottom: 4px; }
     /* The sidebar's own bar: its name, and a button to fold it away. */
-    .sb-bar { display: flex; align-items: center; gap: 6px; padding: 12px 0 2px; }
+    .sb-bar { display: flex; align-items: center; gap: 6px; padding: 8px 0 0; }
+    .sb-bar .label { margin: 0; }
     .sb-bar .label { margin: 0; flex: 1; }
     .sb-iconbtn { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border-radius: var(--r-sm);
                   border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
@@ -153,6 +161,16 @@
     @media (min-width: 961px) and (min-height: 760px) {
         /* Desktop: the sidebar stays in view and scrolls on its own, so every setting is in reach without moving the page. */
         .sidebar { position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow-y: auto; }
+        /* Its scrollbar shows only while the pointer is on it (a window too short for every setting); a fade along
+           the foot says there is more below (sbMore). */
+        .sidebar { scrollbar-width: none; }
+        .sidebar::-webkit-scrollbar { width: 0; }
+        .sidebar:hover { scrollbar-width: thin; }
+        .sidebar:hover::-webkit-scrollbar { width: 8px; }
+        .sidebar::after { content: ''; position: sticky; bottom: 0; display: block; height: 30px; margin-top: -30px; flex: none;
+                          pointer-events: none; opacity: 0; transition: opacity .2s;
+                          background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--surface) 92%, transparent)); }
+        .sidebar[data-more="1"]::after { opacity: 1; }
         .sb-bar { position: sticky; top: 0; z-index: 1; background: var(--surface); margin: 0 -18px; padding-left: 18px; padding-right: 18px; }
     }
     /* The theme and style switches are in the top bar's theme menu; a phone, without that button, keeps them here. */
@@ -206,7 +224,7 @@
     .sidebar .switch { width: 36px; height: 21px; }
     .sidebar .switch::after { width: 15px; height: 15px; }
     .sidebar .switch[aria-checked="true"]::after { transform: translateX(15px); }
-    .sidebar #scan-btn { padding: 8px 12px; font-size: 13.5px; }
+    .sidebar #scan-btn { padding: 7px 12px; font-size: 13.5px; }
     .switch:disabled { opacity: 0.45; cursor: not-allowed; }
     .sep { border-top: 1px solid var(--line); }
     input[type="time"] { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line-strong);
@@ -1678,10 +1696,9 @@
             <button type="button" class="sb-rail-btn" data-sb-go="sb-rules" title="Rules" aria-label="Rules"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h7M12.5 4h1M2.5 8h2M7.5 8h6M2.5 12h5M10.5 12h3"/><circle cx="11" cy="4" r="1.5"/><circle cx="6" cy="8" r="1.5"/><circle cx="9" cy="12" r="1.5"/></svg></button>
         </nav>
         <section class="sb" aria-labelledby="sb-scan">
-            <div class="sb-head"><h2 class="label" id="sb-scan">Scan</h2></div>
+            <div class="sb-head"><h2 class="label" id="sb-scan">Scan</h2>
+                <button class="btn-link" id="u-refresh" type="button" title="Fetch NSE's index lists again">Refresh lists<span id="u-built" hidden></span></button></div>
             <select id="universe" class="uni-select" aria-label="Universe to scan"></select>
-            <div class="sb-note">NSE lists from <span id="u-built">—</span> ·
-                <button class="btn-link" id="u-refresh" type="button">Refresh</button></div>
             <button class="btn btn-primary" id="scan-btn" type="button" data-role="start"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 3.2v9.6c0 .5.5.8.9.5l7.2-4.8a.6.6 0 000-1L5.4 2.7c-.4-.3-.9 0-.9.5z"/></svg> Run scan</button>
             <div class="progress" id="scan-progress" hidden><i id="scan-progress-bar"></i></div>
             <div class="sb-note" id="scan-msg"></div>
@@ -1719,7 +1736,8 @@
 
         <section class="sb" aria-labelledby="sb-intra">
             <div class="sb-head"><h2 class="label" id="sb-intra">Intraday</h2>
-                <button class="btn-link" id="i-scan-btn" type="button" title="Run the 15m scan now">Scan now</button></div>
+                <span class="sb-acts"><button class="btn-link" id="i-tune-btn" type="button" title="Intraday rules: the tuner"><span id="i-rules-summary">Rules</span>…</button> ·
+                <button class="btn-link" id="i-scan-btn" type="button" title="Run the 15m scan now">Scan now</button></span></div>
             <select id="i-universe" class="uni-select" aria-label="Intraday universe"></select>
             <div class="row">
                 <div class="row-main"><div class="row-title" id="intra-label">Intraday mode</div>
@@ -1733,15 +1751,12 @@
                 <button class="switch" id="sw-ishorts" role="switch" aria-checked="false" type="button"
                         aria-labelledby="ishorts-label"></button>
             </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="i-rules-summary">Intraday defaults</div></div>
-                <button class="btn-link" id="i-tune-btn" type="button">Tune…</button>
-            </div>
         </section>
 
         <section class="sb" aria-labelledby="sb-opt">
             <div class="sb-head"><h2 class="label" id="sb-opt">Options</h2>
-                <button class="btn-link" id="o-refresh-btn" type="button" title="Fetch every chain now">Refresh now</button></div>
+                <span class="sb-acts"><button class="btn-link" id="o-tune-btn" type="button" title="Idea rules: the tuner"><span id="o-rules-summary">Rules</span>…</button> ·
+                <button class="btn-link" id="o-refresh-btn" type="button" title="Fetch every chain now">Refresh now</button></span></div>
             <div class="row">
                 <div class="row-main"><div class="row-title" id="opt-label">Option chain scanner</div>
                     <div class="row-sub" id="opt-sub">Indices + stocks, every 3 min</div></div>
@@ -1763,10 +1778,6 @@
             <div class="row">
                 <div class="row-main"><div class="row-title" id="o-stocks-summary">Stocks</div></div>
                 <button class="btn-link" id="o-stocks-btn" type="button">Edit…</button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="o-rules-summary">Idea defaults</div></div>
-                <button class="btn-link" id="o-tune-btn" type="button">Tune…</button>
             </div>
         </section>
 
@@ -2821,6 +2832,7 @@ function render() {
         renderUniverse(st.universe);
         $('u-built').textContent = S.universe.built_at
             ? new Date(S.universe.built_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—';
+        $('u-refresh').title = `NSE's index lists, from ${$('u-built').textContent}: fetch them again`;
     }
     $('universe').disabled = S.scan_state.running;
 
@@ -3046,7 +3058,8 @@ function fmtRule(k, v, tun) {
 function renderRules() {
     const ov = S.rule_overrides || {};
     const changed = Object.keys(ov).length;
-    $('rules-summary').textContent = changed ? `Custom · ${changed} changed from the protocol` : 'Protocol defaults';
+    $('rules-summary').textContent = changed ? `Custom · ${changed} changed` : 'Protocol defaults';
+    $('rules-summary').title = changed ? `${changed} rule(s) changed from the protocol's defaults` : "The protocol's defaults";
     $('rules-summary').dataset.custom = changed ? '1' : '0';
     $('rules').innerHTML = (S.tunable_order || Object.keys(S.tunable)).map((k) =>
         `<dt>${esc(S.tunable[k].label)}</dt><dd${k in ov ? ' style="color:var(--warn)" title="Changed in the tuner"' : ''}>${esc(fmtRule(k, S.rules[k]))}</dd>`).join('');
@@ -6120,6 +6133,12 @@ document.addEventListener('click', (e) => { if (NB.open && !e.target.closest('#n
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && NB.open) { nbToggle(false); $('nb-btn').focus(); } });
 setInterval(() => { if (NB.open) nbRender(); }, 60000);      // "5 min ago" keeps up
 
+// More settings below the sidebar's fold (a short window): a fade along its foot (data-more).
+function sbMore() { const s = $('sidebar'); s.dataset.more = s.scrollTop + s.clientHeight < s.scrollHeight - 4 ? '1' : '0'; }
+$('sidebar').addEventListener('scroll', sbMore, { passive: true });
+window.addEventListener('resize', sbMore);
+new ResizeObserver(sbMore).observe($('sidebar'));
+
 /* A sidebar setting's description is cut short to keep it on one line; its full text is its tooltip. */
 function sbTitles() {
     document.querySelectorAll('#sidebar .row-sub').forEach((el) => {
@@ -6678,7 +6697,8 @@ function renderIntraday() {
     $('sw-intra').setAttribute('aria-checked', String(st.intraday === '1'));
     $('sw-ishorts').setAttribute('aria-checked', String(st.intraday_shorts === '1'));
     const iov = Object.keys(I.rule_overrides || {}).length;
-    $('i-rules-summary').textContent = iov ? `Intraday rules · ${iov} changed` : 'Intraday defaults';
+    $('i-rules-summary').textContent = iov ? `Rules (${iov})` : 'Rules';
+    $('i-tune-btn').title = iov ? `Intraday rules: ${iov} changed from the defaults` : 'Intraday rules: the defaults';
     $('i-rules-summary').dataset.custom = iov ? '1' : '0';
     $('i-scan-btn').disabled = s.scanning;
     $('i-scan-btn').textContent = s.scanning ? `Scanning ${s.done}/${s.total}…` : 'Scan now';
@@ -6976,7 +6996,8 @@ function renderOptSidebar() {
     let ov = {};
     try { ov = JSON.parse(st.options_rules || '{}'); } catch (e) { ov = {}; }
     const n = Object.keys(ov).length;
-    $('o-rules-summary').textContent = n ? `Idea rules · ${n} changed` : 'Idea defaults';
+    $('o-rules-summary').textContent = n ? `Rules (${n})` : 'Rules';
+    $('o-tune-btn').title = n ? `Idea rules: ${n} changed from the defaults` : 'Idea rules: the defaults';
     $('o-rules-summary').dataset.custom = n ? '1' : '0';
     const open = (S.options && S.options.open) || 0;
     $('opt-badge').textContent = open ? `${open} open` : '';
