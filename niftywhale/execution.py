@@ -39,6 +39,8 @@ MODES = ('swing', 'intraday', 'options')
 DEFAULTS: Dict[str, Any] = {
     'swing': 'off', 'intraday': 'off', 'options': 'off',
     'capital': 0.0,             # ₹ to size from; 0: the account's available balance at Dhan
+    'sizing': 'risk',           # 'risk': risk_pct of the capital a trade; 'lots': `lots` lots a trade, whatever the stop
+    'lots': 1,                  # fixed lots: options and stock futures in their exchange lots, shares one at a time
     'risk_pct': 0.25,           # of the capital, between entry and stop, each trade
     'max_alloc_pct': 20.0,      # most of the capital one position may tie up
     'intraday_leverage': 5.0,   # INTRADAY margin = value / this (Dhan sets the real figure per stock)
@@ -52,10 +54,11 @@ DEFAULTS: Dict[str, Any] = {
     'offer_minutes': 5,         # confirm: an offer lapses after this
     'shorts': False,            # swing shorts (stock futures) live
 }
-LIMITS = {'capital': (0.0, 1e9), 'risk_pct': (0.05, 2.0), 'max_alloc_pct': (1.0, 100.0), 'intraday_leverage': (1.0, 5.0),
+LIMITS = {'capital': (0.0, 1e9), 'lots': (1, 100), 'risk_pct': (0.05, 2.0), 'max_alloc_pct': (1.0, 100.0), 'intraday_leverage': (1.0, 5.0),
           'futures_margin_pct': (5.0, 50.0), 'max_open': (1, 50), 'max_per_day': (1, 100), 'daily_loss_pct': (0.1, 10.0),
           'max_trade_loss': (100.0, 1e7), 'buffer_bps': (0.0, 100.0), 'max_drift_pct': (0.05, 5.0), 'offer_minutes': (1, 60)}
-COUNTS = ('max_open', 'max_per_day', 'offer_minutes')
+COUNTS = ('max_open', 'max_per_day', 'offer_minutes', 'lots')
+CHOICES = {'sizing': ('risk', 'lots')}
 TICK = 0.05                   # every price a multiple of 5 paise: valid at every NSE tick size
 
 # The evidence a mode needs before it may send (gate).
@@ -73,6 +76,8 @@ def settings_from(saved: Any, base: Optional[Dict[str, Any]] = None) -> Dict[str
         v = saved[k]
         if k in MODES:
             out[k] = v if v in LEVELS else out[k]
+        elif k in CHOICES:
+            out[k] = v if v in CHOICES[k] else out[k]
         elif isinstance(default, bool):
             out[k] = v in (True, 1, '1', 'true', 'on')
         else:
@@ -85,6 +90,34 @@ def settings_from(saved: Any, base: Optional[Dict[str, Any]] = None) -> Dict[str
             lo, hi = LIMITS[k]
             out[k] = int(round(min(hi, max(lo, v)))) if k in COUNTS else round(min(hi, max(lo, v)), 2)
     return out
+
+
+def fixed_size(trade: Dict[str, Any], lots: int, lot: Optional[int], free: float, st: Dict[str, Any]) -> Dict[str, Any]:
+    """`lots` lots of the instrument a trade is taken on, whatever its stop (sizing 'lots'): options and stock
+    futures in their exchange lots (`lot`), shares one at a time (an NSE equity lot is one share). The same
+    instruments and products as demo.size; skipped, with why, when the money it ties up is more than `free`.
+    The per-trade loss cap still applies afterwards (guards)."""
+    mode, side = trade['mode'], trade.get('side') or 'long'
+    entry, stop = float(trade.get('entry') or 0), float(trade.get('stop') or 0)
+    if entry <= 0 or stop <= 0 or entry == stop:
+        return {'skip': 'no usable entry and stop'}
+    n, per_unit = int(lots), abs(entry - stop)
+    if mode == 'options' or (mode == 'swing' and side == 'short'):
+        if not lot:
+            return {'skip': 'no lot size for this option' if mode == 'options' else 'not an F&O stock: a swing short needs its futures'}
+        qty = n * lot
+        product = 'OPT' if mode == 'options' else 'FUT'
+        margin = qty * entry if product == 'OPT' else qty * entry * st['futures_margin_pct'] / 100
+        lots_out, lot_size = n, lot
+    else:
+        qty, lots_out, lot_size = n, None, 1
+        product = 'MIS' if mode == 'intraday' else 'CNC'
+        margin = qty * entry / st['intraday_leverage'] if product == 'MIS' else qty * entry
+    if margin > free + 1e-9:
+        what = f"{n} lot{'s' if n != 1 else ''}" if lots_out else f"{qty} share{'s' if qty != 1 else ''}"
+        return {'skip': f'{what} need ₹{margin:,.2f}, more than the ₹{max(0.0, free):,.2f} available'}
+    return {'product': product, 'qty': qty, 'lots': lots_out, 'lot_size': lot_size, 'margin': round(margin, 2),
+            'risk': round(qty * per_unit, 2), 'value': round(qty * entry, 2)}
 
 
 def correlation_id(ref: str) -> str:

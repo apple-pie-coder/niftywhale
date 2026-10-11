@@ -78,6 +78,31 @@ class Plans(unittest.TestCase):
         self.assertEqual((b['orderFlag'], b['transactionType'], b['price'], b['triggerPrice1'], b['price1']), ('OCO', 'SELL', 151.0, 122.65, 122.0))
 
 
+class FixedLots(unittest.TestCase):
+    st = {**execution.settings_from({}), 'sizing': 'lots'}
+
+    def test_each_instrument(self):
+        opt = execution.fixed_size({'mode': 'options', 'entry': 120.0, 'stop': 90.0}, 1, 75, 1e6, self.st)
+        self.assertEqual((opt['product'], opt['qty'], opt['lots'], opt['margin'], opt['risk']), ('OPT', 75, 1, 9000.0, 2250.0))
+        fut = execution.fixed_size({'mode': 'swing', 'side': 'short', 'entry': 1000.0, 'stop': 1030.0}, 2, 250, 1e6, self.st)
+        self.assertEqual((fut['product'], fut['qty'], fut['margin']), ('FUT', 500, 100000.0))       # 20 % of the contract
+        mis = execution.fixed_size({'mode': 'intraday', 'entry': 500.0, 'stop': 497.0}, 1, None, 1e6, self.st)
+        self.assertEqual((mis['product'], mis['qty'], mis['margin'], mis['risk']), ('MIS', 1, 100.0, 3.0))
+        cnc = execution.fixed_size({'mode': 'swing', 'entry': 126.5, 'stop': 122.68}, 1, None, 1e6, self.st)
+        self.assertEqual((cnc['product'], cnc['qty'], cnc['margin']), ('CNC', 1, 126.5))
+
+    def test_what_cannot_be_paid_for_is_skipped(self):
+        r = execution.fixed_size({'mode': 'options', 'entry': 120.0, 'stop': 90.0}, 1, 75, 1000.18, self.st)
+        self.assertIn('1 lot need ₹9,000.00, more than the ₹1,000.18 available', r['skip'])
+        self.assertIn('futures', execution.fixed_size({'mode': 'swing', 'side': 'short', 'entry': 10.0, 'stop': 11.0}, 1, None, 1e6, self.st)['skip'])
+
+    def test_the_setting(self):
+        st = execution.settings_from({'sizing': 'lots', 'lots': 3.4})
+        self.assertEqual((st['sizing'], st['lots']), ('lots', 3))
+        self.assertEqual(execution.settings_from({'sizing': 'all-in', 'lots': 500}, base=st)['sizing'], 'lots')
+        self.assertEqual(execution.settings_from({'lots': 500})['lots'], 100)
+
+
 class Guards(unittest.TestCase):
     book = {'open': 0, 'today': 0, 'day_pnl': 0.0}
 
@@ -193,6 +218,12 @@ class Flow(unittest.TestCase):
         self.assertEqual(r['status'], 'shadow_closed')
         self.assertEqual(r['gross'], round((151.0 - 126.5) * 654, 2))
         self.assertLess(r['net'], r['gross'])
+
+    def test_fixed_lots_take_one_share(self):
+        store.set_settings({'exec': {'swing': 'shadow', 'capital': 1_000_000, 'sizing': 'lots', 'lots': 1}})
+        app.exec_sync()
+        r = self.row()
+        self.assertEqual((r['status'], r['qty'], r['body']['quantity']), ('shadow', 1, 1))
 
     def test_confirm_offers_then_places_once(self):
         self.level('confirm')

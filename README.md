@@ -1185,8 +1185,14 @@ mode (swing, intraday, options) has its own level:
   - swing short: the near-month stock future, `MARGIN`, its prices moved by the future's basis over the share (off until **Shorts** is on);
   - intraday: the shares, `INTRADAY`;
   - options: the option bought, `MARGIN`.
-- Sized as the demo account sizes (4.16): `risk_pct` of the capital between entry and stop (0.25 % by default), at
-  most `max_alloc_pct` of it in one position. The capital is the balance Dhan reports, or a fixed amount.
+- Sized one of two ways (Trading → Settings → **Size each trade**):
+  - **By risk** (the default), as the demo account sizes (4.16): `risk_pct` of the capital between entry and stop
+    (0.25 % by default), at most `max_alloc_pct` of it in one position.
+  - **Fixed lots:** the same number of lots every trade (1 by default), whatever the stop: options and stock futures
+    in their exchange lots, shares one at a time (an NSE equity lot is one share). A trade whose margin or cost is
+    more than the money available is skipped, with the reason; the most a trade may risk still applies.
+
+  The capital is the balance Dhan reports, or a fixed amount.
 - Each order carries a correlation ID made from the trade. Before any retry the app asks Dhan for it, so a lost
   answer never becomes two orders.
 - A swing holding whose super-order legs did not carry over to the next session gets its stop and target back as a

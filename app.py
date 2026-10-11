@@ -2012,7 +2012,13 @@ def exec_take(t: dict, st: dict, rows: list, halt: str) -> None:
     tied = sum(float((r.get('body') or {}).get('price') or 0) * (r.get('qty') or 0) for r in rows if r['status'] in EXEC_HOLD)
     base = {'ref': t['ref'], 'mode': t['mode'], 'symbol': t['symbol'], 'side': product_side, 'level': level,
             'entry_time': t['entry_time'], 'stop': t.get('stop'), 'target': t.get('target'), 'instrument': _instrument(t)}
-    sz = demo.size(t, capital, max(0.0, capital - tied), st, lot) if capital > 0 else {'skip': 'no capital to size from (Trading settings, or Dhan funds)'}
+    free = max(0.0, capital - tied)
+    if capital <= 0:
+        sz = {'skip': 'no capital to size from (Trading settings, or Dhan funds)'}
+    elif st['sizing'] == 'lots':
+        sz = execution.fixed_size(t, st['lots'], lot, free, st)          # the same lots every trade
+    else:
+        sz = demo.size(t, capital, free, st, lot)                        # risk_pct of the capital
     if 'skip' in sz:
         store.add_exec_order({**base, 'status': 'skipped', 'note': sz['skip']})
         return

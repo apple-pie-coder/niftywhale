@@ -524,6 +524,10 @@
     .ind-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .ind-row span { display: flex; flex-direction: column; }
     .ind-row small { color: var(--ink-3); font-size: 11.5px; }
+    .ind-row span.trs-val { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; white-space: nowrap; }
+    .trs-val input { width: 110px !important; }
+    .trs-u { min-width: 74px; font-size: 12.5px; color: var(--ink-3); }
+    .ind-row[hidden] { display: none; }
     .ind-row input, .ind-row select { width: 130px; font: inherit; font-size: 13px; padding: 6px 8px; color: var(--ink);
                                       background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
     .ind-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
@@ -5121,7 +5125,8 @@ function trxRender() {
     const box = (k, v, sub, tone) => `<div class="stat"${tone ? ` data-tone="${tone}"` : ''}><div class="stat-k">${k}</div><div class="stat-v num">${v}</div><div class="stat-s">${sub || ''}</div></div>`;
     $('trx-stats').innerHTML =
         box('Real sending', snd.on ? 'On' : 'Off', snd.on ? `static IP ${esc(snd.primary_ip || '?')}` : esc(snd.why_not || ''), snd.on ? 'warn' : '')
-        + box('Capital', d.capital ? rs(d.capital) : '—', st.capital ? 'set in Settings' : d.dhan ? 'Dhan available balance' : 'connect Dhan or set it')
+        + box('Capital', d.capital ? rs(d.capital) : '—', `${st.capital ? 'set in Settings' : d.dhan ? 'Dhan available balance' : 'connect Dhan or set it'} · `
+              + (st.sizing === 'lots' ? `${st.lots} lot${st.lots === 1 ? '' : 's'} a trade` : `${st.risk_pct}% risk a trade`))
         + box('Today', rsSigned(d.book.day_pnl), `${d.book.today} entr${d.book.today === 1 ? 'y' : 'ies'} · ${d.book.open} open · loss limit ${st.daily_loss_pct}%`, d.book.day_pnl < 0 ? 'bad' : '')
         + box('Shadow so far', rsSigned(d.totals.shadow.net), `${d.totals.shadow.trades} closed · real ${rsSigned(d.totals.real.net)} over ${d.totals.real.trades}`);
     $('trx-modes').innerHTML = ['swing', 'intraday', 'options'].map((m) => {
@@ -5175,12 +5180,17 @@ setInterval(trxPoll, 60000);
 
 function trxSettingsModal() {
     const st = trxData.settings;
-    const f = (k, label, step, unit, help) => `<label class="ind-row"><span>${label}<small class="muted">${help || ''}</small></span>
-        <span><input type="number" step="${step}" name="${k}" value="${st[k]}"> ${unit}</span></label>`;
+    // A number with its unit beside it; `when`: shown only with that way of sizing (risk or lots).
+    const f = (k, label, step, unit, help, when) => `<label class="ind-row"${when ? ` data-when="${when}"` : ''}><span>${label}<small class="muted">${help || ''}</small></span>
+        <span class="trs-val"><input type="number" step="${step}" name="${k}" value="${st[k]}"><span class="trs-u">${unit}</span></span></label>`;
     openModal('Live trading settings', 'Sizing and the limits that stop new orders', `<div class="ind-form" id="trs-form">
         ${f('capital', 'Capital to size from', 1000, '₹', '0: the account balance Dhan reports')}
-        ${f('risk_pct', 'Risk a trade', 0.05, '% of capital', 'between entry and stop')}
-        ${f('max_alloc_pct', 'Most in one position', 1, '% of capital')}
+        <label class="ind-row"><span>Size each trade<small class="muted">by risk, or the same lots every time</small></span>
+            <span><select name="sizing" style="width:auto"><option value="risk"${st.sizing === 'risk' ? ' selected' : ''}>By risk (% of capital)</option>
+                <option value="lots"${st.sizing === 'lots' ? ' selected' : ''}>Fixed lots</option></select></span></label>
+        ${f('lots', 'Lots a trade', 1, 'lots', 'options and stock futures in exchange lots, shares one at a time', 'lots')}
+        ${f('risk_pct', 'Risk a trade', 0.05, '% of capital', 'between entry and stop', 'risk')}
+        ${f('max_alloc_pct', 'Most in one position', 1, '% of capital', '', 'risk')}
         ${f('max_trade_loss', 'Most a trade may risk', 500, '₹')}
         ${f('max_open', 'Positions open at once', 1, '')}
         ${f('max_per_day', 'New entries a day', 1, '')}
@@ -5192,9 +5202,12 @@ function trxSettingsModal() {
         <div class="ind-row"><span>Real sending<small class="muted">${trxData.sending.on ? 'orders can be sent' : esc(trxData.sending.why_not || '')}</small></span>
             <span><button class="btn" type="button" id="trs-send">${trxData.sending.on ? 'Turn off' : 'Turn on…'}</button></span></div>
         <div class="dm-actions"><button class="btn btn-primary" type="button" id="trs-save" style="width:auto">Save</button></div></div>`);
+    const sizing = () => $('trs-form').querySelectorAll('[data-when]').forEach((r) => { r.hidden = r.dataset.when !== $('trs-form').querySelector('[name="sizing"]').value; });
+    $('trs-form').querySelector('[name="sizing"]').addEventListener('change', sizing);
+    sizing();
     $('trs-save').addEventListener('click', () => {
         const out = {};
-        $('trs-form').querySelectorAll('input').forEach((i) => { out[i.name] = i.type === 'checkbox' ? i.checked : +i.value; });
+        $('trs-form').querySelectorAll('input, select').forEach((i) => { out[i.name] = i.type === 'checkbox' ? i.checked : i.tagName === 'SELECT' ? i.value : +i.value; });
         trxPost('/api/exec/settings', { settings: out }, 'Live trading settings saved', true).then((ok) => ok && closeModal());
     });
     $('trs-send').addEventListener('click', async () => {
