@@ -101,21 +101,22 @@
     /* Sidebar: four sections, each a small header (label + one text action)
        over rows of one shape: title (+ one-line sub) on the left, control on the right. */
     .sidebar { padding: 4px 18px; display: flex; flex-direction: column; }
-    .sb { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; }
+    .sb { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
     .sb + .sb { border-top: 1px solid var(--line); }
     .sb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
     .sb-head .label { margin: 0; }
-    .sb-note { font-size: 12px; color: var(--ink-3); margin-top: -4px; }
-    .row { display: flex; align-items: center; gap: 10px; }
-    .row-main { flex: 1; min-width: 0; }
+    .sb-note { font-size: 11.5px; color: var(--ink-3); margin-top: -2px; line-height: 1.35; }
+    /* A setting is one line: its title, then what it does (cut short to fit, in full on hover: sbTitles), then its control. */
+    .row { display: flex; align-items: center; gap: 8px; min-height: 25px; }
+    .row-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px; }
     .row > .row-title { flex: 1; }
-    .row-title { font-size: 13px; font-weight: 620; color: var(--ink); }
-    .row-sub { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-title { font-size: 13px; font-weight: 620; color: var(--ink); white-space: nowrap; flex: none; }
+    .row-sub { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
     .row input[type="time"] { width: 92px; padding: 3px 6px; font-size: 12.5px; }
     .row input[type="time"]:disabled { opacity: 0.5; }
     .btn-link:disabled { color: var(--ink-3); cursor: not-allowed; }
-    .uni-select { width: 100%; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink);
-                  padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
+    .uni-select { width: 100%; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink);
+                  padding: 6px 9px; border: 1px solid var(--line-strong); border-radius: var(--r-md);
                   background: var(--surface); cursor: pointer; }
     .uni-select:disabled { opacity: 0.6; cursor: not-allowed; }
     .dhan-form { display: flex; flex-direction: column; gap: 10px; }
@@ -149,7 +150,13 @@
         .sb-rail-btn:hover { background: var(--accent-soft); color: var(--accent); }
         .sb-rail-sep { width: 24px; height: 1px; background: var(--line); margin: 4px 0; }
     }
-    @media (min-width: 961px) and (min-height: 760px) { .sidebar { position: sticky; top: 80px; } }
+    @media (min-width: 961px) and (min-height: 760px) {
+        /* Desktop: the sidebar stays in view and scrolls on its own, so every setting is in reach without moving the page. */
+        .sidebar { position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow-y: auto; }
+        .sb-bar { position: sticky; top: 0; z-index: 1; background: var(--surface); margin: 0 -18px; padding-left: 18px; padding-right: 18px; }
+    }
+    /* The theme and style switches are in the top bar's theme menu; a phone, without that button, keeps them here. */
+    @media (min-width: 521px) { .sidebar .sb-theme { display: none; } }
     @media (max-width: 960px) {
         /* Tablets and phones: the sidebar is a panel that slides in from the left over the page. */
         .sb-collapse { display: none; }
@@ -196,6 +203,10 @@
                      border-radius: 50%; background: var(--ink-3); transition: transform 160ms; }
     .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
     .switch[aria-checked="true"]::after { transform: translateX(17px); background: #fff; }
+    .sidebar .switch { width: 36px; height: 21px; }
+    .sidebar .switch::after { width: 15px; height: 15px; }
+    .sidebar .switch[aria-checked="true"]::after { transform: translateX(15px); }
+    .sidebar #scan-btn { padding: 8px 12px; font-size: 13.5px; }
     .switch:disabled { opacity: 0.45; cursor: not-allowed; }
     .sep { border-top: 1px solid var(--line); }
     input[type="time"] { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line-strong);
@@ -1241,7 +1252,7 @@
                 background: var(--ink-2); box-shadow: 0 0 0 2px var(--surface); }
     .tk-item[data-dir="up"] .tk-rng i { background: var(--up); } .tk-item[data-dir="down"] .tk-rng i { background: var(--down); }
     .tk-note { font-size: 11px; color: var(--ink-3); }
-    @media (min-width: 961px) and (min-height: 760px) { body[data-tk="1"] .sidebar { top: 112px; } }
+    @media (min-width: 961px) and (min-height: 760px) { body[data-tk="1"] .sidebar { top: 112px; max-height: calc(100vh - 128px); } }
     .tk-ctrls { flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px; border-left: 1px solid var(--line);
                 background: var(--surface); z-index: 1; }
     .tk-btn { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm);
@@ -1536,7 +1547,7 @@
     }
     /* The narrowest iPhones (SE, 320–375 pt): the top bar keeps search, controls, the bell and the market pill;
        Legend and Guide move to the sidebar's App section. Board stats go two by two so values aren't cut. */
-    .sb-links { margin-top: 6px; font-size: 12.5px; }
+    .sb-links { margin-top: 0; font-size: 12.5px; }
     @media (max-width: 380px) {
         #legend-btn, .top-right a.guide-link[href="/docs"] { display: none; }
         .top-right { gap: 5px; }
@@ -1798,11 +1809,10 @@
 
         <section class="sb" aria-labelledby="sb-app">
             <div class="sb-head"><h2 class="label" id="sb-app">App</h2>
-                <button class="btn-link" type="button" data-appset="">Settings…</button></div>
-            <div class="row-sub">Telegram bot, Dhan automatic login, data source, candle delays, logging</div>
+                <button class="btn-link" type="button" data-appset="" title="Telegram bot, Dhan automatic login, data source, candle delays, logging">Settings…</button></div>
             <div class="sb-links"><button class="btn-link" type="button" data-legend="">Legend</button> ·
                 <a class="more" href="/docs">Guide</a> ·
-                <button class="btn-link" type="button" data-account="">Account &amp; security</button> ·
+                <button class="btn-link" type="button" data-account="" title="Account &amp; security: password, authenticator, passkeys, API tokens, sign-ins">Account</button> ·
                 <button class="btn-link" type="button" data-signout>Sign out</button></div>
             <div class="sb-theme" id="sb-theme"></div>
         </section>
@@ -6109,6 +6119,16 @@ $('nb-sound').addEventListener('click', () => { NB.sound = !NB.sound; store.set(
 document.addEventListener('click', (e) => { if (NB.open && !e.target.closest('#nb-panel, #nb-btn, #ask, #ask-scrim')) nbToggle(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && NB.open) { nbToggle(false); $('nb-btn').focus(); } });
 setInterval(() => { if (NB.open) nbRender(); }, 60000);      // "5 min ago" keeps up
+
+/* A sidebar setting's description is cut short to keep it on one line; its full text is its tooltip. */
+function sbTitles() {
+    document.querySelectorAll('#sidebar .row-sub').forEach((el) => {
+        if (!el.dataset.ownTitle) el.dataset.ownTitle = el.hasAttribute('title') ? '1' : '0';
+        if (el.dataset.ownTitle === '0') el.title = el.textContent.trim();
+    });
+}
+new MutationObserver(sbTitles).observe($('sidebar'), { subtree: true, childList: true, characterData: true });
+sbTitles();
 
 /* ------------------------------------------------------------- hide money */
 // The eye in the top bar (moneyHidden, above esc): open while amounts show, struck through while they are hidden.
