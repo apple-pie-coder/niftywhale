@@ -3870,7 +3870,7 @@ def api_exec_settings():
     body = request.get_json(silent=True) or {}
     body = body.get('settings') if isinstance(body.get('settings'), dict) else {}
     cur = exec_settings()
-    new = execution.settings_from({**cur, **body})
+    new = execution.settings_from(body, base=cur)            # a value that is not valid keeps the current one
     refused = {m: why for m in execution.MODES if new[m] != cur[m] for why in [_exec_arm_check(m, new[m])] if why}
     if refused:
         return jsonify({'error': '; '.join(f"{m}: {', '.join(w)}" for m, w in refused.items()), 'refused': refused}), 400

@@ -371,6 +371,18 @@
     .trx-live { display: inline-block; padding: 1px 7px; border-radius: var(--r-pill); font-size: 10.5px; font-weight: 750; letter-spacing: .05em; }
     .trx-live[data-l="shadow"] { background: var(--sunk); color: var(--ink-2); }
     .trx-live[data-l="confirm"], .trx-live[data-l="auto"] { background: var(--bad); color: #fff; }
+    /* Phones: an offer is a card, every value labelled, Place and Dismiss full width at its foot. */
+    @media (max-width: 760px) {
+        #trx-offers-sec thead { display: none; }
+        #trx-offers-sec table { min-width: 0; }
+        #trx-offers tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; padding: 12px; border-bottom: 1px solid var(--line); }
+        #trx-offers td { display: block; padding: 0; border: 0; text-align: left; white-space: normal; }
+        #trx-offers td[data-l]::before { content: attr(data-l); display: block; font-size: 10.5px; font-weight: 650; letter-spacing: .04em;
+                                         text-transform: uppercase; color: var(--ink-3); margin-bottom: 1px; }
+        #trx-offers td.trx-oi { grid-column: 1 / -1; font-size: 15px; }
+        #trx-offers td.trx-oa { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+        #trx-offers td.trx-oa .btn { flex: 1; width: auto !important; padding: 11px; font-size: 14px; }
+    }
     .trx-log summary { cursor: pointer; font-weight: 650; padding: 4px 0 10px; }
     .trx-log td { font-size: 12px; vertical-align: top; } .trx-log code { font-size: 11.5px; overflow-wrap: anywhere; }
     .dm-actions .btn { width: auto; padding: 7px 14px; }
@@ -5083,10 +5095,11 @@ function trxRender() {
     $('trx-offers-sec').hidden = !offers.length;
     const lapse = (iso) => { const s = Math.max(0, Math.round((new Date(iso) - Date.now()) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
     const px = (v) => v == null ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
-    $('trx-offers').innerHTML = offers.map((r) => `<tr><td class="num">${dmWhen(r.entry_time)}</td><td>${MODE_NAME[r.mode]}</td><td><b>${esc(r.instrument)}</b> <span class="muted">${esc(r.product)}</span></td>
-        <td>${r.side === 'short' ? 'Short' : 'Long'}</td><td class="r num">${r.qty}</td><td class="r num">${px(r.price)}</td><td class="r num">${px(r.stop)} · ${px(r.target)}</td>
-        <td class="r num">${rs(r.risk)}</td><td class="r num">${lapse(r.expires)}</td>
-        <td class="r"><button class="btn btn-primary" type="button" data-trp="${r.id}" style="width:auto">Place</button> <button class="btn-link" type="button" data-trd="${r.id}">Dismiss</button></td></tr>`).join('');
+    // data-l: each value's label, shown on a phone, where an offer is a card with its buttons in reach.
+    $('trx-offers').innerHTML = offers.map((r) => `<tr><td class="num" data-l="Alert">${dmWhen(r.entry_time)}</td><td data-l="Mode">${MODE_NAME[r.mode]}</td><td class="trx-oi" data-l="Instrument"><b>${esc(r.instrument)}</b> <span class="muted">${esc(r.product)}</span></td>
+        <td data-l="Side">${r.side === 'short' ? 'Short' : 'Long'}</td><td class="r num" data-l="Quantity">${r.qty}</td><td class="r num" data-l="Limit">${px(r.price)}</td><td class="r num" data-l="Stop · target">${px(r.stop)} · ${px(r.target)}</td>
+        <td class="r num" data-l="Risks">${rs(r.risk)}</td><td class="r num" data-l="Lapses">${lapse(r.expires)}</td>
+        <td class="r trx-oa"><button class="btn btn-primary" type="button" data-trp="${r.id}" style="width:auto">Place</button> <button class="btn-link" type="button" data-trd="${r.id}">Dismiss</button></td></tr>`).join('');
     const rows = d.rows || [];
     const net = rows.filter((r) => r.status === 'closed').reduce((t, r) => t + (r.net || 0), 0);
     $('trx-orders-meta').textContent = rows.length ? `${rows.length} order(s) · real closed ${net >= 0 ? '+' : ''}${rs(net)} net` : '';

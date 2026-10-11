@@ -40,6 +40,11 @@ class Plans(unittest.TestCase):
         st = execution.settings_from({'swing': 'auto', 'intraday': 'yolo', 'risk_pct': 50, 'max_open': 2.6, 'shorts': '1'})
         self.assertEqual((st['swing'], st['intraday'], st['risk_pct'], st['max_open'], st['shorts']), ('auto', 'off', 2.0, 3, True))
 
+    def test_a_bad_value_keeps_the_current_one(self):
+        cur = execution.settings_from({'swing': 'shadow', 'buffer_bps': 15, 'risk_pct': 0.5})
+        new = execution.settings_from({'buffer_bps': 'x', 'swing': 'nope', 'risk_pct': 0.3}, base=cur)
+        self.assertEqual((new['buffer_bps'], new['swing'], new['risk_pct']), (15.0, 'shadow', 0.3))
+
     def test_correlation_id_fits_dhan(self):
         cid = execution.correlation_id('intraday:12345678901234567890123:x/y')
         self.assertLessEqual(len(cid), 30)

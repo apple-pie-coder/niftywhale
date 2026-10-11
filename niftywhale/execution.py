@@ -62,16 +62,17 @@ TICK = 0.05                   # every price a multiple of 5 paise: valid at ever
 GATE = {'bt_trades': {'swing': 60, 'intraday': 100, 'options': 30}, 'paper_trades': 30}
 
 
-def settings_from(saved: Any) -> Dict[str, Any]:
-    """Saved settings made safe: levels from LEVELS, numbers clamped to LIMITS, switches as booleans."""
+def settings_from(saved: Any, base: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Saved settings made safe: levels from LEVELS, numbers clamped to LIMITS, switches as booleans. `base`: the
+    settings a change applies to (else the defaults); a value that is not valid leaves its setting as it was there."""
     saved = saved if isinstance(saved, dict) else {}
-    out = dict(DEFAULTS)
+    out = dict(base or DEFAULTS)
     for k, default in DEFAULTS.items():
         if k not in saved:
             continue
         v = saved[k]
         if k in MODES:
-            out[k] = v if v in LEVELS else default
+            out[k] = v if v in LEVELS else out[k]
         elif isinstance(default, bool):
             out[k] = v in (True, 1, '1', 'true', 'on')
         else:
