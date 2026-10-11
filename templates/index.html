@@ -524,9 +524,41 @@
     .ind-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .ind-row span { display: flex; flex-direction: column; }
     .ind-row small { color: var(--ink-3); font-size: 11.5px; }
-    .ind-row span.trs-val { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; white-space: nowrap; }
-    .trs-val input { width: 110px !important; }
-    .trs-u { min-width: 74px; font-size: 12.5px; color: var(--ink-3); }
+    /* Live trading settings (trxSettingsModal): groups of fields in a grid, each its label, a box with its unit, a note. */
+    .trs { display: grid; gap: 14px; }
+    .trs-g { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 16px; background: var(--surface); }
+    .trs-g header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .trs-g h3 { margin: 0; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+    .trs-g header p { margin: 0; font-size: 12px; color: var(--ink-3); }
+    .trs-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+    @media (max-width: 640px) { .trs-grid { grid-template-columns: minmax(0, 1fr); } }
+    .trs-f { display: grid; gap: 5px; align-content: start; min-width: 0; }
+    .trs-f[hidden] { display: none; }
+    .trs-l { font-size: 13px; font-weight: 650; color: var(--ink); }
+    .trs-f small { font-size: 11.5px; color: var(--ink-3); line-height: 1.35; }
+    .trs-box { display: flex; align-items: center; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface);
+               overflow: hidden; }
+    .trs-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .trs-box input { flex: 1; min-width: 0; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: none;
+                     font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; padding: 8px 10px; color: var(--ink); }
+    .trs-box i { font-style: normal; font-size: 12.5px; color: var(--ink-3); padding: 0 10px; white-space: nowrap; }
+    .trs-box i:first-child { padding-right: 0; }
+    .trs-seg { width: 100%; }
+    .trs-seg button { padding: 8px 6px; font-size: 13px; }
+    .trs-step { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; border: 1px solid var(--line-strong); border-radius: var(--r-md); overflow: hidden; }
+    .trs-step button { border: 0; background: var(--sunk); color: var(--ink); font-size: 17px; cursor: pointer; }
+    .trs-step button:hover { background: var(--accent-soft); color: var(--accent); }
+    .trs-step input { border: 0 !important; text-align: center; font: inherit; font-size: 15px; font-weight: 650; padding: 7px 4px; min-width: 0;
+                      background: var(--surface) !important; box-shadow: none !important; color: var(--ink); }
+    .trs-sw { display: flex; align-items: center; gap: 10px; min-height: 38px; font-size: 12.5px; color: var(--ink-2); }
+    .trs-send[data-on="1"] { border-color: var(--warn); background: var(--warn-soft); }
+    .trs-send-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--ink-2); }
+    .trs-send-row .btn { width: auto; flex: none; }
+    .trs-bar { position: sticky; bottom: -18px; margin: 0 -18px -18px; padding: 12px 18px; display: flex; align-items: center; gap: 8px;
+               border-top: 1px solid var(--line); background: var(--surface); z-index: 2; }
+    .trs-bar .muted { margin-right: auto; font-size: 12px; }
+    .trs-bar .btn { width: auto; }
+    @media (max-width: 1080px) { .trs-bar { bottom: -14px; margin: 0 -14px -14px; padding: 10px 14px; } }
     .ind-row[hidden] { display: none; }
     .ind-row input, .ind-row select { width: 130px; font: inherit; font-size: 13px; padding: 6px 8px; color: var(--ink);
                                       background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
@@ -5179,39 +5211,69 @@ setTimeout(trxPoll, 4000);
 setInterval(trxPoll, 60000);
 
 function trxSettingsModal() {
-    const st = trxData.settings;
-    // A number with its unit beside it; `when`: shown only with that way of sizing (risk or lots).
-    const f = (k, label, step, unit, help, when) => `<label class="ind-row"${when ? ` data-when="${when}"` : ''}><span>${label}<small class="muted">${help || ''}</small></span>
-        <span class="trs-val"><input type="number" step="${step}" name="${k}" value="${st[k]}"><span class="trs-u">${unit}</span></span></label>`;
-    openModal('Live trading settings', 'Sizing and the limits that stop new orders', `<div class="ind-form" id="trs-form">
-        ${f('capital', 'Capital to size from', 1000, '₹', '0: the account balance Dhan reports')}
-        <label class="ind-row"><span>Size each trade<small class="muted">by risk, or the same lots every time</small></span>
-            <span><select name="sizing" style="width:auto"><option value="risk"${st.sizing === 'risk' ? ' selected' : ''}>By risk (% of capital)</option>
-                <option value="lots"${st.sizing === 'lots' ? ' selected' : ''}>Fixed lots</option></select></span></label>
-        ${f('lots', 'Lots a trade', 1, 'lots', 'options and stock futures in exchange lots, shares one at a time', 'lots')}
-        ${f('risk_pct', 'Risk a trade', 0.05, '% of capital', 'between entry and stop', 'risk')}
-        ${f('max_alloc_pct', 'Most in one position', 1, '% of capital', '', 'risk')}
-        ${f('max_trade_loss', 'Most a trade may risk', 500, '₹')}
-        ${f('max_open', 'Positions open at once', 1, '')}
-        ${f('max_per_day', 'New entries a day', 1, '')}
-        ${f('daily_loss_pct', "Day's loss that halts everything", 0.1, '% of capital')}
-        ${f('buffer_bps', 'Entry limit past the alert price', 1, 'bps', '10 bps = 0.1 %')}
-        ${f('max_drift_pct', 'Skip if price ran past entry by', 0.05, '%')}
-        ${f('offer_minutes', 'Offer lapses after', 1, 'min', 'Confirm each')}
-        <label class="ind-row"><span>Swing shorts live<small class="muted">stock futures</small></span><span><input type="checkbox" name="shorts"${st.shorts ? ' checked' : ''}></span></label>
-        <div class="ind-row"><span>Real sending<small class="muted">${trxData.sending.on ? 'orders can be sent' : esc(trxData.sending.why_not || '')}</small></span>
-            <span><button class="btn" type="button" id="trs-send">${trxData.sending.on ? 'Turn off' : 'Turn on…'}</button></span></div>
-        <div class="dm-actions"><button class="btn btn-primary" type="button" id="trs-save" style="width:auto">Save</button></div></div>`);
-    const sizing = () => $('trs-form').querySelectorAll('[data-when]').forEach((r) => { r.hidden = r.dataset.when !== $('trs-form').querySelector('[name="sizing"]').value; });
-    $('trs-form').querySelector('[name="sizing"]').addEventListener('change', sizing);
-    sizing();
+    const st = trxData.settings, snd = trxData.sending;
+    // A field: its label, a box with the unit inside it, what it means under it. `when`: only with that sizing.
+    const fld = (k, label, step, unit, help, when, pre) => `<label class="trs-f"${when ? ` data-when="${when}"` : ''}>
+        <span class="trs-l">${label}</span>
+        <span class="trs-box">${pre ? `<i>${pre}</i>` : ''}<input type="number" step="${step}" min="0" name="${k}" value="${st[k]}" inputmode="decimal">${unit ? `<i>${unit}</i>` : ''}</span>
+        ${help ? `<small>${help}</small>` : ''}</label>`;
+    const group = (title, sub, body) => `<section class="trs-g"><header><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</header><div class="trs-grid">${body}</div></section>`;
+    openModal('Live trading settings', 'How each order is sized, and the limits that stop new ones', `<div id="trs-form" class="trs">
+        ${group('Sizing', 'What each order is worth', `
+            ${fld('capital', 'Capital', 1000, '', '0 uses the balance Dhan reports', '', '₹')}
+            <div class="trs-f"><span class="trs-l">Size each trade</span>
+                <div class="seg trs-seg" role="group" aria-label="Size each trade">
+                    <button type="button" data-sz="risk" aria-pressed="${st.sizing !== 'lots'}">By risk</button>
+                    <button type="button" data-sz="lots" aria-pressed="${st.sizing === 'lots'}">Fixed lots</button></div>
+                <small id="trs-sz-help"></small></div>
+            <label class="trs-f" data-when="lots"><span class="trs-l">Lots a trade</span>
+                <span class="trs-step"><button type="button" data-step="-1" aria-label="One lot fewer">−</button>
+                    <input type="number" step="1" min="1" max="100" name="lots" value="${st.lots}" inputmode="numeric">
+                    <button type="button" data-step="1" aria-label="One lot more">+</button></span>
+                <small>Options and stock futures in exchange lots; shares one at a time</small></label>
+            ${fld('risk_pct', 'Risk a trade', 0.05, '% of capital', 'Between entry and stop', 'risk')}
+            ${fld('max_alloc_pct', 'Most in one position', 1, '% of capital', 'Value or margin it may tie up', 'risk')}`)}
+        ${group('Limits', 'Reaching one stops new orders', `
+            ${fld('max_trade_loss', 'Most a trade may risk', 500, '', 'Bigger orders are not sent', '', '₹')}
+            ${fld('daily_loss_pct', "Day's loss that halts all", 0.1, '% of capital', 'Closed and open together')}
+            ${fld('max_open', 'Positions open at once', 1, '', 'All modes together')}
+            ${fld('max_per_day', 'New entries a day', 1, '', 'All modes together')}`)}
+        ${group('Orders', 'How an entry is placed', `
+            ${fld('buffer_bps', 'Entry limit past the alert', 1, 'bps', '10 bps = 0.1 %; never a market order')}
+            ${fld('max_drift_pct', 'Skip if the price ran past entry', 0.05, '%', 'Toward the target, before sending')}
+            ${fld('offer_minutes', 'An offer lapses after', 1, 'min', 'Confirm each: time to press Place')}
+            <div class="trs-f"><span class="trs-l">Swing shorts live</span>
+                <span class="trs-sw"><button class="switch" type="button" role="switch" id="trs-shorts" aria-checked="${!!st.shorts}" aria-label="Swing shorts live"></button>
+                    <span>Stock futures (MARGIN)</span></span></div>`)}
+        <section class="trs-g trs-send" data-on="${snd.on ? 1 : 0}"><header><h3>Real sending</h3>
+            <p>${snd.on ? `On · static IP ${esc(snd.primary_ip || '?')}` : 'Off · nothing can reach Dhan'}</p></header>
+            <div class="trs-send-row"><span>${snd.on ? 'A mode at Confirm each or Automatic can send real orders.' : esc(snd.why_not || 'Needs Dhan connected and a whitelisted static IP.')}</span>
+                <button class="btn${snd.on ? '' : ' btn-danger'}" type="button" id="trs-send">${snd.on ? 'Turn off' : 'Turn on…'}</button></div></section>
+        <div class="trs-bar"><span class="muted">Saved for every mode; a recent sign-in is asked for.</span>
+            <button class="btn" type="button" id="trs-cancel">Cancel</button>
+            <button class="btn btn-primary" type="button" id="trs-save">Save</button></div></div>`, true);
+    const F = $('trs-form');
+    let sizing = st.sizing === 'lots' ? 'lots' : 'risk';
+    const showSizing = () => {
+        F.querySelectorAll('[data-sz]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sz === sizing)));
+        F.querySelectorAll('[data-when]').forEach((r) => { r.hidden = r.dataset.when !== sizing; });
+        $('trs-sz-help').textContent = sizing === 'lots' ? 'The same number of lots every trade, whatever the stop' : 'Each trade risks a share of the capital';
+    };
+    showSizing();
+    F.addEventListener('click', (e) => {
+        const z = e.target.closest('[data-sz]'), st1 = e.target.closest('[data-step]'), sw = e.target.closest('#trs-shorts');
+        if (z) { sizing = z.dataset.sz; showSizing(); }
+        else if (st1) { const i = F.querySelector('[name="lots"]'); i.value = Math.min(100, Math.max(1, (+i.value || 1) + +st1.dataset.step)); }
+        else if (sw) sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
+    });
+    $('trs-cancel').addEventListener('click', closeModal);
     $('trs-save').addEventListener('click', () => {
-        const out = {};
-        $('trs-form').querySelectorAll('input, select').forEach((i) => { out[i.name] = i.type === 'checkbox' ? i.checked : i.tagName === 'SELECT' ? i.value : +i.value; });
+        const out = { sizing, shorts: $('trs-shorts').getAttribute('aria-checked') === 'true' };
+        F.querySelectorAll('input[name]').forEach((i) => { out[i.name] = +i.value; });
         trxPost('/api/exec/settings', { settings: out }, 'Live trading settings saved', true).then((ok) => ok && closeModal());
     });
     $('trs-send').addEventListener('click', async () => {
-        const on = !trxData.sending.on;
+        const on = !snd.on;
         if (on && !await ask({ title: 'Turn on real sending?', ok: 'Turn on', danger: true,
             body: 'Real orders can then be sent from a mode at Confirm each or Automatic. Dhan accepts them only from the static IP whitelisted on your account.' })) return;
         trxPost('/api/exec/send', { on }, on ? 'Real sending on' : 'Real sending off: every mode lowered to Shadow', true).then((ok) => ok && closeModal());
