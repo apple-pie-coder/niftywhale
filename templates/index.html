@@ -7587,7 +7587,7 @@ const PARAM_LABEL = { min_avg_volume: 'Min volume', min_atr_pct: 'Min ATR %', ma
     max_market_run: 'Max Nifty 20-day run %', min_zone_age: 'Min zone age (days)', max_rr: 'Max R:R',
     min_breadth: 'Min breadth %', weekly_align: 'Weekly trend agrees', min_rs_nifty: 'Min strength vs Nifty',
     min_rs_sector: 'Min strength vs sector', min_choch_rvol: 'Min CHoCH volume ×', min_close_loc: 'Min CHoCH close',
-    oi_align: 'Futures OI agrees', results_gap: 'Days clear of results', deliv_align: 'Delivery agrees' };
+    oi_align: 'Futures OI agrees', results_gap: 'Days clear of results', deliv_align: 'Delivery agrees', min_stop_pct: 'Min stop distance %' };
 // A context gate at its 'off' value (swing: max_market_run 10, min_zone_age 0, max_rr 30) reads as off.
 const gateOff = (k, v) => { const t = (S && S.tunable || {})[k]; return !!(t && t.off != null && +v === t.off); };
 const fmtParam = (k, v) => v == null ? '—' : gateOff(k, v) ? 'off' : k === 'min_avg_volume' ? lakh(v) : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -8511,7 +8511,7 @@ function tunerCtx(intra) {
 const TZ_GROUPS = [
     ['screen', 'Screen', ['min_avg_volume', 'min_atr_pct']],
     ['structure', 'Structure', ['swing_len', 'displacement_atr', 'bos_lookback']],
-    ['entry', 'Entry', ['max_discount', 'min_target_pct', 'pre_min_rr', 'min_rr', 'max_rr', 'min_zone_age']],
+    ['entry', 'Entry', ['max_discount', 'min_target_pct', 'pre_min_rr', 'min_rr', 'min_stop_pct', 'max_rr', 'min_zone_age']],
     ['market', 'Market context', ['max_market_run', 'min_breadth', 'weekly_align', 'min_rs_nifty', 'min_rs_sector']],
     ['trigger', 'Trigger and flows', ['min_choch_rvol', 'min_close_loc', 'oi_align', 'deliv_align', 'results_gap']],
 ];

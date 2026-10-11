@@ -675,6 +675,10 @@ def context_gate(ctx: Dict[str, Any], side: str, rules: Dict[str, Any],
         v = rules.get(k)
         return k in spec and v is not None and v != spec[k]['off']
 
+    rp = ctx.get('risk_pct')
+    if on('min_stop_pct') and rp is not None and rp < rules['min_stop_pct'] - 1e-9:
+        return (f"the stop is {rp:.2f}% from the entry (gate: at least {rules['min_stop_pct']:g}%): "
+                'charges and slippage would take too much of the risk')
     rr = ctx.get('rr')
     if on('max_rr') and rr is not None and rr > rules['max_rr'] + 1e-9:
         return f"R:R 1:{rr:.1f} is over the 1:{rules['max_rr']:g} cap: a stop that tight is usually noise"

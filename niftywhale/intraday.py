@@ -63,6 +63,7 @@ class IntradayRules:
     min_close_loc: float = 0.0            # where the CHoCH candle closed in its range, the trade's way (0 = off)
     oi_align: int = 0                     # stock futures OI over 5 sessions (0 off, 1 not against, 2 with the trade)
     deliv_align: int = 0                  # 1: skip a long after distribution, a short after accumulation (0 = off)
+    min_stop_pct: float = 0.0             # the stop at least this % from the entry: costs and slippage cost less of R (0 = off)
 
     # The clock (IST)
     start: str = '09:30'                  # first scan, once the first 15m candle has closed
@@ -145,8 +146,12 @@ TUNABLE: Dict[str, Dict[str, Any]] = {
     'min_close_loc':    {**smc.TUNABLE['min_close_loc'],
                          'help': "Entry gate. Skip a CHoCH whose 5m candle closed less than this far the trade's way "
                                  'through its range. 0 = off.'},
+    'min_stop_pct':     {'label': 'Min stop distance', 'step': 0.1, 'min': 0, 'max': 2, 'unit': '%', 'off': 0,
+                         'values': [0, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0],
+                         'help': 'Entry gate. Skip a trade whose stop is closer than this % to the entry: charges and '
+                                 'slippage are about the same in rupees, so on a tight stop they take most of R. 0 = off.'},
 }
-GATES = ('min_breadth', 'min_rs_nifty', 'min_choch_rvol', 'min_close_loc', 'oi_align', 'deliv_align')
+GATES = ('min_breadth', 'min_rs_nifty', 'min_choch_rvol', 'min_close_loc', 'oi_align', 'deliv_align', 'min_stop_pct')
 
 
 

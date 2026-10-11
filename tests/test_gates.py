@@ -43,6 +43,25 @@ def market(ret20: float, first=date(2025, 10, 1), n=120) -> pd.DataFrame:
     return pd.DataFrame({'nifty': closes, 'vix': [14.0] * n}, index=idx)
 
 
+class StopDistance(unittest.TestCase):
+    """Intraday's minimum stop distance: off at 0; on, a stop nearer the entry than it skips the trade, at the
+    trigger, live and in the backtester alike (the same context_gate on the trade's risk_pct)."""
+    def test_the_gate(self):
+        r = app.intraday.IntradayRules().as_dict()
+        T = app.intraday.TUNABLE
+        self.assertIsNone(smc.context_gate({'risk_pct': 0.3}, 'long', r, T))                       # off
+        r = {**r, 'min_stop_pct': 0.7}
+        self.assertIn('0.30% from the entry', smc.context_gate({'risk_pct': 0.3}, 'short', r, T))
+        self.assertIsNone(smc.context_gate({'risk_pct': 0.7}, 'long', r, T))
+        self.assertIsNone(smc.context_gate({}, 'long', r, T))                                    # unknown: never blocks
+        self.assertIsNone(smc.context_gate({'risk_pct': 0.3}, 'long', {**smc.Rules().as_dict(), 'min_stop_pct': 0.7}))  # swing: not a gate
+
+    def test_tuned_like_the_others(self):
+        self.assertIn('min_stop_pct', app.intraday.GATES)
+        self.assertIn('min_stop_pct', lab.specs('intraday'))
+        self.assertEqual(app.intraday.IntradayRules().with_overrides({'min_stop_pct': 5}).min_stop_pct, 2.0)   # clamped
+
+
 class Gate(unittest.TestCase):
     ctx = {'rr': 12.0, 'zone_age_days': 1, 'nifty_ret20': 4.0}
 

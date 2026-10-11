@@ -1672,7 +1672,9 @@ Backtests run in a second container, `niftywhale-lab`, built from the same image
 
    Each is also a **gate** in the rule set (off by default, tuned like any threshold): min breadth, weekly trend agrees,
    min strength vs Nifty and vs sector, min CHoCH volume and close, futures OI agrees, days clear of results, delivery
-   agrees. Intraday has the breadth, strength, CHoCH, OI and delivery gates.
+   agrees. Intraday has the breadth, strength, CHoCH, OI and delivery gates, and its own **min stop distance** (skip a
+   trade whose stop is nearer the entry than this %: charges and slippage are much the same in rupees, so on a tight stop
+   they take most of R).
 
 **NSE history** (`niftywhale/backfill.py`; the lab's nightly and first start, or **Backfill NSE history** in the Lab panel):
 
