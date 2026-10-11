@@ -2197,7 +2197,7 @@ def exec_view() -> dict:
             'rows': rows,
             'totals': {'shadow': {'trades': len(shadow), 'net': round(sum(r['net'] or 0 for r in shadow), 2)},
                        'real': {'trades': len(real), 'net': round(sum(r['net'] or 0 for r in real), 2)}},
-            'log': store.broker_log(40)}
+            'log': [{**l, 'answer': (l['answer'] or '')[:300]} for l in store.broker_log(500)]}
 
 
 

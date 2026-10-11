@@ -2136,6 +2136,7 @@
         <section>
             <details class="trx-log"><summary>Requests to Dhan <span class="muted" id="trx-log-n"></span></summary>
                 <div class="table-wrap"><table><thead><tr><th>When</th><th>Request</th><th>Answer</th></tr></thead><tbody id="trx-log"></tbody></table></div>
+                <div class="pager" id="pg-trxlog" aria-label="Pages"></div>
             </details>
         </section>
         </div>
@@ -2608,6 +2609,9 @@ const tfMode = { id: 'mode', opts: [['all', 'All modes'], ['swing', 'Swing', (r)
 const tfSt = (...names) => (z) => names.includes(z.status);
 const tfName = (r) => `${r.symbol || ''} ${r.name || ''}`;
 const TF_DEFS = {
+    // The Trading tab's requests to Dhan: answered or refused, when, and a search over the request and the answer.
+    trxlog: { groups: [tfIs('ok', ['ok', 'Answered', (l) => !!l.ok], ['bad', 'Refused', (l) => !l.ok]), tfWhen((l) => l.ts)],
+              text: (l) => `${l.method} ${l.path} ${l.body || ''} ${l.answer || ''}` },
     sjournal: { groups: [tfIs('status', ['open', 'Open', tfSt('triggered')], ['won', 'Target', tfSt('won')], ['lost', 'Stop', tfSt('lost')],
                               ['closed', 'Squared off', tfSt('closed')]),
                          tfSide(), tfWhen((z) => (z.trigger || {}).choch_time)], text: tfName },
@@ -2746,7 +2750,7 @@ const PAGED = { setups: () => renderSetups(), zones: () => renderZones(), signal
                 orows: () => O && renderOptions(), ojournal: () => O && renderOptions(),
                 news: () => renderNews(), smstocks: () => renderSmartStocks(), smdeals: () => renderDeals(),
                 dmopen: () => renderDemo(), dmclosed: () => renderDemo(), dmskipped: () => renderDemo(), dmledger: () => renderDemo(),
-                trx: () => trxRender() };
+                trx: () => trxRender(), trxlog: () => trxRender() };
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-pg]');
     if (!b || b.disabled) return;
@@ -5087,9 +5091,12 @@ function trxRender() {
         <td class="r num">${px(r.stop)} · ${px(r.target)}</td><td class="r num">${r.fill != null ? px(r.fill) : '—'} → ${r.exit != null ? px(r.exit) : '—'}</td>
         <td class="r num">${r.net != null ? `<b>${rsSigned(r.net)}</b>` : '—'}</td><td class="muted trx-note">${esc(r.note || '')}</td></tr>`).join('')
         : '<tr><td colspan="11"><div class="empty">No orders yet. Set a mode to Shadow to see what each alert would send.</div></td></tr>';
-    $('trx-log-n').textContent = `(${(d.log || []).length})`;
-    $('trx-log').innerHTML = (d.log || []).map((l) => `<tr><td class="num">${dmWhen(l.ts)}</td><td><code>${esc(l.method)} ${esc(l.path)}</code>${l.body ? `<div><code>${esc(l.body)}</code></div>` : ''}</td>
-        <td><code>${l.ok ? '' : 'refused: '}${esc((l.answer || '').slice(0, 300))}</code></td></tr>`).join('');
+    const logs = d.log || [];
+    $('trx-log-n').textContent = `(${logs.length}${logs.length >= 500 ? ', the latest' : ''})`;
+    if (!logs.length) paged('trxlog', []);
+    $('trx-log').innerHTML = logs.length ? paged('trxlog', logs).map((l) => `<tr><td class="num">${dmWhen(l.ts)}</td><td><code>${esc(l.method)} ${esc(l.path)}</code>${l.body ? `<div><code>${esc(l.body)}</code></div>` : ''}</td>
+        <td><code>${l.ok ? '' : 'refused: '}${esc((l.answer || '').slice(0, 300))}</code></td></tr>`).join('')
+        : '<tr><td colspan="3"><div class="empty">No requests to Dhan yet.</div></td></tr>';
 }
 
 async function trxPost(path, body, done, fresh) {
