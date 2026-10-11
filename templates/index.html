@@ -3741,8 +3741,36 @@ function lwcMake(wrap) {
     c.layer = new LwcLayer();
     c.candle.attachPrimitive(c.layer);
     c.chart.subscribeCrosshairMove((p) => lwcTip(c, p));
+    c.chart.timeScale().subscribeVisibleLogicalRangeChange(() => { clearTimeout(c.viewT); c.viewT = setTimeout(() => lwcSaveView(c), 400); });
     el.addEventListener('dblclick', () => lwcFit(c));
     return c;
+}
+
+// Each chart's zoom (candle width) and scroll (candles back from the latest), per stock, timeframe and range, the
+// drawer and full screen apart, on this device: reopening a stock or reloading shows it as it was left. Kept
+// relative to the latest candle, so new ones still arrive at the right edge. A double-click fits it again (and that
+// is kept). The 200 most recent are kept.
+const LWC_VIEWS = 'nw.chart.views';
+const lwcViewKey = (c) => (c.full ? 'f|' : 'd|') + zoomKey();
+function lwcSaveView(c) {
+    if (!c.n || c.restoring || !zoomKey()) return;
+    const ts = c.chart.timeScale(), sp = ts.options().barSpacing, pos = ts.scrollPosition();
+    if (!isFinite(sp) || !isFinite(pos)) return;
+    const all = store.get(LWC_VIEWS, {}) || {};
+    all[lwcViewKey(c)] = { s: Math.round(sp * 100) / 100, p: Math.round(pos * 100) / 100, at: Date.now() };
+    const keys = Object.keys(all);
+    if (keys.length > 200) keys.sort((a, b) => all[a].at - all[b].at).slice(0, keys.length - 200).forEach((k) => delete all[k]);
+    store.set(LWC_VIEWS, all);
+}
+function lwcRestoreView(c) {
+    const v = (store.get(LWC_VIEWS, {}) || {})[lwcViewKey(c)];
+    if (!v) { lwcFit(c); return; }
+    c.restoring = true;
+    c.chart.priceScale('right').applyOptions({ autoScale: true });
+    const ts = c.chart.timeScale();
+    ts.applyOptions({ barSpacing: v.s });
+    ts.scrollToPosition(v.p, false);
+    setTimeout(() => { c.restoring = false; }, 0);
 }
 
 // The drawer's chart height: as the old 720×340 drawing scaled to the panel's width, taller on a phone.
@@ -3821,7 +3849,7 @@ function paintChart(spec, wrap) {
         boxes, seps: spec.seps.filter((sp) => sp.k >= 0 && sp.k < N),
         lines: spec.lines.filter((ln) => ln.v != null).map((ln) => ({ ...ln, color: lwcColor(ln.color, el) })),
     });
-    if (c.fitted !== key) { c.fitted = key; lwcFit(c); }
+    if (c.fitted !== key) { c.fitted = key; lwcRestoreView(c); }
 }
 
 // The OHLC box under the crosshair (and what else that candle has), as before; with the magnet on, the price

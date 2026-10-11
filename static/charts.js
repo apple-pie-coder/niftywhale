@@ -164,6 +164,29 @@
     // The magnet (toolbar, remembered in this browser): the crosshair snaps to the hovered candle's open, high, low or
     // close, wicks included, and a drawing's point snaps to the nearest of them within MAGNET_PX.
     let magnet = (() => { try { return localStorage.getItem('lc.magnet') !== '0'; } catch (e) { return true; } })();
+    // Each chart's zoom (candle width) and scroll (candles back from the latest), per instrument and timeframe on
+    // this device: a reload, or going back to a chart, shows it as it was left. Kept relative to the latest candle,
+    // so new candles still arrive at the right edge. The 200 most recent are kept.
+    const VIEW_KEY = 'lc.views', VIEW_MAX = 200;
+    let views = (() => { try { return JSON.parse(localStorage.getItem(VIEW_KEY) || '{}') || {}; } catch (e) { return {}; } })();
+    const viewKey = (c) => `${c.symbol}|${c.tf}`;
+    function saveView(c) {
+        if (!c.bars.length || c.restoring) return;
+        const ts = c.chart.timeScale(), s = ts.options().barSpacing, p = ts.scrollPosition();
+        if (!isFinite(s) || !isFinite(p)) return;
+        views[viewKey(c)] = { s: Math.round(s * 100) / 100, p: Math.round(p * 100) / 100, at: Date.now() };
+        const keys = Object.keys(views);
+        if (keys.length > VIEW_MAX) keys.sort((a, b) => views[a].at - views[b].at).slice(0, keys.length - VIEW_MAX).forEach((k) => delete views[k]);
+        try { localStorage.setItem(VIEW_KEY, JSON.stringify(views)); } catch (e) { /* private mode: this page only */ }
+    }
+    function restoreView(c) {
+        const v = views[viewKey(c)], ts = c.chart.timeScale();
+        if (!v) { ts.scrollToRealTime(); return; }
+        c.restoring = true;
+        ts.applyOptions({ barSpacing: v.s });
+        ts.scrollToPosition(v.p, false);
+        setTimeout(() => { c.restoring = false; }, 0);
+    }
     const MAGNET_PX = 24;
     // The candle under logical position l, and its price nearest to y (in pixels): [price, distance].
     function nearestOHLC(c, l, y) {
@@ -205,7 +228,11 @@
     const dY = (c, p) => c.series.priceToCoordinate(p);
     function pointAt(c, e) {
         const r = c.body.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-        const l = c.chart.timeScale().coordinateToLogical(x);
+        // Only the candles' area: the price scale (right) and the time axis (below) belong to the chart, so a
+        // drawing that runs on under them never takes a click, a drag or the grab cursor meant for them.
+        const ts = c.chart.timeScale();
+        if (x < 0 || y < 0 || x > ts.width() || y > r.height - ts.height()) return null;
+        const l = ts.coordinateToLogical(x);
         let p = c.series.coordinateToPrice(y);
         if (l == null || p == null) return null;
         if (magnet && l >= -0.5 && l <= c.bars.length - 0.5) {
@@ -537,6 +564,7 @@
             priceLineVisible: true, lastValueVisible: true });
         c.vol = c.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
         c.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
+        c.chart.timeScale().subscribeVisibleLogicalRangeChange(() => { clearTimeout(c.viewT); c.viewT = setTimeout(() => saveView(c), 400); });
         c.chart.subscribeCrosshairMove((p) => {
             const d = p && p.time != null ? p.seriesData.get(c.series) : null;
             legend(c, d);
@@ -665,7 +693,7 @@
                 c.vol.setData(c.hasVol ? bars.map((b) => volBar(b, T)) : []);
                 c.bars = bars;
                 c.last = null;
-                if (fresh) c.chart.timeScale().scrollToRealTime();
+                restoreView(c);                           // as it was left on this device, else the latest candles
             } else if (bars.length && c.bars.length && bars[bars.length - 1].time < c.bars[c.bars.length - 1].time) {
                 // The chart started a candle the source has not (a day turned early): take the source's.
                 const range = c.chart.timeScale().getVisibleLogicalRange();
