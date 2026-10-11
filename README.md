@@ -322,7 +322,9 @@ Alerts from before paper trading started (6 Oct 2026) stay as they were: trigger
 ### 4.1 Layout
 
 - **Top bar:** the search box (it opens the **command palette**, 4.8; **Ctrl K** / **⌘K** or **/** from anywhere), the
-  **Controls** button (folds or opens the sidebar), **Legend**, **Guide**, and the **market status**: open or closed, the IST time, and the data
+  **Controls** button (folds or opens the sidebar), **Legend**, **Guide**, the **eye** (hides every rupee amount you own: balances, P&L,
+  charges, capital and risk show as ₹•••• until you press it again; kept per device, also in the command palette as *Hide or show
+  money*), and the **market status**: open or closed, the IST time, and the data
   feed (*Real-time* from Dhan or *Delayed* from yfinance). It is the only place the app shows these.
   It turns amber when Dhan is set up but not delivering, or when the market is open on delayed prices.
   Click it for the details (session hours, the token's expiry, when the ticker last read prices) and

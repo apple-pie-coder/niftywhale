@@ -587,6 +587,10 @@
     .tm-menu .tm-more { width: 100%; margin-top: 10px; justify-content: center; }
     .sb-theme .btn-link { align-self: flex-start; font-size: 12.5px; }
     #tm-btn [data-theme-icon] { display: inline-grid; place-items: center; }
+    #money-btn { display: inline-grid; place-items: center; }
+    #money-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    /* A phone's top bar keeps the eye and the bell: the theme is in the sidebar's App section and the command palette. */
+    @media (max-width: 520px) { #tm-btn { display: none; } }
     #tm-btn svg { width: 16px; height: 16px; }
     #tm-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
     .sb-theme { margin-top: 10px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
@@ -1616,6 +1620,7 @@
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M2 3.5C3.5 2.6 5.5 2.5 8 3.6c2.5-1.1 4.5-1 6-.1v9.6c-1.5-.9-3.5-1-6 .1-2.5-1.1-4.5-1-6-.1z"/>
                 <path d="M8 3.6v9.6"/></svg><span class="lbl">Guide</span></a>
+        <button class="guide-link" id="money-btn" type="button" aria-pressed="false" aria-label="Hide money" title="Hide money: every rupee amount shows as ₹••••"></button>
         <button class="guide-link" id="tm-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="tm-menu"
                 aria-label="Theme" title="Theme: light, dark or this device's setting"><span data-theme-icon aria-hidden="true"></span></button>
         <button class="guide-link nb-btn" id="nb-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="nb-panel"
@@ -2546,7 +2551,13 @@ const IC = {
     news: '<svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7.5 9h6M7.5 12.5h6M7.5 16h4"/></svg>',
 };
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+// The eye in the top bar hides your money: every rupee amount (balances, P&L, charges, capital, risk) shows as
+// ₹•••• as it is formatted, and amounts inside server text (notes, notices, toasts) are masked as they are escaped.
+// Prices and institutional flows are not your money and stay. Kept per device (nw.money.hidden).
+let moneyHidden = (() => { try { return JSON.parse(localStorage.getItem('nw.money.hidden')) === true; } catch (e) { return false; } })();
+const MONEY_MASK = '₹••••';
+const redact = (s) => (moneyHidden ? String(s).replace(/[−-]?₹\s?\d(?:[\d,]*\d)?(?:\.\d+)?(?:\s?(?:L|K|Cr|cr|lakh|crore)\b)?/g, MONEY_MASK) : s);
+const esc = (s) => String(redact(s == null ? '' : s)).replace(/[&<>"']/g,
     (ch) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
 const px = (v) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString('en-IN',
     { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2574,7 +2585,7 @@ let pollTimer = null;
 
 function toast(msg) {
     const el = document.createElement('div');
-    el.className = 'toast'; el.textContent = msg;
+    el.className = 'toast'; el.textContent = redact(msg);
     $('toasts').appendChild(el);
     setTimeout(() => el.remove(), 4200);
 }
@@ -4106,7 +4117,7 @@ function planCalc() {
     const value = qty * e, atRisk = qty * perShare;
     const ratio = isFinite(g) && (short ? g < e : g > e) ? Math.abs(g - e) / perShare : null;
     const reward = ratio != null ? qty * Math.abs(g - e) : null;
-    const inr = (x) => '₹' + Math.round(x).toLocaleString('en-IN');
+    const inr = (x) => rs(x);
     const minRR = (current && current.minRR) || S.rules.min_rr;
     const okRR = ratio != null && ratio >= minRR;
     out.innerHTML = `
@@ -4942,8 +4953,16 @@ async function drawerSmart(symbol) {
 
 /* ----------------------------------------------------------- demo funds */
 let demoData = null, demoTimer = null, demoLiveTimer = null, demoLiveGen = 0;
-const rs = (v, dp = 0) => v == null || !isFinite(v) ? '—' : (v < 0 ? '−' : '') + '₹' + Math.abs(v).toLocaleString('en-IN', { minimumFractionDigits: dp, maximumFractionDigits: dp });
-const rsSigned = (v, dp = 0) => v == null ? '—' : `<span class="rx" data-dir="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${rs(v, dp)}</span>`;
+// Rupees as they are: paise shown whenever there are any (₹0.18, ₹1,234.50), none on a whole amount (₹10,00,000).
+// `dp` fixes the decimals where a column wants them alike.
+const rs = (v, dp) => {
+    if (v == null || !isFinite(v)) return '—';
+    if (moneyHidden) return MONEY_MASK;
+    const d = dp ?? (Math.round(Math.abs(v) * 100) % 100 ? 2 : 0);
+    return (v < 0 ? '−' : '') + '₹' + Math.abs(v).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d });
+};
+const rsSigned = (v, dp) => v == null ? '—' : moneyHidden ? `<span class="rx">${MONEY_MASK}</span>`
+    : `<span class="rx" data-dir="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${rs(v, dp)}</span>`;
 // A position's charges, line by line in contract-note order.
 const DM_CHARGE_NAMES = { brokerage: 'Brokerage', stt: 'STT', exchange: 'Exchange', ipft: 'IPFT', sebi: 'SEBI', stamp: 'Stamp', dp: 'DP', gst: 'GST' };
 const chTip = (c) => c ? Object.entries(DM_CHARGE_NAMES).filter(([k]) => c[k]).map(([k, n]) => `${n} ${rs(c[k], 2)}`).join(' · ')
@@ -5074,7 +5093,7 @@ function trxRender() {
     const st = d.settings, snd = d.sending;
     $('tr-meta').textContent = d.since ? `Taking trades since ${dmWhen(d.since)}` : 'Not set up: pick a level for a mode below';
     $('trx-halt').hidden = !d.halt;
-    $('trx-halt').textContent = d.halt ? `Halted: ${d.halt}. Nothing new is offered or sent until you resume.` : '';
+    $('trx-halt').textContent = d.halt ? redact(`Halted: ${d.halt}. Nothing new is offered or sent until you resume.`) : '';
     document.querySelector('[data-trx="resume"]').hidden = !d.halt;
     const box = (k, v, sub, tone) => `<div class="stat"${tone ? ` data-tone="${tone}"` : ''}><div class="stat-k">${k}</div><div class="stat-v num">${v}</div><div class="stat-s">${sub || ''}</div></div>`;
     $('trx-stats').innerHTML =
@@ -5360,7 +5379,8 @@ function patchDemoOpen() {
 // hooks redraw what is drawn from candles (the ticker, the board's sparklines, the drawer chart).
 const LIVE = { timer: null, on: true, px: {}, hooks: [], seq: 0 };
 const todayIST = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
-const rupeePnl = (v) => v == null ? '—' : `<span class="${v >= 0 ? 'rpos' : 'rneg'}">${v >= 0 ? '+' : '−'}₹${Math.abs(Math.round(v)).toLocaleString('en-IN')}</span>`;
+const rupeePnl = (v) => v == null ? '—' : moneyHidden ? MONEY_MASK
+    : `<span class="${v >= 0 ? 'rpos' : 'rneg'}">${v >= 0 ? '+' : '−'}${rs(Math.abs(v))}</span>`;
 const lpR = (sym, t, side, html) => sym && t && t.entry != null && t.stop != null
     ? `<span data-lp="${esc(sym)}" data-lk="r" data-entry="${t.entry}" data-stop="${t.stop}" data-side="${esc(side || 'long')}">${html}</span>` : html;
 
@@ -6090,6 +6110,33 @@ document.addEventListener('click', (e) => { if (NB.open && !e.target.closest('#n
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && NB.open) { nbToggle(false); $('nb-btn').focus(); } });
 setInterval(() => { if (NB.open) nbRender(); }, 60000);      // "5 min ago" keeps up
 
+/* ------------------------------------------------------------- hide money */
+// The eye in the top bar (moneyHidden, above esc): open while amounts show, struck through while they are hidden.
+// A change redraws what has data now; other tabs draw masked when opened.
+const MONEY_IC = {
+    shown: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.1"/></svg>',
+    hidden: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.2 2.2l11.6 11.6"/><path d="M6.4 3.7A6.9 6.9 0 0 1 8 3.5c4 0 6.5 4.5 6.5 4.5a12 12 0 0 1-2 2.6M4.3 4.9A12 12 0 0 0 1.5 8S4 12.5 8 12.5a6.6 6.6 0 0 0 3-.7"/><path d="M6.6 6.6a2 2 0 0 0 2.8 2.8"/></svg>',
+};
+function moneyButton() {
+    const b = $('money-btn');
+    b.innerHTML = moneyHidden ? MONEY_IC.hidden : MONEY_IC.shown;
+    b.setAttribute('aria-pressed', String(moneyHidden));
+    b.setAttribute('aria-label', moneyHidden ? 'Show money' : 'Hide money');
+    b.title = moneyHidden ? 'Money hidden: press to show the amounts' : 'Hide money: every rupee amount shows as ₹••••';
+    document.documentElement.dataset.money = moneyHidden ? 'hidden' : 'shown';
+}
+function setMoneyHidden(on) {
+    moneyHidden = !!on;
+    store.set('nw.money.hidden', moneyHidden);
+    moneyButton();
+    const again = [() => S && render(), () => demoData && renderDemo(), () => trxData && trxRender(), () => O && renderOptions(),
+                   () => PF && renderPerf(), () => NB.open && nbRender(), () => current && renderDrawer()];
+    again.forEach((f) => { try { f(); } catch (e) { console.warn('redraw after hiding money', e); } });
+}
+moneyButton();
+$('money-btn').addEventListener('click', () => setMoneyHidden(!moneyHidden));
+window.addEventListener('storage', (e) => { if (e.key === 'nw.money.hidden') setMoneyHidden(store.get('nw.money.hidden', false)); });
+
 /* ------------------------------------------------------------- theme */
 // The engine is static/theme.js (loaded first in <head>); here, its switches: the top bar's button with a
 // Light / System / Dark menu and a Glass / Classic one under it (every screen size), and the same in the
@@ -6230,6 +6277,7 @@ LIVE.hooks.push({
 
 // Rupees in the chart's short form: 6.09L, 85.2K, 1.2Cr.
 const rsShort = (v) => { const a = Math.abs(v), sg = v < 0 ? '−' : '';
+    if (moneyHidden) return MONEY_MASK;
     return sg + '₹' + (a >= 1e7 ? (a / 1e7).toFixed(2) + 'Cr' : a >= 1e5 ? (a / 1e5).toFixed(2) + 'L' : a >= 1e3 ? (a / 1e3).toFixed(1) + 'K' : a.toFixed(0)); };
 let dmCurve = null;          // the drawn curve's points and geometry, for the hover
 
@@ -8661,6 +8709,7 @@ const CK_ACTIONS = [
     ...NWTheme.STYLES.map((m) => [`Style: ${NWTheme.STYLE_LABEL[m]}`, `theme style ${m} ${m === 'glass' ? 'glossy translucent liquid' : 'plain flat simple'}`,
         NWTheme.STYLE_ICON[m], () => NWTheme.setStyle(m), '']),
     ['Theme manager', 'theme palette colours colors appearance', CK_IC.gear, () => openThemes(), ''],
+    ['Hide or show money', 'privacy redact mask amounts balance rupees eye', CK_IC.money, () => setMoneyHidden(!moneyHidden), ''],
     ['Live trading settings', 'real orders sizing limits risk capital sending', CK_IC.gear, () => { setMode('trade'); trxLoad().then(() => trxData && trxSettingsModal()); }, 'trade'],
     ['Kill switch: halt live trading', 'stop panic cancel exit all real orders', CK_IC.gear, () => { setMode('trade'); document.querySelector('[data-trx="kill"]').click(); }, 'trade'],
     ...NWTheme.PALETTES.map((p) => [`Palette: ${p.name}`, `theme palette colours colors ${p.note}`, CK_IC.gear, () => NWTheme.setPalette(p.id), '']),
