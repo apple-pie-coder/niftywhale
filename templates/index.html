@@ -409,6 +409,7 @@
         #trx-offers td[data-l]::before { content: attr(data-l); display: block; font-size: 10.5px; font-weight: 650; letter-spacing: .04em;
                                          text-transform: uppercase; color: var(--ink-3); margin-bottom: 1px; }
         #trx-offers td.trx-oi { grid-column: 1 / -1; font-size: 15px; }
+        #trx-offers td .side { margin-left: 0; }
         #trx-offers td.trx-oa { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; margin-top: 4px; }
         #trx-offers td.trx-oa .btn { flex: 1; width: auto !important; padding: 11px; font-size: 14px; }
     }
@@ -1017,7 +1018,7 @@
     .bc-id { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .bc-id b { font-size: 15px; letter-spacing: -0.01em; white-space: nowrap; }
     .bc-id .side { margin-left: 0; }
-    .side-ic { padding: 3px 5px; line-height: 0; }
+    .side-ic { line-height: 0; }
     .bcard .bc-head .chip { font-size: 10px; padding: 2px 7px; white-space: nowrap; flex: none; }
     .bc-name { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
                margin-top: -4px; min-height: 14px; }
@@ -1137,10 +1138,10 @@
     .rpos { color: var(--good); font-weight: 700; } .rneg { color: var(--bad); font-weight: 700; }
     .kind { font-size: 11px; color: var(--ink-3); display: block; }
     /* Direction: a small arrow tag next to the symbol. */
-    .side { display: inline-block; font-size: 10px; font-weight: 750; letter-spacing: 0.03em; padding: 1px 6px;
-            border-radius: var(--r-pill); margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
-    .side[data-side="long"]  { background: var(--good-soft); color: var(--good); }
-    .side[data-side="short"] { background: var(--bad-soft); color: var(--bad); }
+    .side { display: inline-flex; align-items: center; margin-left: 5px; vertical-align: 0; line-height: 0; }
+    .side svg { width: 10px; height: 10px; }
+    .side[data-side="long"]  { color: var(--good); }
+    .side[data-side="short"] { color: var(--bad); }
 
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
@@ -2628,8 +2629,9 @@ const fmtVol = (v) => {
     return sg + (a >= 1e7 ? (a / 1e7).toFixed(2) + 'Cr' : a >= 1e5 ? (a / 1e5).toFixed(1) + 'L'
         : a >= 1e3 ? (a / 1e3).toFixed(1) + 'K' : Math.round(a));
 };
-const sideTag = (sd) => sd === 'short' ? '<span class="side" data-side="short" title="Short setup">' + IC.down + ' Short</span>'
-    : '<span class="side" data-side="long" title="Long setup">' + IC.up + ' Long</span>';
+// Direction: the triangle alone, green ▲ long, red ▼ short; its word in the tooltip and for screen readers.
+const sideTag = (sd) => sd === 'short' ? '<span class="side" data-side="short" role="img" title="Short" aria-label="Short">' + IC.down + '</span>'
+    : '<span class="side" data-side="long" role="img" title="Long" aria-label="Long">' + IC.up + '</span>';
 // The board cards' compact form: the triangle alone, its meaning in the tooltip and for screen readers.
 const sideIcon = (sd) => sd === 'short'
     ? '<span class="side side-ic" data-side="short" title="Short setup" aria-label="Short">' + IC.down + '</span>'
@@ -5176,7 +5178,7 @@ function trxRender() {
     const px = (v) => v == null ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
     // data-l: each value's label, shown on a phone, where an offer is a card with its buttons in reach.
     $('trx-offers').innerHTML = offers.map((r) => `<tr><td class="num" data-l="Alert">${dmWhen(r.entry_time)}</td><td data-l="Mode">${MODE_NAME[r.mode]}</td><td class="trx-oi" data-l="Instrument"><b>${esc(r.instrument)}</b> <span class="muted">${esc(r.product)}</span></td>
-        <td data-l="Side">${r.side === 'short' ? 'Short' : 'Long'}</td><td class="r num" data-l="Quantity">${r.qty}</td><td class="r num" data-l="Limit">${px(r.price)}</td><td class="r num" data-l="Stop · target">${px(r.stop)} · ${px(r.target)}</td>
+        <td data-l="Side">${sideTag(r.side)}</td><td class="r num" data-l="Quantity">${r.qty}</td><td class="r num" data-l="Limit">${px(r.price)}</td><td class="r num" data-l="Stop · target">${px(r.stop)} · ${px(r.target)}</td>
         <td class="r num" data-l="Risks">${rs(r.risk)}</td><td class="r num" data-l="Lapses">${lapse(r.expires)}</td>
         <td class="r trx-oa"><button class="btn btn-primary" type="button" data-trp="${r.id}" style="width:auto">Place</button> <button class="btn-link" type="button" data-trd="${r.id}">Dismiss</button></td></tr>`).join('');
     const rows = d.rows || [];
