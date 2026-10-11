@@ -2746,7 +2746,7 @@ const PAGED = { setups: () => renderSetups(), zones: () => renderZones(), signal
                 orows: () => O && renderOptions(), ojournal: () => O && renderOptions(),
                 news: () => renderNews(), smstocks: () => renderSmartStocks(), smdeals: () => renderDeals(),
                 dmopen: () => renderDemo(), dmclosed: () => renderDemo(), dmskipped: () => renderDemo(), dmledger: () => renderDemo(),
-                trx: () => renderTrade() };
+                trx: () => trxRender() };
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-pg]');
     if (!b || b.disabled) return;
@@ -5033,11 +5033,11 @@ const TRX_STATUS = { shadow: 'Shadow, open', shadow_closed: 'Shadow, closed', of
 const TRX_OK = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>';
 const TRX_NO = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
 
-async function loadTrade() {
+async function trxLoad() {
     clearTimeout(trxTimer);
-    try { trxData = await api('/api/exec'); renderTrade(); }
+    try { trxData = await api('/api/exec'); trxRender(); }
     catch (e) { $('tr-meta').textContent = 'Live trading unavailable: ' + e.message; }
-    if (mode === 'trade') trxTimer = setTimeout(loadTrade, 5000);
+    if (mode === 'trade') trxTimer = setTimeout(trxLoad, 5000);
 }
 
 function trxBadge(d) {
@@ -5045,7 +5045,7 @@ function trxBadge(d) {
     $('trade-badge').innerHTML = d.offers.length ? String(d.offers.length) : real ? 'LIVE' : shadow ? 'SHADOW' : '';
 }
 
-function renderTrade() {
+function trxRender() {
     const d = trxData;
     if (!d) return;
     trxBadge(d);
@@ -5095,10 +5095,10 @@ function renderTrade() {
 async function trxPost(path, body, done, fresh) {
     try {
         trxData = await (fresh ? apiConfirmed(path, body, 'Live trading changes only with a recent sign-in.') : api(path, body));
-        renderTrade();
+        trxRender();
         if (done) toast(done);
         return true;
-    } catch (e) { toast(e.message); loadTrade(); return false; }
+    } catch (e) { toast(e.message); trxLoad(); return false; }
 }
 // The tab's badge (offers waiting, LIVE or SHADOW) on every tab: once a minute.
 function trxPoll() { if (mode !== 'trade') api('/api/exec').then((d) => { trxData = d; trxBadge(d); }).catch(() => {}); }
@@ -6505,7 +6505,7 @@ function setMode(m) {
     if (m === 'charts' && window.LiveCharts) LiveCharts.open($('charts-view'));
     if (S) renderModeMeta();
     if (m === 'demo') loadDemo(); else { clearTimeout(demoTimer); clearTimeout(demoLiveTimer); WS.unsub('demo'); }
-    if (m === 'trade') loadTrade(); else clearTimeout(trxTimer);
+    if (m === 'trade') trxLoad(); else clearTimeout(trxTimer);
     if (m === 'news') loadNews();
     if (m === 'smart') loadSmart();
     if (m === 'options') loadOptions(); else clearTimeout(optTimer);
@@ -8633,7 +8633,7 @@ const CK_ACTIONS = [
     ...NWTheme.STYLES.map((m) => [`Style: ${NWTheme.STYLE_LABEL[m]}`, `theme style ${m} ${m === 'glass' ? 'glossy translucent liquid' : 'plain flat simple'}`,
         NWTheme.STYLE_ICON[m], () => NWTheme.setStyle(m), '']),
     ['Theme manager', 'theme palette colours colors appearance', CK_IC.gear, () => openThemes(), ''],
-    ['Live trading settings', 'real orders sizing limits risk capital sending', CK_IC.gear, () => { setMode('trade'); loadTrade().then(() => trxData && trxSettingsModal()); }, 'trade'],
+    ['Live trading settings', 'real orders sizing limits risk capital sending', CK_IC.gear, () => { setMode('trade'); trxLoad().then(() => trxData && trxSettingsModal()); }, 'trade'],
     ['Kill switch: halt live trading', 'stop panic cancel exit all real orders', CK_IC.gear, () => { setMode('trade'); document.querySelector('[data-trx="kill"]').click(); }, 'trade'],
     ...NWTheme.PALETTES.map((p) => [`Palette: ${p.name}`, `theme palette colours colors ${p.note}`, CK_IC.gear, () => NWTheme.setPalette(p.id), '']),
 ];

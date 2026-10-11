@@ -111,6 +111,17 @@ class Broker(unittest.TestCase):
             self.assertFalse(broker.exit_all()[0])
         req.assert_not_called()
 
+    def test_an_error_inside_a_list_is_a_refusal(self):
+        store.set_settings({'exec_send': '0'})
+        r = mock.Mock(ok=True, status_code=200, text='[{"message":"Something went wrong","status":"ERROR"}]')
+        r.json.return_value = [{'message': 'Something went wrong', 'status': 'ERROR'}]
+        with mock.patch.object(broker.requests, 'request', return_value=r), mock.patch.object(broker.dhan, '_headers', return_value={}):
+            ok, _, err = broker._call('GET', '/ip/getIP')
+            self.assertIsNone(broker.static_ip())
+        self.assertFalse(ok)
+        self.assertIn('Something went wrong', err)
+        self.assertEqual(store.broker_log(1)[0]['ok'], 0)
+
     def test_calls_are_logged_without_the_token(self):
         store.set_settings({'exec_send': '1'})
         r = mock.Mock(ok=True, status_code=200, text='{"orderId": "11", "orderStatus": "PENDING"}')

@@ -53,7 +53,7 @@ def _call(method: str, path: str, body: Optional[Dict[str, Any]] = None, params:
             data = r.json() if text else None
         except ValueError:
             data = None
-        ok = r.ok and not (isinstance(data, dict) and (data.get('errorCode') or data.get('status') == 'failure'))
+        ok = r.ok and not _refused(data)
         err = None if ok else _error(r.status_code, data, text)
     except requests.RequestException as e:
         ok, data, err, text = False, None, dhan._redact(e), ''
@@ -63,7 +63,16 @@ def _call(method: str, path: str, body: Optional[Dict[str, Any]] = None, params:
     return ok, data, err
 
 
+def _refused(data: Any) -> bool:
+    """Dhan's refusals that come back as 200: {errorCode}, {status: failure}, or a list holding {status: ERROR}."""
+    items = data if isinstance(data, list) else [data]
+    return any(isinstance(x, dict) and (x.get('errorCode') or str(x.get('status') or '').lower() in ('failure', 'error'))
+               for x in items)
+
+
 def _error(status: int, data: Any, text: str) -> str:
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        data = data[0]
     if isinstance(data, dict):
         code = data.get('errorCode') or data.get('errorType') or ''
         msg = data.get('errorMessage') or data.get('message') or data.get('remarks') or ''
