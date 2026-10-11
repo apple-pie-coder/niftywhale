@@ -493,10 +493,20 @@ def _need_session(fresh: bool = False):
     g.auth = {'via': 'session', 'session': s}
     if fresh:
         recent = time.time() - datetime.fromisoformat(s['created']).timestamp() < FRESH_S
+        if recent:
+            return None
         pw = (request.get_json(silent=True) or {}).get('password')
-        u = owner()
-        if not recent and not (pw and u and check_password_hash(u['password_hash'], pw)):
+        if not pw:
             return jsonify({'error': 'enter your password to confirm', 'need_password': True}), 403
+        # A wrong password says so (the page asks again), and counts against this address like a sign-in's,
+        # so a session cannot be used to guess it; it never locks the account the person is signed in to.
+        refused = _ip_refuse()
+        if refused:
+            return refused
+        u = owner()
+        if not (u and check_password_hash(u['password_hash'], pw)):
+            _fail('confirm_failed', 'a wrong password to confirm a change', account=False)
+            return jsonify({'error': 'That password is not right.', 'need_password': True, 'wrong_password': True}), 403
     return None
 
 

@@ -5613,7 +5613,7 @@ document.addEventListener('click', (e) => {
 // devices, API tokens and the sign-in history. Changes that matter ask for the password again when the
 // sign-in is more than 10 minutes old (the server says so with need_password).
 const AC_EVENTS = { signed_in: 'Signed in', signed_out: 'Signed out', password: 'Wrong password', totp: 'Wrong code', recovery: 'Wrong recovery code',
-    recovery_used: 'Recovery code used', passkey: 'Passkey refused', locked: 'Sign-in locked', password_changed: 'Password changed',
+    recovery_used: 'Recovery code used', confirm_failed: 'Wrong password to confirm a change', passkey: 'Passkey refused', locked: 'Sign-in locked', password_changed: 'Password changed',
     password_change: 'Wrong current password', authenticator_changed: 'Authenticator replaced', recovery_renewed: 'New recovery codes',
     passkey_added: 'Passkey added', passkey_removed: 'Passkey removed', session_revoked: 'Device signed out', sessions_revoked: 'Other devices signed out',
     token_created: 'API token created', token_revoked: 'API token revoked', account_created: 'Account created', setup_code: 'Wrong setup code',
@@ -8441,9 +8441,18 @@ async function apiConfirmed(path, body, why = 'Where alerts go and how Dhan is l
     try { return await api(path, body); }
     catch (e) {
         if (!(e.data && e.data.need_password)) throw e;
-        const pw = await ask({ title: 'Enter your password to confirm', ok: 'Confirm', password: true, body: why });
-        if (!pw) throw new Error('Not changed: confirm with your password');
-        return api(path, { ...body, password: pw });
+        // Ask for the password; a wrong one is said so, and asked again (three tries, then it stops).
+        let note = why;
+        for (let tries = 0; tries < 3; tries++) {
+            const pw = await ask({ title: tries ? 'That password is not right' : 'Enter your password to confirm', ok: 'Confirm', password: true,
+                body: tries ? 'Try again. It is the password you set up the account with (not the authenticator code or a passkey).' : note });
+            if (!pw) throw new Error('Not changed: confirm with your password');
+            try { return await api(path, { ...body, password: pw }); }
+            catch (e2) {
+                if (!(e2.data && e2.data.wrong_password)) throw e2;
+            }
+        }
+        throw new Error('Not changed: the password was not right three times');
     }
 }
 $('ask-yes').addEventListener('click', () => askDone && askDone(true));

@@ -223,6 +223,20 @@ class Hardening(SignIn):
         with mock.patch.object(auth, 'totp_check', return_value=last):    # read before the other request wrote its step
             self.assertEqual(self.post('/api/auth/mfa', {'code': '123456'}, client=cl).status_code, 401)
 
+    def test_live_trading_settings_take_the_password(self):
+        with auth._db() as c:
+            c.execute("UPDATE auth_sessions SET created = '2020-01-01T00:00:00'")
+        body = {'settings': {'swing': 'shadow'}}
+        r = self.post('/api/exec/settings', body)
+        self.assertEqual((r.status_code, r.get_json().get('need_password')), (403, True))
+        r = self.post('/api/exec/settings', {**body, 'password': 'not-it'})
+        self.assertEqual((r.status_code, r.get_json().get('wrong_password')), (403, True))      # said so: the page asks again
+        self.assertIsNone(auth._locked_for() or None)                                          # never locks the account
+        r = self.post('/api/exec/settings', {**body, 'password': PW})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(r.get_json()['levels']['swing'], 'shadow')
+        store.set_settings({'exec': {}, 'exec_since': ''})
+
     def test_another_site_cannot_sign_you_out(self):
         self.assertEqual(self.post('/api/auth/logout', headers={'Origin': 'https://evil.example'}).status_code, 403)
         self.assertEqual(self.get('/api/glossary').status_code, 200)
