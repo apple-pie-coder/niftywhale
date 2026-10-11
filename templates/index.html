@@ -703,7 +703,7 @@
 
     /* ------------------------------------------------- filters + sorting */
     .fchips { display: flex; gap: 6px; }
-    /* Table filters (TF_DEFS): chip groups with counts, and a search box. */
+    /* Table filters (TF_DEFS): one row of chips with counts, one choice at a time. */
     /* Account & security: rows of devices, passkeys, tokens and events. */
     .ac-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
     .ac-row:last-of-type { border-bottom: 0; }
@@ -2589,10 +2589,10 @@ const sizesFor = (key) => PAGE_SIZES_BY[key] || PAGE_SIZES;
 const pageNo = {};
 const pageSize = (key) => { const ok = sizesFor(key), d = key === 'news' ? 24 : ok[0], n = store.get('nw.ps.' + key, d); return ok.includes(n) ? n : d; };
 /* ------------------------------------------------------------- table filters */
-// A paged table with an entry in TF_DEFS gets a filter bar above it: chip groups (one choice each,
-// with how many rows each choice would show) and a search box. paged() applies them, so a table's
-// own code stays as it is; the choices are remembered per table. On a phone the chips scroll
-// sideways in one row and the search box takes the full width.
+// A paged table with an entry in TF_DEFS gets a row of chips beside its title: the choices of its groups (a
+// status, a side, a time), one at a time, each counting the rows it would show. paged() applies it, so a table's
+// own code stays as it is; the choice is remembered per table (nw.tfilter). On a phone the chips scroll sideways.
+// `text` in a definition is the text a search would read: kept for one, though there is no search box now.
 let TF_ = null;                  // read on first use: `store` is defined further down
 // Kept under nw.tfilter. They once shared nw.tf with the chart's timeframe, so whichever was saved last overwrote
 // the other: a timeframe there made every filter ignore its clicks. An object found there is taken over once.
@@ -2612,7 +2612,7 @@ const tfMode = { id: 'mode', opts: [['all', 'All modes'], ['swing', 'Swing', (r)
 const tfSt = (...names) => (z) => names.includes(z.status);
 const tfName = (r) => `${r.symbol || ''} ${r.name || ''}`;
 const TF_DEFS = {
-    // The Trading tab's requests to Dhan: answered or refused, when, and a search over the request and the answer.
+    // The Trading tab's requests to Dhan: answered or refused, and when.
     trxlog: { groups: [tfIs('ok', ['ok', 'Answered', (l) => !!l.ok], ['bad', 'Refused', (l) => !l.ok]), tfWhen((l) => l.ts)],
               text: (l) => `${l.method} ${l.path} ${l.body || ''} ${l.answer || ''}` },
     sjournal: { groups: [tfIs('status', ['open', 'Open', tfSt('triggered')], ['won', 'Target', tfSt('won')], ['lost', 'Stop', tfSt('lost')],
