@@ -2594,7 +2594,10 @@ const pageSize = (key) => { const ok = sizesFor(key), d = key === 'news' ? 24 : 
 // own code stays as it is; the choices are remembered per table. On a phone the chips scroll
 // sideways in one row and the search box takes the full width.
 let TF_ = null;                  // read on first use: `store` is defined further down
-const TFS = () => TF_ || (TF_ = store.get('nw.tf', {}) || {});
+// Kept under nw.tfilter. They once shared nw.tf with the chart's timeframe, so whichever was saved last overwrote
+// the other: a timeframe there made every filter ignore its clicks. An object found there is taken over once.
+const tfPlain = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
+const TFS = () => TF_ || (TF_ = tfPlain(store.get('nw.tfilter', null)) || tfPlain(store.get('nw.tf', null)) || {});
 const tfDay = (iso) => (iso || '').slice(0, 10);
 const tfAge = (iso) => iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity;
 const tfIs = (id, ...opts) => ({ id, opts: [['all', 'All'], ...opts] });
@@ -2700,7 +2703,7 @@ function tfBar(key, items, shown) {
 }
 
 function tfChanged(key) {
-    store.set('nw.tf', TFS());
+    store.set('nw.tfilter', TFS());
     pageNo[key] = 1;
     if (PAGED[key]) PAGED[key]();
 }
@@ -3204,7 +3207,7 @@ let drawerToken = 0;
 let overlays = Object.assign({ ob: true, fvg: true, liq: true, lv: true, zone: true, pat: true,
                                vwap: true, orb: true, bb: false, delta: true },
                              store.get('nw.overlays', {}));
-let tf = store.get('nw.tf', 'D');              // chart timeframe: 'D' or '15m'
+let tf = ['D', '15m'].includes(store.get('nw.tf', 'D')) ? store.get('nw.tf', 'D') : 'D';   // chart timeframe: 'D' or '15m'
 let range = store.get('nw.range', 126);
 let current = null;                       // the stock open in the drawer
 
