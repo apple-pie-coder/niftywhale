@@ -3477,8 +3477,14 @@ function dailySpec() {
         spec.extra.push(tgt, a.plan ? a.plan.stop : tgt);
     }
     if (overlays.liq && a.pools) {
-        a.pools.bsl.slice(0, 2).forEach((v) => spec.lines.push({ v, color: 'var(--up)', dash: '2 3', label: 'BSL ' + v.toFixed(0) }));
-        a.pools.ssl.slice(0, 2).forEach((v) => spec.lines.push({ v, color: 'var(--down)', dash: '2 3', label: 'SSL ' + v.toFixed(0) }));
+        // Each pool from the swing that made it (a dot there) to the latest candle; an analysis from before the
+        // bars were recorded (pool_points) still draws across the chart.
+        const startOf = (kind, v) => {
+            const hit = ((a.pool_points || {})[kind] || []).find(([pv]) => Math.abs(pv - v) < 1e-6);
+            return hit ? ix(hit[1]) : null;
+        };
+        a.pools.bsl.slice(0, 2).forEach((v) => spec.lines.push({ v, color: 'var(--up)', dash: '2 3', label: 'BSL ' + v.toFixed(0), from: startOf('bsl', v), dot: true }));
+        a.pools.ssl.slice(0, 2).forEach((v) => spec.lines.push({ v, color: 'var(--down)', dash: '2 3', label: 'SSL ' + v.toFixed(0), from: startOf('ssl', v), dot: true }));
     }
     if (overlays.pat) (d.patterns || []).forEach((p) => { if (ix(p.index) >= 0) spec.marks.push({ k: ix(p.index), p }); });
     return spec;
@@ -3692,9 +3698,15 @@ class LwcLayer {
                 d.lines.forEach((ln) => {
                     const y = Y(ln.v);
                     if (y == null || y < 0 || y > priceBottom) { if (ln.edge) (y != null && y > priceBottom ? edges.bottom : edges.top).push(ln); return; }
-                    const x0 = ln.from == null ? 0 : Math.max(0, X(ln.from - 0.5) ?? 0);
+                    // A line with a dot starts at the centre of its candle (the swing that made the level), marked.
+                    const xs = ln.from == null ? null : X(ln.dot ? ln.from : ln.from - 0.5);
+                    const x0 = xs == null ? 0 : Math.max(0, xs);
                     ctx.strokeStyle = ln.color; ctx.lineWidth = 1; dash(ln.dash);
                     ctx.beginPath(); ctx.moveTo(x0, Math.round(y) + 0.5); ctx.lineTo(W, Math.round(y) + 0.5); ctx.stroke();
+                    if (ln.dot && xs != null && xs >= 0 && xs <= W) {
+                        dash(null); ctx.fillStyle = ln.color;
+                        ctx.beginPath(); ctx.arc(xs, Math.round(y) + 0.5, 3, 0, Math.PI * 2); ctx.fill();
+                    }
                     if (ln.label && room(y)) {
                         ctx.fillStyle = ln.color; ctx.textAlign = 'right'; ctx.fillText(ln.label, W - 6, y - 3); ctx.textAlign = 'left';
                     }

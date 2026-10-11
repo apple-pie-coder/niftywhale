@@ -318,19 +318,27 @@ def structure(high: np.ndarray, low: np.ndarray, close: np.ndarray,
     return {**info, 'bias': 'range', 'reason': 'mixed swings'}
 
 
-def liquidity_pools(high: np.ndarray, low: np.ndarray, price: float,
-                    swing_highs: List[int], swing_lows: List[int]) -> Dict[str, List[float]]:
+def liquidity_points(high: np.ndarray, low: np.ndarray, price: float,
+                     swing_highs: List[int], swing_lows: List[int]) -> Dict[str, List[Tuple[float, int]]]:
     """
-    Step 5: untaken swing highs above price (BSL) and swing lows below (SSL).
+    Step 5: untaken swing highs above price (BSL) and swing lows below (SSL), each with the bar it was made on.
 
     A level counts only while no later bar has traded through it -- once the
-    stops there have been run, it is no longer a pool.
+    stops there have been run, it is no longer a pool. A later bar reaching it
+    exactly counts as trading it, so of equal highs (or lows) the last is the pool.
     """
-    bsl = [float(high[i]) for i in swing_highs
-           if high[i] > price and (i + 1 >= len(high) or high[i + 1:].max() < high[i])]
-    ssl = [float(low[i]) for i in swing_lows
-           if low[i] < price and (i + 1 >= len(low) or low[i + 1:].min() > low[i])]
-    return {'bsl': sorted(set(bsl)), 'ssl': sorted(set(ssl), reverse=True)}
+    bsl = {float(high[i]): int(i) for i in swing_highs
+           if high[i] > price and (i + 1 >= len(high) or high[i + 1:].max() < high[i])}
+    ssl = {float(low[i]): int(i) for i in swing_lows
+           if low[i] < price and (i + 1 >= len(low) or low[i + 1:].min() > low[i])}
+    return {'bsl': sorted(bsl.items()), 'ssl': sorted(ssl.items(), reverse=True)}
+
+
+def liquidity_pools(high: np.ndarray, low: np.ndarray, price: float,
+                    swing_highs: List[int], swing_lows: List[int]) -> Dict[str, List[float]]:
+    """Step 5's levels alone (liquidity_points without the bars)."""
+    pts = liquidity_points(high, low, price, swing_highs, swing_lows)
+    return {k: [v for v, _ in pts[k]] for k in pts}
 
 
 def find_order_block(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray,
@@ -472,9 +480,13 @@ def evaluate(frame: pd.DataFrame, rules: Rules = Rules(), side: str = 'long') ->
     elif 'highs' in st:
         real_st.update(highs=st['highs'], lows=st['lows'])
     out['structure'] = real_st
-    pools = liquidity_pools(h, l, price, sh, sl)
+    pts = liquidity_points(h, l, price, sh, sl)
+    pools = {k: [v for v, _ in pts[k]] for k in pts}
     out['pools'] = ({'bsl': [P(x) for x in pools['ssl']], 'ssl': [P(x) for x in pools['bsl']]}
                     if short else pools)
+    # The same pools with the bar each was made on, for the chart (a line from there, not across the whole chart).
+    out['pool_points'] = ({'bsl': [[P(v), i] for v, i in pts['ssl']], 'ssl': [[P(v), i] for v, i in pts['bsl']]}
+                          if short else {k: [[v, i] for v, i in pts[k]] for k in pts})
     out['swings'] = ({'highs': sl[-6:], 'lows': sh[-6:]} if short else {'highs': sh[-6:], 'lows': sl[-6:]})
     if st['bias'] != 'bullish':
         return fail('structure', reason)

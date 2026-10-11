@@ -131,6 +131,26 @@ CHOCH = [
 ]
 
 
+class Liquidity(unittest.TestCase):
+    def test_pools_start_at_their_swing(self):
+        import numpy as np
+        #                 0   1   2   3   4   5   6   7
+        high = np.array([10, 15, 11, 15, 12, 14, 13, 12], dtype=float)
+        low = np.array([8, 9, 7, 9, 10, 6, 11, 10], dtype=float)
+        pts = smc.liquidity_points(high, low, 12.5, [1, 3, 5], [2, 5])
+        # Equal highs at 1 and 3: the later one traded the first, so the pool is 15 from 3; 14 from 5. Below: 6 from 5
+        # (the low of 7 at 2 was traded by it).
+        self.assertEqual(pts['bsl'], [(14.0, 5), (15.0, 3)])
+        self.assertEqual(pts['ssl'], [(6.0, 5)])
+        self.assertEqual(smc.liquidity_pools(high, low, 12.5, [1, 3, 5], [2, 5]), {'bsl': [14.0, 15.0], 'ssl': [6.0]})
+
+    def test_a_level_traded_through_is_not_a_pool(self):
+        import numpy as np
+        high = np.array([10, 15, 11, 16, 12], dtype=float)
+        low = np.array([8, 9, 7, 9, 10], dtype=float)
+        self.assertEqual(smc.liquidity_points(high, low, 12.0, [1, 3], [2])['bsl'], [(16.0, 3)])   # 15 was taken at 3
+
+
 class Trigger(unittest.TestCase):
     def test_sweep_then_choch_triggers(self):
         t = smc.choch_trigger(m15(CHOCH), 122, 125, 151)
