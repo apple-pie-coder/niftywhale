@@ -5613,7 +5613,7 @@ document.addEventListener('click', (e) => {
 // devices, API tokens and the sign-in history. Changes that matter ask for the password again when the
 // sign-in is more than 10 minutes old (the server says so with need_password).
 const AC_EVENTS = { signed_in: 'Signed in', signed_out: 'Signed out', password: 'Wrong password', totp: 'Wrong code', recovery: 'Wrong recovery code',
-    recovery_used: 'Recovery code used', confirm_failed: 'Wrong password to confirm a change', passkey: 'Passkey refused', locked: 'Sign-in locked', password_changed: 'Password changed',
+    recovery_used: 'Recovery code used', confirm_failed: 'Wrong password to confirm a change', confirmed: 'Change confirmed with a passkey', passkey: 'Passkey refused', locked: 'Sign-in locked', password_changed: 'Password changed',
     password_change: 'Wrong current password', authenticator_changed: 'Authenticator replaced', recovery_renewed: 'New recovery codes',
     passkey_added: 'Passkey added', passkey_removed: 'Passkey removed', session_revoked: 'Device signed out', sessions_revoked: 'Other devices signed out',
     token_created: 'API token created', token_revoked: 'API token revoked', account_created: 'Account created', setup_code: 'Wrong setup code',
@@ -5625,7 +5625,27 @@ const wa = {
 wa.json = (c) => { const r = c.response, o = { id: c.id, rawId: wa.enc(c.rawId), type: c.type, response: { clientDataJSON: wa.enc(r.clientDataJSON) },
     clientExtensionResults: c.getClientExtensionResults ? c.getClientExtensionResults() : {}, authenticatorAttachment: c.authenticatorAttachment || null };
     if (r.attestationObject) { o.response.attestationObject = wa.enc(r.attestationObject); o.response.transports = r.getTransports ? r.getTransports() : []; }
+    if (r.authenticatorData) {                       // a passkey's answer to a challenge (confirming a change)
+        o.response.authenticatorData = wa.enc(r.authenticatorData); o.response.signature = wa.enc(r.signature);
+        if (r.userHandle) o.response.userHandle = wa.enc(r.userHandle);
+    }
     return o; };
+// A change that wants a recent sign-in, confirmed with a passkey (Face ID, Touch ID) instead of the password: true
+// when it worked (the session then counts as fresh for ten minutes), false to fall back to the password.
+async function passkeyConfirm() {
+    if (!(window.PublicKeyCredential && window.isSecureContext && navigator.credentials)) return false;
+    try {
+        const o = await api('/api/auth/confirm/options', {});
+        const c = await navigator.credentials.get({ publicKey: { ...o, challenge: wa.dec(o.challenge),
+            allowCredentials: (o.allowCredentials || []).map((x) => ({ ...x, id: wa.dec(x.id) })) } });
+        if (!c) return false;
+        await api('/api/auth/confirm/verify', { credential: wa.json(c) });
+        return true;
+    } catch (e) {
+        if (e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') toast('Passkey: ' + (e.message || e.name) + ' · use the password instead');
+        return false;
+    }
+}
 const acWhen = (iso) => iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
 
 async function accountModal(tab) {
@@ -5697,6 +5717,7 @@ async function accountModal(tab) {
         try { return await api(path, body); }
         catch (e) {
             if (!(e.data && e.data.need_password)) throw e;
+            if (e.data.passkey && await passkeyConfirm()) return api(path, body);
             const box = $('ac-confirm'); box.hidden = false; $('ac-confirm-pw').value = ''; $('ac-confirm-pw').focus();
             const pw = await new Promise((res) => { $('ac-confirm-go').onclick = () => res($('ac-confirm-pw').value); });
             box.hidden = true;
@@ -8441,6 +8462,8 @@ async function apiConfirmed(path, body, why = 'Where alerts go and how Dhan is l
     try { return await api(path, body); }
     catch (e) {
         if (!(e.data && e.data.need_password)) throw e;
+        // A passkey first where there is one (Face ID / Touch ID); else, or if it is cancelled, the password.
+        if (e.data.passkey && await passkeyConfirm()) return api(path, body);
         // Ask for the password; a wrong one is said so, and asked again (three tries, then it stops).
         let note = why;
         for (let tries = 0; tries < 3; tries++) {

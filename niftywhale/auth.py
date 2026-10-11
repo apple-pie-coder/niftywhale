@@ -31,7 +31,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlparse
 
 from flask import Blueprint, g, jsonify, make_response, redirect, request
@@ -106,6 +106,9 @@ def _db():
             c.execute("ALTER TABLE api_tokens ADD COLUMN scope TEXT DEFAULT 'write'")
         if 'expires' not in have:
             c.execute('ALTER TABLE api_tokens ADD COLUMN expires REAL')
+        # A session confirmed with a passkey (api_confirm_verify): as fresh as a new sign-in for FRESH_S.
+        if 'confirmed' not in {r[1] for r in c.execute('PRAGMA table_info(auth_sessions)')}:
+            c.execute('ALTER TABLE auth_sessions ADD COLUMN confirmed REAL')
         # The authenticator key, kept encrypted like the other secrets (store.seal) once there is a key file.
         row = c.execute('SELECT totp_secret FROM auth_user WHERE id = 1').fetchone()
         if row and row[0] and store.seal(row[0]) != row[0]:
@@ -492,12 +495,15 @@ def _need_session(fresh: bool = False):
         return jsonify({'error': 'cross-site request refused'}), 403
     g.auth = {'via': 'session', 'session': s}
     if fresh:
-        recent = time.time() - datetime.fromisoformat(s['created']).timestamp() < FRESH_S
+        recent = time.time() - datetime.fromisoformat(s['created']).timestamp() < FRESH_S \
+            or time.time() - float(s.get('confirmed') or 0) < FRESH_S
         if recent:
             return None
         pw = (request.get_json(silent=True) or {}).get('password')
         if not pw:
-            return jsonify({'error': 'enter your password to confirm', 'need_password': True}), 403
+            # `passkey`: the page may confirm with one instead (api_confirm_options / _verify), then send again.
+            return jsonify({'error': 'enter your password to confirm', 'need_password': True,
+                            'passkey': bool(passkeys()) and _origin_ok()}), 403
         # A wrong password says so (the page asks again), and counts against this address like a sign-in's,
         # so a session cannot be used to guess it; it never locks the account the person is signed in to.
         refused = _ip_refuse()
@@ -696,6 +702,68 @@ def api_passkey_login_verify():
     with _db() as c:
         c.execute('UPDATE auth_passkeys SET sign_count = ?, last_used = ? WHERE id = ?', (v.new_sign_count, _now(), pk['id']))
     return _start_session(f'passkey ({pk["name"]})', p['remember'])
+
+
+# ---------------------------------------------------------------- confirming a change with a passkey
+# A signed-in browser asked for a recent sign-in can answer with a passkey (Face ID, Touch ID) instead of the
+# password: the same check as a passkey sign-in, and the session then counts as fresh for FRESH_S. The challenge is
+# kept per session, in memory, for CONFIRM_S.
+CONFIRM_S = 120
+_confirms: Dict[int, Tuple[str, float]] = {}
+
+
+@bp.route('/api/auth/confirm/options', methods=['POST'])
+def api_confirm_options():
+    bad = _need_session() or _ip_refuse()
+    if bad:
+        return bad
+    if not ENABLED:
+        return jsonify({'error': 'sign-in is off'}), 409
+    if not passkeys() or not _origin_ok():
+        return jsonify({'error': 'no passkey to confirm with here: use the password'}), 409
+    webauthn, s = _wa()
+    opts = webauthn.generate_authentication_options(
+        rp_id=RP_ID, user_verification=s.UserVerificationRequirement.REQUIRED,
+        allow_credentials=[s.PublicKeyCredentialDescriptor(id=_unb64u(pk['credential_id'])) for pk in passkeys()])
+    now = time.time()
+    for sid in [k for k, v in _confirms.items() if v[1] < now]:
+        _confirms.pop(sid, None)
+    _confirms[g.auth['session']['id']] = (_b64u(opts.challenge), now + CONFIRM_S)
+    return make_response(webauthn.options_to_json(opts), 200, {'Content-Type': 'application/json'})
+
+
+@bp.route('/api/auth/confirm/verify', methods=['POST'])
+def api_confirm_verify():
+    bad = _need_session() or _ip_refuse()
+    if bad:
+        return bad
+    if not ENABLED:
+        return jsonify({'error': 'sign-in is off'}), 409
+    sid = g.auth['session']['id']
+    ch = _confirms.pop(sid, None)
+    if not ch or ch[1] < time.time():
+        return jsonify({'error': 'that took too long: try again'}), 400
+    cred = (request.get_json(silent=True) or {}).get('credential') or {}
+    with _db() as c:
+        rows = _rows(c.execute('SELECT * FROM auth_passkeys WHERE credential_id = ?', (str(cred.get('id') or ''),)))
+    if not rows:
+        _fail('passkey', 'unknown passkey (confirming a change)', account=False)
+        return jsonify({'error': 'this passkey is not one of yours (or was removed)'}), 401
+    pk = rows[0]
+    webauthn, _ = _wa()
+    try:
+        v = webauthn.verify_authentication_response(
+            credential=cred, expected_challenge=_unb64u(ch[0]), expected_rp_id=RP_ID, expected_origin=ORIGINS,
+            credential_public_key=_unb64u(pk['public_key']), credential_current_sign_count=int(pk['sign_count'] or 0),
+            require_user_verification=True)
+    except Exception as e:
+        _fail('passkey', f'not verified (confirming a change): {str(e)[:80]}', account=False)
+        return jsonify({'error': 'the passkey could not be verified'}), 401
+    with _db() as c:
+        c.execute('UPDATE auth_passkeys SET sign_count = ?, last_used = ? WHERE id = ?', (v.new_sign_count, _now(), pk['id']))
+        c.execute('UPDATE auth_sessions SET confirmed = ? WHERE id = ?', (time.time(), sid))
+    _event('confirmed', True, f'passkey ({pk["name"]})')
+    return jsonify({'ok': True})
 
 
 @bp.route('/api/auth/logout', methods=['POST'])

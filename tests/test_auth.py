@@ -316,6 +316,46 @@ class Passkeys(Base):
             self.assertEqual(self.post('/api/auth/passkey/login/verify', {'credential': cred}, client=phone).status_code, 401)
 
 
+    def test_confirm_a_change_with_it(self):
+        """Asked for a recent sign-in, a passkey answers instead of the password; the session is then fresh."""
+        import webauthn
+        from soft_webauthn import SoftWebauthnDevice
+        self.setup_owner()
+        real_reg, real_auth = webauthn.verify_registration_response, webauthn.verify_authentication_response
+        no_uv = lambda real: (lambda **kw: real(**{**kw, 'require_user_verification': False}))   # noqa: E731
+        dev = SoftWebauthnDevice()
+        enc = lambda asr: {'id': b64u(asr['rawId']), 'rawId': b64u(asr['rawId']), 'type': 'public-key',          # noqa: E731
+                           'response': {k: (b64u(v) if v is not None else None) for k, v in asr['response'].items()}}
+        with mock.patch.object(webauthn, 'verify_registration_response', no_uv(real_reg)), \
+             mock.patch.object(webauthn, 'verify_authentication_response', no_uv(real_auth)):
+            o = json.loads(self.post('/api/auth/passkey/register/options').get_data(as_text=True))
+            att = dev.create({'publicKey': {**o, 'challenge': auth._unb64u(o['challenge']), 'attestation': 'none',
+                                            'user': {**o['user'], 'id': auth._unb64u(o['user']['id'])}}}, BASE)
+            self.assertEqual(self.post('/api/auth/passkey/register/verify', {'credential': {
+                'id': b64u(att['rawId']), 'rawId': b64u(att['rawId']), 'type': 'public-key',
+                'response': {k: b64u(v) for k, v in att['response'].items()}}, 'name': 'key'}).status_code, 200)
+            with auth._db() as c:
+                c.execute("UPDATE auth_sessions SET created = '2020-01-01T00:00:00'")
+            body = {'settings': {'swing': 'shadow'}}
+            r = self.post('/api/exec/settings', body)
+            self.assertEqual((r.status_code, r.get_json().get('need_password'), r.get_json().get('passkey')), (403, True, True))
+            # From another site's page: refused, and still not fresh.
+            o = json.loads(self.post('/api/auth/confirm/options').get_data(as_text=True))
+            asr = dev.get({'publicKey': {**o, 'challenge': auth._unb64u(o['challenge'])}}, 'https://evil.example')
+            self.assertEqual(self.post('/api/auth/confirm/verify', {'credential': enc(asr)}).status_code, 401)
+            self.assertEqual(self.post('/api/exec/settings', body).status_code, 403)
+            # The real one: confirmed, and the change goes through without the password.
+            o = json.loads(self.post('/api/auth/confirm/options').get_data(as_text=True))
+            asr = dev.get({'publicKey': {**o, 'challenge': auth._unb64u(o['challenge'])}}, BASE)
+            r = self.post('/api/auth/confirm/verify', {'credential': enc(asr)})
+            self.assertEqual(r.status_code, 200, r.get_json())
+            r = self.post('/api/exec/settings', body)
+            self.assertEqual((r.status_code, r.get_json()['levels']['swing']), (200, 'shadow'))
+            # A challenge is used once.
+            self.assertEqual(self.post('/api/auth/confirm/verify', {'credential': enc(asr)}).status_code, 400)
+        store.set_settings({'exec': {}, 'exec_since': ''})
+
+
 class Cli(Base):
     def test_setup_code_and_token(self):
         import io
