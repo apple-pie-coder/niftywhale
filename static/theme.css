@@ -133,7 +133,7 @@
     backdrop-filter: blur(16px) saturate(170%);
 }
 :root .btn:hover:not(:disabled),
-:root .fchip:hover,
+:root .fchip:hover:not(:disabled),
 :root .tchip:hover { background-image: linear-gradient(180deg, var(--spec), var(--sheen) 60%, transparent); }
 /* Solid controls (accent, danger): a gloss over the top half and a glow in their own colour. */
 :root .btn-primary,

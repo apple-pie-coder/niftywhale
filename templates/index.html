@@ -750,7 +750,7 @@
     .tf-pills[hidden], .tf-none[hidden] { display: none; }
     .panel-head .tf-pills { margin-right: auto; }        /* right after the title, as in Setups */
     .tf-none { font-size: 12.5px; color: var(--ink-3); margin: 0 0 8px; }
-    .fchip:disabled { opacity: .45; cursor: default; }
+    .fchip:disabled { opacity: .4; cursor: not-allowed; }
     /* A table filter with no rows right now stays clickable (the table then says nothing matches), just dimmer. */
     .fchip[data-empty="1"]:not([aria-pressed="true"]) { opacity: .55; }
     .fchip { border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r-pill);
@@ -2695,6 +2695,7 @@ function tfBar(key, items, shown) {
         const n = o[2] ? items.filter(o[2]).length : items.length;
         b.setAttribute('aria-pressed', String(cur === o[0]));
         b.dataset.empty = n ? '0' : '1';
+        b.disabled = !n && cur !== o[0];             // nothing to show: not a choice (the chosen one stays, to switch away)
         const fn = b.querySelector('.fn');
         if (fn.textContent !== String(n)) fn.textContent = n;
     });
@@ -3076,8 +3077,10 @@ const SFILTERS = { all: () => true, in: (r) => r.in_zone, wait: (r) => !r.in_zon
 function renderSetups() {
     if (!SFILTERS[setupFilter]) setupFilter = 'all';
     document.querySelectorAll('.fchip[data-f]').forEach((b) => {
+        const n = S.candidates.filter(SFILTERS[b.dataset.f]).length;
         b.setAttribute('aria-pressed', String(b.dataset.f === setupFilter));
-        b.querySelector('.fn').textContent = S.candidates.filter(SFILTERS[b.dataset.f]).length;
+        b.querySelector('.fn').textContent = n;
+        b.disabled = !n && b.dataset.f !== setupFilter;
     });
     document.querySelectorAll('th[data-sort]').forEach((th) => {
         if (th.dataset.sort === setupSort.key) th.setAttribute('aria-sort', setupSort.dir > 0 ? 'ascending' : 'descending');
@@ -6923,8 +6926,10 @@ function renderOptions() {
     // overview
     if (!OFILTERS[optFilter]) optFilter = 'all';
     document.querySelectorAll('[data-of]').forEach((b) => {
+        const n = d.rows.filter(OFILTERS[b.dataset.of]).length;
         b.setAttribute('aria-pressed', String(b.dataset.of === optFilter));
-        b.querySelector('.fn').textContent = d.rows.filter(OFILTERS[b.dataset.of]).length;
+        b.querySelector('.fn').textContent = n;
+        b.disabled = !n && b.dataset.of !== optFilter;
     });
     document.querySelectorAll('th[data-osort]').forEach((th) => {
         if (th.dataset.osort === optSort.key) th.setAttribute('aria-sort', optSort.dir > 0 ? 'ascending' : 'descending');
