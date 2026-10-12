@@ -1314,6 +1314,44 @@ def trade_candles(ref: str) -> dict:
     return out
 
 
+# The open-position sparkline (the page's .spark cells): each open trade's closes from its entry on, at most
+# SPARK_POINTS, with its entry, stop and target, from trade_candles (cached for open trades); the page moves the
+# last point with the live feed. Options use the contract's premium, or nothing if only the underlying has candles.
+SPARK_POINTS, SPARK_REFS = 80, 20
+
+
+def spark(ref: str) -> dict:
+    d = trade_detail(ref)
+    if not d or d.get('status') != 'open':
+        return {}
+    c = trade_candles(ref)
+    bars = c.get('bars') or []
+    if d['mode'] == 'options' and not str(c.get('label') or '').endswith('premium'):
+        bars = []
+    k = c.get('entry_k')
+    bars = bars[k:] if k is not None else bars[-SPARK_POINTS:]
+    pts = [[b['t'], b['c']] for b in bars]
+    if len(pts) > SPARK_POINTS:                                          # thinned evenly, the latest kept
+        step = len(pts) / (SPARK_POINTS - 1)
+        pts = [pts[int(i * step)] for i in range(SPARK_POINTS - 1)] + [pts[-1]]
+    return {'pts': pts, 'entry': d['entry'], 'stop': d['stop'], 'target': d.get('target'),
+            'up': (d.get('direction') or d.get('side') or 'long') != 'short' or d['mode'] == 'options',
+            'lp': c.get('lp') or '', 'tf': c.get('tf')}
+
+
+@app.route('/api/spark')
+def api_spark():
+    refs = [r for r in (request.args.get('refs') or '').split(',') if r][:SPARK_REFS]
+    out = {}
+    for ref in refs:
+        try:
+            out[ref] = spark(ref)
+        except Exception as e:                                           # one trade's candles failing leaves the rest
+            logger.warning(f'spark {ref}: {e}')
+            out[ref] = {}
+    return jsonify(safe(out))
+
+
 @app.route('/api/trade/<path:ref>/candles')
 def api_trade_candles(ref):
     out = trade_candles(ref)

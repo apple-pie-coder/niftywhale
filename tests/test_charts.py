@@ -215,3 +215,31 @@ class Drawings(unittest.TestCase):
         r = self.c.post('/api/charts/drawings', json={'symbol': 'IDX:13', 'drawings': d}).get_json()
         self.assertEqual(r['drawings'][0]['color'], '#e5484d')
         self.assertNotIn('color', r['drawings'][1])
+
+
+class Spark(unittest.TestCase):
+    """The open-position sparkline (app.spark): closes from the entry on, thinned to SPARK_POINTS with the latest kept;
+    an option's own premium, or nothing when only the underlying has candles; nothing for a closed trade."""
+    def bars(self, n):
+        return [{'t': f'2026-10-12T{9 + k // 12:02d}:{(k % 12) * 5:02d}:00+05:30', 'c': 100.0 + k} for k in range(n)]
+
+    def test_from_the_entry_thinned(self):
+        d = {'mode': 'swing', 'status': 'open', 'entry': 105.0, 'stop': 100.0, 'target': 120.0, 'side': 'long', 'direction': 'long'}
+        c = {'bars': self.bars(300), 'entry_k': 5, 'lp': 'ABC', 'tf': 15, 'label': 'ABC'}
+        with mock.patch.object(app, 'trade_detail', return_value=d), mock.patch.object(app, 'trade_candles', return_value=c):
+            sp = app.spark('swing:1')
+        self.assertEqual(len(sp['pts']), app.SPARK_POINTS)
+        self.assertEqual((sp['pts'][0][1], sp['pts'][-1][1]), (105.0, 399.0))       # from the entry bar to the latest
+        self.assertEqual((sp['lp'], sp['up']), ('ABC', True))
+
+    def test_options_need_their_premium(self):
+        d = {'mode': 'options', 'status': 'open', 'entry': 50.0, 'stop': 37.5, 'target': 75.0, 'direction': 'bearish'}
+        c = {'bars': self.bars(10), 'entry_k': 0, 'lp': '', 'label': "NIFTY (the option's own candles are not available)"}
+        with mock.patch.object(app, 'trade_detail', return_value=d), mock.patch.object(app, 'trade_candles', return_value=c):
+            self.assertEqual(app.spark('options:1')['pts'], [])
+        with mock.patch.object(app, 'trade_detail', return_value={**d, 'status': 'won'}):
+            self.assertEqual(app.spark('options:1'), {})
+
+
+if __name__ == '__main__':
+    unittest.main()

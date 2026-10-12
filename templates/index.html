@@ -1298,6 +1298,11 @@
     .tk-chg { font-weight: 650; font-size: 12px; font-variant-numeric: tabular-nums; display: inline-block; text-align: right; white-space: nowrap; }
     .tk-item[data-dir="up"] .tk-chg { color: var(--up); } .tk-item[data-dir="down"] .tk-chg { color: var(--down); }
     .tk-item[data-flash="up"] { background: var(--good-soft); } .tk-item[data-flash="down"] { background: var(--bad-soft); }
+    /* An open position's path since its entry (sparkDraw): the entry dashed, stop and target faint, the line coloured
+       by where it stands now, a dot on the latest price. */
+    .spark { display: inline-block; width: 96px; height: 28px; vertical-align: middle; margin-right: 8px; line-height: 0; }
+    .spark svg { width: 96px; height: 28px; overflow: visible; }
+    td .spark:only-child { margin-right: 0; }
     .dm-tick, [data-lp] { transition: background 0.6s; border-radius: 3px; }
     #dm-open-foot td { border-top: 1px solid var(--line); border-bottom: 0; }
     [data-lp][data-flash="up"] { background: var(--good-soft); } [data-lp][data-flash="down"] { background: var(--bad-soft); }
@@ -2242,7 +2247,7 @@
         <section>
             <div class="panel-head"><h2 class="panel-title">Open positions</h2><span class="panel-meta" id="dm-open-meta"></span></div>
             <div class="table-wrap"><table><thead><tr><th>Opened</th><th>Mode</th><th>Instrument</th><th>Side</th><th class="r">Quantity</th>
-                <th class="r">Entry</th><th class="r">Stop · target</th><th class="r">Last</th><th class="r">Open P&amp;L</th><th class="r">Blocked</th><th></th></tr></thead>
+                <th class="r">Entry</th><th class="r">Stop · target</th><th class="r">Last</th><th>Since entry</th><th class="r">Open P&amp;L</th><th class="r">Blocked</th><th></th></tr></thead>
                 <tbody id="dm-open"></tbody><tfoot id="dm-open-foot"></tfoot></table></div>
             <div class="pager" id="pg-dmopen" aria-label="Pages"></div>
         </section>
@@ -3275,7 +3280,7 @@ function renderSwingTrades() {
     $('s-journal').innerHTML = J.length ? paged('sjournal', J).map((z) => {
         const t = z.trigger || {};
         const exit = t.exit != null ? `${px(t.exit)} <span class="muted">${hhmm(t.exit_time)}</span>`
-            : t.last != null ? `<span class="muted">now ${z.status === 'triggered' ? `<span data-lp="${esc(z.symbol)}" data-v="${t.last}">${px(t.last)}</span>` : px(t.last)}</span>` : '—';
+            : t.last != null ? `${z.status === 'triggered' ? sparkCell(`swing:${z.id}`) : ''}<span class="muted">now ${z.status === 'triggered' ? `<span data-lp="${esc(z.symbol)}" data-v="${t.last}">${px(t.last)}</span>` : px(t.last)}</span>` : '—';
         return `<tr data-click="${esc(z.symbol)}" data-ref="swing:${z.id}"><td class="num">${hhmm(t.choch_time)}</td>
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td>
             <td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td><td class="r num">${px(t.target)}</td>
@@ -5188,7 +5193,7 @@ function trxRender() {
     $('trx-orders').innerHTML = rows.length ? paged('trx', rows).map((r) => `<tr data-sym="${esc(r.symbol)}"><td class="num">${dmWhen(r.entry_time)}</td><td>${MODE_NAME[r.mode]}</td>
         <td><b>${esc(r.instrument || r.symbol)}</b> <span class="muted">${esc(r.product || '')}</span></td><td><span class="trx-live" data-l="${esc(r.level)}">${esc(d.labels[r.level] || r.level)}</span></td>
         <td>${esc(TRX_STATUS[r.status] || r.status)}</td><td class="r num">${r.qty || '—'}</td><td class="r num">${px(r.price)}</td>
-        <td class="r num">${px(r.stop)} · ${px(r.target)}</td><td class="r num">${r.fill != null ? px(r.fill) : '—'} → ${r.exit != null ? px(r.exit) : '—'}</td>
+        <td class="r num">${px(r.stop)} · ${px(r.target)}</td><td class="r num">${['open', 'shadow'].includes(r.status) ? sparkCell(r.ref) : ''}${r.fill != null ? px(r.fill) : '—'} → ${r.exit != null ? px(r.exit) : '—'}</td>
         <td class="r num">${r.net != null ? `<b>${rsSigned(r.net)}</b>` : '—'}</td><td class="muted trx-note">${esc(r.note || '')}</td></tr>`).join('')
         : '<tr><td colspan="11"><div class="empty">No orders yet. Set a mode to Shadow to see what each alert would send.</div></td></tr>';
     const logs = d.log || [];
@@ -5380,7 +5385,7 @@ function demoOpenFoot() {
     const page = open.filter((p) => shown.has(String(p.id)));
     const pageNote = page.length < open.length
         ? ` <span class="muted">· these ${page.length} rows ${rsSigned(page.reduce((t, p) => t + (p.unreal || 0), 0))}</span>` : '';
-    return `<tr><td colspan="8"><b>All ${open.length} open</b> <span class="muted">·</span> ${parts}${pageNote}</td>
+    return `<tr><td colspan="9"><b>All ${open.length} open</b> <span class="muted">·</span> ${parts}${pageNote}</td>
         <td class="r num"><b>${rsSigned(total)}</b></td><td class="r num">${rs(d.account.blocked)}</td><td></td></tr>`;
 }
 
@@ -5562,6 +5567,76 @@ async function liveTick() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) liveTick(); });
 WS.listen('px', (d) => { LIVE.on = d.on; if (d.on && !document.hidden && d.px) lpUpdate(d.px); });
+
+/* ------------------------------------------------------------- open-position sparklines
+   Each open trade's path since its entry, in the tables that list open positions (sparkCell). The closes come in
+   one request for what is on screen (/api/spark, every minute and when new rows appear); the live feed moves the
+   last point every tick (a LIVE hook). Drawn as a small SVG: the entry dashed, the stop and the target faint, the
+   line green while it stands in profit and red while it does not, a dot on the latest price. */
+const SPARK = { data: {}, live: {}, loading: false, last: 0 };
+const sparkCell = (ref) => `<span class="spark" data-spark="${esc(ref)}" role="img" aria-label="Price since entry"></span>`;
+const sparkEls = () => [...document.querySelectorAll('.spark[data-spark]')].filter((el) => !el.closest(LP_HIDDEN));
+function sparkSvg(d, live) {
+    const vals = d.pts.map((p) => +p[1]);
+    if (live != null) vals.push(+live);
+    if (vals.length < 2) return '';
+    // Scaled to the path and the entry; the stop and the target join the scale only when they are near enough
+    // (within the path's own range again) not to flatten it: an option's ±25-50 % would leave a straight line.
+    let lo = Math.min(...vals, +d.entry), hi = Math.max(...vals, +d.entry);
+    const near = (v) => v != null && v >= lo - (hi - lo || lo * 0.01) && v <= hi + (hi - lo || hi * 0.01);
+    const stop = near(d.stop) ? +d.stop : null, target = near(d.target) ? +d.target : null;
+    [stop, target].forEach((v) => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
+    const W = 96, H = 28, P = 2;
+    const x = (i) => P + i * (W - 2 * P) / (vals.length - 1), y = (v) => H - P - (v - lo) / ((hi - lo) || 1) * (H - 2 * P);
+    const now = vals[vals.length - 1], good = d.up ? now >= +d.entry : now <= +d.entry;
+    const hl = (v, col, dash) => v == null ? '' : `<line x1="0" x2="${W}" y1="${y(+v).toFixed(1)}" y2="${y(+v).toFixed(1)}" stroke="${col}" stroke-width="1"${dash ? ` stroke-dasharray="${dash}"` : ''} opacity="${dash ? 0.7 : 0.45}"/>`;
+    const path = vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+    const col = good ? 'var(--gain)' : 'var(--loss)';
+    return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${hl(stop, 'var(--loss)')}${hl(target, 'var(--gain)')}${hl(d.entry, 'var(--ink-3)', '2 2')}
+        <path d="${path}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${x(vals.length - 1).toFixed(1)}" cy="${y(now).toFixed(1)}" r="2.4" fill="${col}"/></svg>`;
+}
+function sparkDraw(only) {
+    sparkEls().forEach((el) => {
+        const d = SPARK.data[el.dataset.spark];
+        if (!d || !d.pts || !d.pts.length || (only && !only.has(el.dataset.spark))) return;
+        const live = d.lp ? SPARK.live[d.lp] : null;
+        el.innerHTML = sparkSvg(d, live);
+        el.title = `Entry ${px(d.entry)} · now ${px(live != null ? live : d.pts[d.pts.length - 1][1])}`
+            + (d.stop != null ? ` · stop ${px(d.stop)}` : '') + (d.target != null ? ` · target ${px(d.target)}` : '');
+    });
+}
+async function sparkLoad(force) {
+    const refs = [...new Set(sparkEls().map((el) => el.dataset.spark))];
+    const want = force ? refs : refs.filter((r) => !(r in SPARK.data));
+    if (!want.length || SPARK.loading) { sparkDraw(); return; }
+    SPARK.loading = true;
+    try {
+        for (let i = 0; i < want.length; i += 20) Object.assign(SPARK.data, await api('/api/spark?refs=' + encodeURIComponent(want.slice(i, i + 20).join(','))));
+        SPARK.last = Date.now();
+    } catch (e) { /* the next minute tries again */ }
+    SPARK.loading = false;
+    sparkDraw();
+}
+// New rows (a table drawn again): drawn at once from what is known, fetched if not.
+let sparkT = null;
+// Only rows that bring a chart cell count: the charts' own drawing (inside .spark) is not news.
+new MutationObserver((muts) => {
+    const fresh = muts.some((m) => [...m.addedNodes].some((n) => n.nodeType === 1 && !(n.parentElement && n.parentElement.closest('.spark'))
+        && (n.matches('.spark') || n.querySelector('.spark'))));
+    if (!fresh) return;
+    clearTimeout(sparkT); sparkT = setTimeout(() => sparkLoad(false), 150);
+}).observe(document.body, { childList: true, subtree: true });
+setInterval(() => { if (!document.hidden && sparkEls().length) sparkLoad(true); }, 60000);
+LIVE.hooks.push({
+    want: () => sparkEls().map((el) => (SPARK.data[el.dataset.spark] || {}).lp).filter(Boolean),
+    apply: (P) => {
+        const hit = new Set();
+        Object.entries(SPARK.data).forEach(([ref, d]) => { if (d && d.lp && P[d.lp]) { SPARK.live[d.lp] = P[d.lp][0]; hit.add(ref); } });
+        if (hit.size) sparkDraw(hit);
+    },
+});
+
 WS.listen('notices', (c) => nbSeen(c));
 WS.listen('up', (m) => { LIVE.on = !!m.on; if (m.notices) nbSeen(m.notices); liveTick(); });
 WS.listen('down', () => { liveTick(); Object.keys(PANELS).forEach(panelKick); });     // back to polling, from now
@@ -6537,9 +6612,9 @@ function renderDemo() {
     $('dm-open').innerHTML = d.open.length ? paged('dmopen', d.open).map((p) => `<tr data-sym="${esc(p.symbol)}" data-pid="${p.id}" data-ref="${esc(p.ref)}" class="clickable">
         <td class="num">${dmWhen(p.entry_time)}</td><td>${MODE_NAME[p.mode]}</td><td><b>${esc(p.instrument)}</b> ${prod(p)}</td><td>${side(p)}</td>
         <td class="r num">${qty(p)}</td><td class="r num">${px(p.entry)}</td><td class="r num">${px(p.stop)} · ${px(p.target)}</td>
-        <td class="r num dm-tick dm-last" data-v="${p.last}">${px(p.last)}</td><td class="r num dm-tick dm-unreal">${rsSigned(p.unreal)}</td><td class="r num">${rs(p.margin)}</td>
+        <td class="r num dm-tick dm-last" data-v="${p.last}">${px(p.last)}</td><td>${sparkCell(p.ref)}</td><td class="r num dm-tick dm-unreal">${rsSigned(p.unreal)}</td><td class="r num">${rs(p.margin)}</td>
         <td class="r">${sqBtn('demo', p.id, p.instrument)}</td></tr>`).join('')
-        : `<tr><td colspan="11"><div class="empty">${started ? 'No open positions.' : 'No account yet.'}</div></td></tr>`;
+        : `<tr><td colspan="12"><div class="empty">${started ? 'No open positions.' : 'No account yet.'}</div></td></tr>`;
     $('dm-open-foot').innerHTML = demoOpenFoot();
     const closed = d.closed || [];
     const net = closed.reduce((t, p) => t + (p.net || 0), 0);
@@ -6877,7 +6952,7 @@ function renderIntraday() {
             <td class="r num">${px(t.target)}</td>
             <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span>${
                 t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${z.status === 'triggered' ? sqBtn('paper', `intraday:${z.id}`, z.symbol) : ''}</td>
-            <td class="r num">${t.exit != null ? px(t.exit) + ' <span class="muted">' + tm(t.exit_time) + '</span>' : '—'}</td>
+            <td class="r num">${t.exit != null ? px(t.exit) + ' <span class="muted">' + tm(t.exit_time) + '</span>' : z.status === 'triggered' ? sparkCell(`intraday:${z.id}`) : '—'}</td>
             <td class="r num">${rfmt(t.r != null ? t.r : t.r_open)}</td></tr>`;
     }).join('') : `<tr><td colspan="8"><div class="empty"><b>No intraday alerts yet</b>Each entry alert is followed on 5m candles
         to its target, its stop or the ${r.square_off} square-off, and lands here with its result in R.</div></td></tr>`;
@@ -7178,7 +7253,7 @@ function renderOptions() {
             <td class="r num">${px(i.entry)}</td><td class="r num">${px(i.stop)}</td><td class="r num">${px(i.target)}</td>
             <td><span class="chip" data-s="${esc(i.status)}">${esc(i.status === 'open' ? 'open' : i.note || i.status)}</span>${
                 i.status === 'open' ? sqBtn('paper', `options:${i.id}`, `${i.symbol} ${kfmt(i.strike)} ${i.side}`) : ''}</td>
-            <td class="r num">${i.exit != null ? px(i.exit) + ' <span class="muted">' + tm(i.exit_time) + '</span>' : i.last != null ? '<span class="muted">now ' + (i.lp ? `<span data-lp="${esc(i.lp)}" data-v="${i.last}">${px(i.last)}</span>` : px(i.last)) + '</span>' : '—'}</td>
+            <td class="r num">${i.exit != null ? px(i.exit) + ' <span class="muted">' + tm(i.exit_time) + '</span>' : i.last != null ? (i.status === 'open' ? sparkCell(`options:${i.id}`) : '') + '<span class="muted">now ' + (i.lp ? `<span data-lp="${esc(i.lp)}" data-v="${i.last}">${px(i.last)}</span>` : px(i.last)) + '</span>' : '—'}</td>
             <td class="r num">${i.lp ? lpR(i.lp, i, 'long', rfmt(rr)) : rfmt(rr)}</td>
             <td class="r num">${i.lp && i.lot ? `<span data-lp="${esc(i.lp)}" data-lk="pnl" data-entry="${i.entry}" data-qty="${i.lot}">${rupeePnl(pnl)}</span>` : pnl == null ? '—' : rupeePnl(pnl)}</td></tr>`;
     }).join('') : `<tr><td colspan="9"><div class="empty"><b>No ideas yet</b>Between ${r.start} and ${r.no_entry_after}, when near-the-money
