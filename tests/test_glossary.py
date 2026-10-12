@@ -51,5 +51,17 @@ class Glossary(unittest.TestCase):
         self.assertEqual(len(all_terms), len(set(all_terms)))
 
 
+class InForce(unittest.TestCase):
+    """The Legend says what the tunable terms are set to now; the README keeps the defaults."""
+    def test_values_in_force(self):
+        from niftywhale import intraday, smc
+        now = glossary.in_force(smc.Rules(min_rr=2.0, max_discount=0.4).as_dict(),
+                                intraday.IntradayRules(no_entry_after='14:00').as_dict())
+        terms = {t['term']: t['meaning'] for g in glossary.as_json(now) for t in g['terms']}
+        self.assertTrue(terms['1:3 / 1:2'].endswith('Now: swing at least 1:2, intraday at least 1:2.'))
+        self.assertIn('Now: at most 40% back (swing), 50% (intraday).', terms['Leg position'])
+        self.assertIn('Now: no intraday entries after 14:00.', terms['Entry cutoff'])
+        self.assertNotIn('Now:', {t['term']: t['meaning'] for g in glossary.as_json() for t in g['terms']}['ATR%'])
+
 if __name__ == '__main__':
     unittest.main()

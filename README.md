@@ -1092,7 +1092,7 @@ positions. No order is ever placed.
 
 **Starting:** pick an opening balance (₹1 lakh to ₹25 lakh, or any amount under **Add funds**). Every trade the app takes from
 that moment is mirrored; trades from before it are left alone. **Add funds** and **Withdraw** move money in and out at any time
-(a withdrawal only from free funds, not money in open positions). **Start over** deletes the demo account and opens a new one;
+(a withdrawal only from free funds: not money in open positions, nor what their open losses are using). **Start over** deletes the demo account and opens a new one;
 the app's own records (paper trades, journals, Performance) are never touched.
 
 **How each trade is sized** (from the account as it stood at the trade's entry):
@@ -2336,7 +2336,8 @@ Messages, as they come:
 
 #### `GET /api/glossary`
 
-Every abbreviation and symbol the dashboard shows, by group (the Legend).
+Every abbreviation and symbol the dashboard shows, by group (the Legend). The thresholds quoted are the defaults; the
+Legend in the app adds what each tunable one is set to now.
 
 ```sh
 curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/glossary

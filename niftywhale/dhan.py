@@ -447,7 +447,7 @@ def future_id(symbol: str, on: Any = None, roll_days: int = 3) -> Optional[tuple
         futs = json.loads(FUTS_PATH.read_text()).get(symbol.upper().replace('.NS', ''), {})
     except (OSError, ValueError):
         return None
-    on = on or datetime.now().date()
+    on = on or store.now_local().date()
     for exp in sorted(futs):
         try:
             if (datetime.fromisoformat(exp).date() - on).days > roll_days:

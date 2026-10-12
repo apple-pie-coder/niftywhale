@@ -388,7 +388,7 @@ class ScheduledScanRetries(unittest.TestCase):
 
     def setUp(self):
         _reset()
-        self.local = self.NOW.astimezone().replace(tzinfo=None)
+        self.local = self.NOW.replace(tzinfo=None)                       # scans are stamped in IST (store.now_local)
 
     def due(self, now=None):
         return app.scheduled_scan_due(now or self.NOW, store.settings())
@@ -732,6 +732,25 @@ class PageNamesAreUnique(unittest.TestCase):
                 shared |= set(self.names(f.read()))
         self.assertEqual(sorted(set(names) & shared), [])
 
+
+class TimesAreIST(unittest.TestCase):
+    """Stored times are IST whatever the container's clock is set to: they were datetime.now(), right only while
+    TZ=Asia/Kolkata."""
+    def test_now_local_ignores_tz(self):
+        from datetime import timezone
+        before = os.environ.get('TZ')
+        try:
+            os.environ['TZ'] = 'UTC'
+            time.tzset()
+            want = datetime.now(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
+            self.assertLess(abs((store.now_local() - want).total_seconds()), 2)
+            self.assertGreater(abs((store.now_local() - datetime.now()).total_seconds()), 5 * 3600)
+        finally:
+            if before is None:
+                os.environ.pop('TZ', None)
+            else:
+                os.environ['TZ'] = before
+            time.tzset()
 
 if __name__ == '__main__':
     unittest.main()

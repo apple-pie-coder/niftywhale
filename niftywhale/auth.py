@@ -124,7 +124,7 @@ def _rows(cur) -> List[Dict[str, Any]]:
 
 
 def _now() -> str:
-    return datetime.now().isoformat(timespec='seconds')
+    return store.now_local().isoformat(timespec='seconds')
 
 
 def _sha(s: str) -> str:

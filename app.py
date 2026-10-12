@@ -186,7 +186,7 @@ def run_scan(origin: str = 'manual', which: str = None) -> None:
         which = which or store.settings()['universe']
         scan_id = store.start_scan(which, origin)
         s.update(running=True, phase='download', done=0, total=0, scan_id=scan_id,
-                 started_at=datetime.now().isoformat(timespec='seconds'), message='')
+                 started_at=store.now_local().isoformat(timespec='seconds'), message='')
         stocks = universe.members(which)
         tickers = [m['ticker'] for m in stocks]
         s['total'] = len(tickers)
@@ -412,7 +412,7 @@ def check_zones(origin: str = 'schedule') -> dict:
         return {'error': str(e)}
     finally:
         w['running'] = False
-        w['last_run'] = datetime.now().isoformat(timespec='seconds')
+        w['last_run'] = store.now_local().isoformat(timespec='seconds')
         WATCH_LOCK.release()
 
 
@@ -755,8 +755,8 @@ def news_pass(full: bool = True, only: list = None) -> dict:
             # Headlines kept before a filter existed (an overseas listing's price) go too.
             store.drop_news([i['id'] for i in store.news(None, 'media', limit=5000)
                              if news.FOREIGN_PRICE.search(i['title'] or '')])
-            NEWS_STATE['last_full'] = datetime.now().isoformat(timespec='seconds')
-        NEWS_STATE.update(last_pass=datetime.now().isoformat(timespec='seconds'), errors=errors[-10:],
+            NEWS_STATE['last_full'] = store.now_local().isoformat(timespec='seconds')
+        NEWS_STATE.update(last_pass=store.now_local().isoformat(timespec='seconds'), errors=errors[-10:],
                           message=f"{len(watch)} stock(s) · {len(fresh)} new item(s)"
                                   + (f" · {scored} read by FinBERT" if scored else '')
                                   + (f" · {reacted} reaction(s) measured" if reacted else '')
@@ -949,7 +949,7 @@ def smart_pass() -> dict:
                     absent.add(key)                  # a holiday
         store.set_json('smart:absent', sorted(absent)[-200:])
         store.prune_smart()
-        SMART_STATE.update(last_pass=datetime.now().isoformat(timespec='seconds'), errors=errors[-10:],
+        SMART_STATE.update(last_pass=store.now_local().isoformat(timespec='seconds'), errors=errors[-10:],
                            message=f"{got['deals']} new deal(s) · FII/DII {'updated' if got['flows'] else 'unchanged'} · "
                                    f"{got['delivery']} delivery and {got['poi']} positioning session(s) fetched"
                                    + (f" · {len(errors)} error(s)" if errors else ''))
@@ -1062,6 +1062,9 @@ def demo_account(at: datetime = None, positions: list = None, ledger: list = Non
     return {'deposits': deposits, 'withdrawals': withdrawals, 'realized': realized, 'twr_pct': demo_twr(led, closed, unreal),
             'charges': round(sum(p['charges'] or 0 for p in closed), 2), 'gross': round(sum(p['gross'] or 0 for p in closed), 2),
             'balance': balance, 'blocked': blocked, 'free': round(balance - blocked, 2), 'unreal': unreal,
+            # What may be withdrawn: the free funds less the open positions' losses, which that money is covering (a
+            # future can lose more than its margin). Open gains are not money yet, so they add nothing.
+            'withdrawable': round(max(0.0, balance - blocked + min(0.0, unreal)), 2),
             'equity': round(balance + unreal, 2), 'open': len(open_), 'closed': len(closed),
             'return_pct': round((balance + unreal - (deposits - withdrawals)) / (deposits - withdrawals) * 100, 2)
             if deposits - withdrawals > 0 else None}
@@ -2447,7 +2450,7 @@ def scheduled_scan_due(now: datetime, st: dict) -> bool:
     hh, mm = (int(x) for x in st['scan_time'].split(':'))
     if now.hour * 60 + now.minute < hh * 60 + mm:
         return False
-    local = now.astimezone().replace(tzinfo=None) if now.tzinfo else now    # scans are stamped in local time
+    local = now.astimezone(store.IST).replace(tzinfo=None) if now.tzinfo else now    # scans are stamped in IST
     runs = store.scheduled_scans(local.date().isoformat())
     if any(r['status'] in ('done', 'stopped') for r in runs) or len(runs) >= SCAN_ATTEMPTS:
         return False
@@ -2657,7 +2660,7 @@ def run_intraday_scan(origin: str = 'schedule') -> dict:
                 store.finish_scan(scan_id, status, scanned, len(passed), funnel, error)
         except Exception:
             logger.exception(f'Intraday scan #{scan_id}: could not record its result')
-        st.update(scanning=False, last_scan=datetime.now().isoformat(timespec='seconds'))
+        st.update(scanning=False, last_scan=store.now_local().isoformat(timespec='seconds'))
         INTRA_SCAN_LOCK.release()
 
 
@@ -2753,7 +2756,7 @@ def check_intraday(origin: str = 'schedule') -> dict:
         st['message'] = f'check failed: {e}'
         return {'error': str(e)}
     finally:
-        st.update(checking=False, last_check=datetime.now().isoformat(timespec='seconds'))
+        st.update(checking=False, last_check=store.now_local().isoformat(timespec='seconds'))
         INTRA_CHECK_LOCK.release()
 
 
@@ -3465,8 +3468,8 @@ def favicon():
 
 @app.route('/api/glossary')
 def api_glossary():
-    """Every abbreviation and symbol the dashboard shows, for the Legend."""
-    return jsonify(glossary.as_json())
+    """Every abbreviation and symbol the dashboard shows, for the Legend, with what the tunable ones are set to now."""
+    return jsonify(glossary.as_json(glossary.in_force(current_rules().as_dict(), irules().as_dict())))
 
 
 @app.route('/healthz')
@@ -3956,9 +3959,10 @@ def api_demo_funds():
     # positions) must not both pass on the same free money.
     with DEMO_LOCK:
         if kind == 'withdraw':
-            free = demo_account()['free']
-            if amount > free + 1e-6:
-                return jsonify({'error': f'only ₹{free:,.2f} is free to withdraw (the rest is in open positions)'}), 409
+            a = demo_account()
+            if amount > a['withdrawable'] + 1e-6:
+                held = f" and ₹{-a['unreal']:,.2f} covers their open losses" if a['unreal'] < 0 else ''
+                return jsonify({'error': f"only ₹{a['withdrawable']:,.2f} can be withdrawn: ₹{a['blocked']:,.2f} is in open positions{held}"}), 409
         if not store.settings().get('demo_since'):
             store.set_settings({'demo_since': data.now_ist().isoformat(timespec='seconds')})
         store.add_demo_ledger(kind, amount, str(body.get('note') or '')[:200], data.now_ist().isoformat(timespec='seconds'))

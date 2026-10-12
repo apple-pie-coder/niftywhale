@@ -647,7 +647,7 @@ def weekly_report() -> str:
         if store.settings().get(f'paused_{mode}') == '1':
             line += '\n⏸ Entry alerts are paused by the autopilot'
         lines.append(line)
-    week = [r for r in store.autopilot_log(20) if r['ts'] >= (datetime.now() - timedelta(days=7)).isoformat()]
+    week = [r for r in store.autopilot_log(20) if r['ts'] >= (store.now_local() - timedelta(days=7)).isoformat()]
     if week:
         lines.append('\n<b>Rule changes this week</b>\n' + '\n'.join(
             f"{r['ts'][:10]} {_esc(r['mode'])}: {_esc(r['action'])}{' (you)' if r.get('by') == 'you' else ''}" for r in week[:8]))
@@ -719,7 +719,7 @@ class JobLog:
 
     def __call__(self, text: str) -> None:
         key, n, total = step_of(text)
-        now = datetime.now().isoformat(timespec='seconds')
+        now = store.now_local().isoformat(timespec='seconds')
         if key and key != self.cur:
             if self.cur:
                 self.steps[self.cur]['finished'] = now
@@ -754,7 +754,7 @@ class JobLog:
 
     def close(self, error: bool = False) -> None:
         if self.cur:
-            self.steps[self.cur]['finished'] = datetime.now().isoformat(timespec='seconds')
+            self.steps[self.cur]['finished'] = store.now_local().isoformat(timespec='seconds')
             if error:
                 self.steps[self.cur]['error'] = True
             self._save()
@@ -787,7 +787,7 @@ def job_view(job: Dict[str, Any], now: Optional[datetime] = None,
              runs: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """A lab_jobs row for the dashboard: its steps in order with state, timing and counts, and the
     backtest run a step saved (`runs`: store.runs(), the ones kept)."""
-    now_s = (now or datetime.now()).isoformat(timespec='seconds')
+    now_s = (now or store.now_local()).isoformat(timespec='seconds')
     args = job.get('args') or {}
     if isinstance(args, str):
         try:
@@ -1160,12 +1160,12 @@ def main() -> None:
                 job_alert(job, 'start')
                 try:
                     msg = run_job(job)
-                    store.update_job(job['id'], status='done', finished=datetime.now().isoformat(timespec='seconds'),
+                    store.update_job(job['id'], status='done', finished=store.now_local().isoformat(timespec='seconds'),
                                      message=msg, progress='')
                     job_alert(job, 'done', msg, time.time() - began)
                 except Exception as e:
                     logger.error(f"job {job['kind']} failed: {traceback.format_exc()}")
-                    store.update_job(job['id'], status='error', finished=datetime.now().isoformat(timespec='seconds'),
+                    store.update_job(job['id'], status='error', finished=store.now_local().isoformat(timespec='seconds'),
                                      message=dhan._redact(e)[:500], progress='')
                     job_alert(job, 'error', dhan._redact(e), time.time() - began)
                 continue

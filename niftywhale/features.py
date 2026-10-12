@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from niftywhale import store
+
 MARKET_COLUMNS = ('nifty', 'vix')
 
 
@@ -201,4 +203,4 @@ def combine(*parts: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def now_stamp() -> str:
-    return datetime.now().isoformat(timespec='seconds')
+    return store.now_local().isoformat(timespec='seconds')

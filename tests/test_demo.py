@@ -273,6 +273,22 @@ class Account(unittest.TestCase):
         d = self.client.post('/api/demo/reset', json={'confirm': True, 'amount': 250_000}).get_json()
         self.assertEqual((d['account']['balance'], len(d['open']), len(d['ledger'])), (250_000, 0, 1))
 
+    def test_open_losses_hold_money_back(self):
+        # A withdrawal leaves what open positions are losing: that money is covering the loss.
+        self.start(100_000)
+        paper_trade('ONE', entry=100, stop=99)
+        app.demo_sync()
+        pos = store.demo_positions('open')[0]
+        store.update_demo_position(pos['id'], unreal=-5_000.0)
+        a = app.demo_account()
+        self.assertEqual(a['withdrawable'], round(a['free'] - 5_000, 2))
+        r = self.client.post('/api/demo/funds', json={'kind': 'withdraw', 'amount': a['free'] - 1_000})
+        self.assertEqual(r.status_code, 409)
+        self.assertIn('open losses', r.get_json()['error'])
+        self.assertEqual(self.client.post('/api/demo/funds', json={'kind': 'withdraw', 'amount': a['withdrawable']}).status_code, 200)
+        store.update_demo_position(pos['id'], unreal=8_000.0)                   # an open gain is not money yet
+        self.assertEqual(app.demo_account()['withdrawable'], app.demo_account()['free'])
+
     def test_trade_limits(self):
         self.start(1_000_000)
         self.client.post('/api/demo/settings', json={'max_open': 2, 'max_per_day': 3})

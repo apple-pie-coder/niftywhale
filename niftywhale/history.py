@@ -155,8 +155,8 @@ def update_market(years: float = 8) -> Optional[pd.DataFrame]:
         time.sleep(PACE_S)
         r = requests.post(f'{dhan.API}/charts/historical', headers=dhan._headers(), timeout=40, json={
             'securityId': str(sid), 'exchangeSegment': 'IDX_I', 'instrument': 'INDEX', 'expiryCode': 0, 'oi': False,
-            'fromDate': (date.today() - timedelta(days=int(365 * years))).isoformat(),
-            'toDate': (date.today() + timedelta(days=1)).isoformat()})
+            'fromDate': (data.now_ist().date() - timedelta(days=int(365 * years))).isoformat(),
+            'toDate': (data.now_ist().date() + timedelta(days=1)).isoformat()})
         r.raise_for_status()
         d = r.json()
         idx = pd.to_datetime(d['timestamp'], unit='s', utc=True).tz_convert(TZ).normalize().tz_localize(None)

@@ -264,7 +264,8 @@ def highlights(bd: List[Dict[str, Any]], limit: int = 6) -> List[Dict[str, Any]]
 
 def by_period(trades: List[Dict[str, Any]], length: int = 7) -> Dict[str, Any]:
     """Totals for the last `length` days of closed trades (by exit)."""
-    from datetime import datetime, timedelta
-    cut = (datetime.now() - timedelta(days=length)).isoformat()
+    from datetime import timedelta
+    from niftywhale import store
+    cut = (store.now_local() - timedelta(days=length)).isoformat()
     recent = [t for t in closed(trades) if (t.get('exit_time') or t.get('entry_time') or '') >= cut]
     return summary(recent)

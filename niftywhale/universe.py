@@ -23,6 +23,8 @@ from typing import Dict, List, Optional
 
 import requests
 
+from niftywhale import store
+
 logger = logging.getLogger(__name__)
 
 UNIVERSE_PATH = Path(os.getenv('UNIVERSE_PATH', 'data/universe.json'))
@@ -180,7 +182,7 @@ def build(previous: Optional[Dict] = None) -> Dict[str, object]:
             continue
         entry(sym, name.title())['fo'] = True
 
-    return {'built_at': datetime.now().isoformat(timespec='seconds'),
+    return {'built_at': store.now_local().isoformat(timespec='seconds'),
             'failed': failed,
             'stocks': sorted(stocks.values(), key=lambda s: s['symbol'])}
 

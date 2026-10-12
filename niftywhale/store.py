@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from niftywhale import hub
@@ -282,8 +282,17 @@ def init() -> None:
         logger.info(f'Encrypted {n} secret(s) stored in plain text')
 
 
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def now_local() -> datetime:
+    """Now in IST, without the offset: the form the app's stored times have always had. It was now_local(),
+    right only while the container's clock is set to IST (TZ in docker-compose); this does not depend on it."""
+    return datetime.now(IST).replace(tzinfo=None)
+
 def _now() -> str:
-    return datetime.now().isoformat(timespec='seconds')
+    return now_local().isoformat(timespec='seconds')
 
 
 def _meta(z: Dict[str, Any]) -> Dict[str, Any]:
@@ -431,7 +440,7 @@ def set_settings(updates: Dict[str, Any]) -> Dict[str, str]:
                 old = c.execute('SELECT value FROM settings WHERE key = ?', (k,)).fetchone()
                 if _json_or(old['value'] if old else '{}') != _json_or(str(v)):
                     c.execute('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-                              (f'rules_since:{k}', datetime.now().astimezone().isoformat(timespec='seconds')))
+                              (f'rules_since:{k}', datetime.now(IST).isoformat(timespec='seconds')))
             c.execute('INSERT INTO settings (key, value) VALUES (?, ?) '
                       'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (k, str(v)))
     return settings()
@@ -442,7 +451,7 @@ def rules_since(key: str) -> str:
     recorded here once, as no earlier trade can be shown to have been taken on them."""
     at = get_kv(f'rules_since:{key}')
     if not at:
-        at = datetime.now().astimezone().isoformat(timespec='seconds')
+        at = datetime.now(IST).isoformat(timespec='seconds')
         set_kv(f'rules_since:{key}', at)
     return at
 
@@ -549,7 +558,7 @@ def sync_zones(scan_id: int, rows: List[Dict[str, Any]],
     `no_data` names the stocks this scan could not judge (no candles from the
     data source): their zones are left as they are, not expired.
     """
-    now = datetime.now()
+    now = now_local()
     expires = now.replace(microsecond=0) + timedelta(days=ZONE_LIFETIME_DAYS)
     live = {r['symbol'] for r in rows}
     no_data = no_data or set()
@@ -859,7 +868,7 @@ def expire_intraday(before_session: str = None, note: str = 'session over') -> i
 
 def prune_intraday(keep_days: int = 7) -> None:
     """Intraday scans run every 15 minutes; keep a week of their funnels."""
-    cutoff = (datetime.now() - timedelta(days=keep_days)).isoformat()
+    cutoff = (now_local() - timedelta(days=keep_days)).isoformat()
     with connect() as c:
         old = [r[0] for r in c.execute("SELECT id FROM scans WHERE mode = 'intraday' AND started_at < ?",
                                        (cutoff,))]
@@ -1217,7 +1226,7 @@ def clear_notices() -> int:
 
 
 def prune_notices() -> None:
-    cut = (datetime.now() - timedelta(days=NOTICE_KEEP_DAYS)).isoformat(timespec='seconds')
+    cut = (now_local() - timedelta(days=NOTICE_KEEP_DAYS)).isoformat(timespec='seconds')
     with connect() as c:
         c.execute('DELETE FROM notices WHERE ts < ?', (cut,))
 
@@ -1353,7 +1362,7 @@ def drop_news(ids: List[int]) -> int:
 
 
 def prune_news(keep_days: int = 45) -> int:
-    cutoff = (datetime.now() - timedelta(days=keep_days)).isoformat()
+    cutoff = (now_local() - timedelta(days=keep_days)).isoformat()
     with connect() as c:
         return c.execute('DELETE FROM news WHERE published < ?', (cutoff,)).rowcount
 
@@ -1511,7 +1520,7 @@ def delivery_history(symbols: List[str], sessions: int = 26, until: Optional[str
 def prune_smart(keep_days: int = 120) -> None:
     """Delivery rows are the bulk (every stock, every session): keep four months. Deals, flows and
     positioning are small and kept."""
-    cutoff = (datetime.now() - timedelta(days=keep_days)).date().isoformat()
+    cutoff = (now_local() - timedelta(days=keep_days)).date().isoformat()
     with connect() as c:
         c.execute('DELETE FROM sm_delivery WHERE day < ?', (cutoff,))
 
@@ -1525,7 +1534,7 @@ def demo_ledger() -> List[Dict[str, Any]]:
 def add_demo_ledger(kind: str, amount: float, note: str = '', ts: Optional[str] = None) -> int:
     with connect() as c:
         return c.execute('INSERT INTO demo_ledger (ts, kind, amount, note) VALUES (?, ?, ?, ?)',
-                         (ts or datetime.now().astimezone().isoformat(timespec='seconds'), kind, amount, note)).lastrowid
+                         (ts or datetime.now(IST).isoformat(timespec='seconds'), kind, amount, note)).lastrowid
 
 
 def demo_position(ref: str) -> Optional[Dict[str, Any]]:

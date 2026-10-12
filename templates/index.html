@@ -2379,7 +2379,7 @@
             </div>
                 <div class="pager" id="pg-setups" aria-label="Pages"></div>
             <p class="muted" style="margin-top:6px">* Provisional: stop beyond the leg's origin. The real stop sits beyond the
-                15m sweep, so the final R:R is usually better — the 1:3 rule is enforced on that one.
+                15m sweep, so the final R:R is usually better — the 1:<span id="setups-minrr">3</span> rule is enforced on that one.
                 <svg class="ic tri" width="9" height="9" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><path d="M5 8.5L1 2h8z"/></svg> Short setups are F&amp;O stocks only (a cash short can't be held overnight).</p>
         </section>
 
@@ -3333,6 +3333,7 @@ const SFILTERS = { all: () => true, in: (r) => r.in_zone, wait: (r) => !r.in_zon
                    long: (r) => (r.side || 'long') === 'long', short: (r) => r.side === 'short' };
 
 function renderSetups() {
+    $('setups-minrr').textContent = S.rules.min_rr;          // the footnote's rule, as tuned
     if (!SFILTERS[setupFilter]) setupFilter = 'all';
     document.querySelectorAll('.fchip[data-f]').forEach((b) => {
         const n = S.candidates.filter(SFILTERS[b.dataset.f]).length;
@@ -6992,9 +6993,10 @@ async function demoPost(path, body, msg) {
 function demoFundsModal(kind) {
     const a = (demoData || {}).account || {};
     openModal(kind === 'deposit' ? 'Add demo funds' : 'Withdraw demo funds',
-        kind === 'deposit' ? 'Pretend money: no order is ever placed' : `Up to ${rs(a.free)} is free (the rest is in open positions)`,
+        kind === 'deposit' ? 'Pretend money: no order is ever placed'
+            : `Up to ${rs(a.withdrawable ?? a.free)} (the rest is in open positions${(a.unreal || 0) < 0 ? ', or covers their open losses' : ''})`,
         `<div class="ind-form" id="dm-form">
-            <label class="ind-row"><span><b>Amount</b><small>rupees</small></span><input type="number" id="dm-amount" min="1" step="1000" value="${kind === 'deposit' ? 100000 : Math.max(0, Math.floor(a.free || 0))}"></label>
+            <label class="ind-row"><span><b>Amount</b><small>rupees</small></span><input type="number" id="dm-amount" min="1" step="1000" value="${kind === 'deposit' ? 100000 : Math.max(0, Math.floor(a.withdrawable ?? a.free ?? 0))}"></label>
             <label class="ind-row"><span><b>Note</b><small>optional</small></span><input type="text" id="dm-note" maxlength="200"></label>
             <div class="ind-actions"><button class="btn btn-primary" type="button" id="dm-go">${kind === 'deposit' ? 'Add' : 'Withdraw'}</button></div></div>`);
     $('dm-go').addEventListener('click', async () => {

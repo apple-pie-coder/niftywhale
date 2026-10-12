@@ -39,7 +39,7 @@ def run(progress: Callable[[str], None], years: float, stop: Callable[[], bool] 
         symbols: Optional[List[str]] = None) -> Dict[str, int]:
     """Fill the missing days of the three dated files, then the event calendar. Returns what was added.
     `symbols`: the stocks whose delivery rows are kept (all of a day's would be millions of rows)."""
-    today = date.today()
+    today = store.now_local().date()
     days = trading_days(today - timedelta(days=int(365 * years)), today)
     keep = set(symbols or [])
     held = {t: set(store.smart_days(t)) for t in ('sm_delivery', 'sm_poi', 'sm_futoi')}

@@ -7,7 +7,7 @@ the README drifts from it). Add a term here when the dashboard gains one.
 
 Each group: (key, title, [(term, name, meaning), ...]).
 """
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 GROUPS = [
     ('smc', 'Smart Money Concepts (the protocol)', [
@@ -145,9 +145,25 @@ GROUPS = [
 ]
 
 
-def as_json() -> List[Dict]:
-    return [{'key': k, 'title': t, 'terms': [{'term': a, 'name': b, 'meaning': c} for a, b, c in items]}
+def as_json(now: Optional[Dict[str, str]] = None) -> List[Dict]:
+    """The groups for the Legend. `now`: {term: what it is set to now}, for the terms whose meaning quotes a
+    tunable default (the README keeps the defaults; the app says what is in force too)."""
+    now = now or {}
+    return [{'key': k, 'title': t, 'terms': [{'term': a, 'name': b, 'meaning': c + (f' Now: {now[a]}.' if now.get(a) else '')}
+                                             for a, b, c in items]}
             for k, t, items in GROUPS]
+
+
+def in_force(swing: Dict[str, Any], intra: Dict[str, Any]) -> Dict[str, str]:
+    """What the tunable terms are set to now, from the swing and intraday rules (as_dict)."""
+    g = lambda v: f'{v:g}'           # noqa: E731
+    return {
+        '1:3 / 1:2': f"swing at least 1:{g(swing['min_rr'])}, intraday at least 1:{g(intra['min_rr'])}",
+        'ATR%': f"swing over {g(swing['min_atr_pct'])}%, intraday {g(intra['min_atr_pct'])}% or more",
+        'Leg position': f"at most {swing['max_discount'] * 100:.0f}% back (swing), {intra['max_discount'] * 100:.0f}% (intraday)",
+        'Entry cutoff': f"no intraday entries after {intra['no_entry_after']}",
+        'Square-off': f"intraday trades squared off at {intra['square_off']} (an F&O stock by the end of its continuous trading)",
+    }
 
 
 def markdown() -> str:
