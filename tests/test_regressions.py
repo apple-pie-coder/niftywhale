@@ -4,6 +4,7 @@ Regression tests for bugs found in the October 2026 bug hunts.
 Run:  python -m unittest discover -s tests
 """
 import os
+import re
 import sqlite3
 import tempfile
 import threading
@@ -708,6 +709,28 @@ class IntradayScanDoesNotHoldUpTheCheck(unittest.TestCase):
             self.assertLess(time.time() - t0, 1.0)
             self.assertTrue(started.wait(2))
             release.set()
+
+
+class PageNamesAreUnique(unittest.TestCase):
+    """The page's script is one file's worth of top-level names: a second function with the same name silently replaces
+    the first, so the tab using the first breaks (the board's sparkSvg and the open positions' one; the drawer's
+    renderTrade and the Trading tab's). Neither may a page name shadow one from theme.js or charts.js."""
+    TOP = re.compile(r'^(?:(?:async\s+)?function\s+|(?:const|let|var|class)\s+)([A-Za-z_$][\w$]*)', re.M)
+
+    def names(self, text):
+        return self.TOP.findall(text)
+
+    def test_unique(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, 'templates', 'index.html'), encoding='utf-8') as f:
+            page = '\n'.join(re.findall(r'<script>(.*?)</script>', f.read(), re.S))
+        names = self.names(page)
+        self.assertEqual(sorted({n for n in names if names.count(n) > 1}), [])
+        shared = set()
+        for name in ('theme.js', 'charts.js'):
+            with open(os.path.join(root, 'static', name), encoding='utf-8') as f:
+                shared |= set(self.names(f.read()))
+        self.assertEqual(sorted(set(names) & shared), [])
 
 
 if __name__ == '__main__':

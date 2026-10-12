@@ -5621,7 +5621,7 @@ WS.listen('px', (d) => { LIVE.on = d.on; if (d.on && !document.hidden && d.px) l
 const SPARK = { data: {}, live: {}, loading: false, last: 0 };
 const sparkCell = (ref) => `<span class="spark" data-spark="${esc(ref)}" role="img" aria-label="Price since entry"></span>`;
 const sparkEls = () => [...document.querySelectorAll('.spark[data-spark]')].filter((el) => !el.closest(LP_HIDDEN));
-function sparkSvg(d, live) {
+function sparkPathSvg(d, live) {
     const vals = d.pts.map((p) => +p[1]);
     if (live != null) vals.push(+live);
     if (vals.length < 2) return '';
@@ -5646,7 +5646,7 @@ function sparkDraw(only) {
         const d = SPARK.data[el.dataset.spark];
         if (!d || !d.pts || !d.pts.length || (only && !only.has(el.dataset.spark))) return;
         const live = d.lp ? SPARK.live[d.lp] : null;
-        el.innerHTML = sparkSvg(d, live);
+        el.innerHTML = sparkPathSvg(d, live);
         el.title = `Entry ${px(d.entry)} · now ${px(live != null ? live : d.pts[d.pts.length - 1][1])}`
             + (d.stop != null ? ` · stop ${px(d.stop)}` : '') + (d.target != null ? ` · target ${px(d.target)}` : '');
     });
