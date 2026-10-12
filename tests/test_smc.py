@@ -215,5 +215,29 @@ class RulesFromEnv(unittest.TestCase):
             del os.environ['SMC_MIN_RR'], os.environ['SMC_SWING_LEN']
 
 
+class StepLabels(unittest.TestCase):
+    """The scan steps are named with the rules in force: a tuned threshold changes the funnel's and the checklist's
+    wording (a 9 lakh volume rule once still read "10 lakh")."""
+    def labels(self, mod, rules):
+        return dict(mod.step_labels(rules))
+
+    def test_swing_follows_the_rules(self):
+        at = self.labels(smc, smc.Rules(min_avg_volume=900_000, min_atr_pct=2.0, max_discount=0.4))
+        self.assertEqual(at['liquidity'], 'Avg volume ≥ 9 lakh')
+        self.assertEqual(at['volatility'], 'ATR% > 2')
+        self.assertEqual(at['discount'], 'In discount / premium (≤ 40%)')
+        self.assertEqual([k for k, _ in smc.step_labels(smc.Rules())], [k for k, _ in smc.STEPS])
+
+    def test_defaults_and_no_minimum(self):
+        self.assertEqual(self.labels(smc, smc.Rules())['liquidity'], 'Avg volume ≥ 10 lakh')
+        self.assertEqual(self.labels(smc, smc.Rules(min_avg_volume=0))['liquidity'], 'Avg volume (no minimum)')
+        self.assertEqual([smc.volume_words(v) for v in (1_250_000, 10_000_000, 15_500_000)], ['12.5 lakh', '1 crore', '1.55 crore'])
+
+    def test_intraday(self):
+        from niftywhale import intraday
+        at = self.labels(intraday, intraday.IntradayRules(min_avg_volume=2_000_000, min_atr_pct=1.2, max_discount=0.45))
+        self.assertEqual((at['liquidity'], at['volatility'], at['discount']),
+                         ('Avg volume ≥ 20 lakh', 'Daily ATR% ≥ 1.2', 'In discount / premium (≤ 45%)'))
+
 if __name__ == '__main__':
     unittest.main()

@@ -2678,6 +2678,9 @@ const px = (v) => (v == null || !isFinite(v)) ? '—' : Number(v).toLocaleString
 const pct = (v, d = 1) => (v == null || !isFinite(v)) ? '—' : Number(v).toFixed(d) + '%';
 const rr = (v) => (v == null || !isFinite(v)) ? '—' : '1:' + Number(v).toFixed(1);
 const lakh = (v) => (v == null) ? '—' : (v / 1e5).toFixed(1) + ' L';
+// A rule's volume in words (9 lakh, 12.5 lakh, 1 crore) and a span of sessions (63 → 3 months), as the server names its steps.
+const volWords = (v) => { const [n, u] = v >= 1e7 ? [v / 1e7, 'crore'] : [v / 1e5, 'lakh']; return `${+n.toFixed(2)} ${u}`; };
+const dayWords = (d) => { const m = Math.round((d || 0) / 21); return m >= 1 ? `${m} month${m === 1 ? '' : 's'}` : `${d} sessions`; };
 // Volumes and deltas, signed, in Indian units: 1.2K, 3.4L, 1.1Cr.
 const fmtVol = (v) => {
     if (v == null || !isFinite(v)) return '—';
@@ -4409,7 +4412,8 @@ function checklistHtml(symbol, a) {
     const items = [
         [current && current.d && current.d.in_universe === false ? 'na' : 'pass', '1', 'In a scanned universe',
             current && current.d && current.d.in_universe === false ? 'not in any list' : uniLabel(S.settings.universe), ''],
-        [state('liquidity'), '2', 'Avg volume ≥ 10 lakh (3 months)', lakh(a.avg_volume), why('liquidity')],
+        [state('liquidity'), '2', S.rules.min_avg_volume > 0 ? `Avg volume ≥ ${volWords(S.rules.min_avg_volume)} (${dayWords(S.rules.avg_volume_days)})`
+            : `Avg volume (no minimum)`, lakh(a.avg_volume), why('liquidity')],
         [state('volatility'), '3', 'Daily ATR% > ' + S.rules.min_atr_pct, pct(a.atr_pct, 2), why('volatility')],
         [state('structure'), '4', short ? 'Bearish structure (LH + LL)' : 'Bullish structure (HH + HL)',
             a.structure ? a.structure.bias : '—', why('structure')],
@@ -4419,7 +4423,7 @@ function checklistHtml(symbol, a) {
             a.order_block ? a.order_block.date : '—', why('order_block') || why('intact')],
         [a.fvgs ? (a.fvgs.length ? 'pass' : 'na') : 'na', '7', 'Fair value gaps in the leg',
             a.fvgs ? a.fvgs.length + ' open' : '—', ''],
-        [state('discount'), '8', short ? 'Price in premium (> 50%)' : 'Price in discount (< 50%)',
+        [state('discount'), '8', `Price in ${short ? 'premium' : 'discount'} (≤ ${Math.round(S.rules.max_discount * 100)}% back)`,
             a.position != null ? pct(a.position * 100, 0) + ' back' : '—', why('discount')],
         [z ? 'pass' : (a.passed ? 'wait' : 'na'), '9', 'Alert zone set',
             z ? `${px(z.zone_low)} – ${px(z.zone_high)}` : '—', z ? 'Watcher status: ' + z.status : ''],

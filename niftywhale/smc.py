@@ -218,7 +218,7 @@ GATES = ('max_market_run', 'min_zone_age', 'max_rr', 'min_breadth', 'weekly_alig
 # these it did not pass, which is what the dashboard's funnel counts.
 STEPS = (
     ('history',    'Enough history'),
-    ('liquidity',  'Avg volume ≥ 10 lakh'),
+    ('liquidity',  'Avg volume ≥ 10 lakh'),    # names at the defaults; step_labels() for the rules in force
     ('volatility', 'ATR% > 1.5'),
     ('structure',  'Trending structure (HH/HL or LH/LL)'),
     ('order_block', 'Order block after a displacement break'),
@@ -227,6 +227,26 @@ STEPS = (
     ('rr',         'Provisional R:R'),
 )
 SIDES = ('long', 'short')
+
+
+def volume_words(v: float) -> str:
+    """Shares a day in Indian words: 9 lakh, 12.5 lakh, 1 crore."""
+    n, unit = (v / 1e7, 'crore') if v >= 1e7 else (v / 1e5, 'lakh')
+    return f'{n:.2f}'.rstrip('0').rstrip('.') + ' ' + unit
+
+
+def _num(v: float) -> str:
+    return f'{v:g}'
+
+
+def step_labels(rules: 'Rules') -> List[Tuple[str, str]]:
+    """STEPS named with the rules in force (the tuner changes the thresholds; the names must follow)."""
+    at = dict(STEPS)
+    at['liquidity'] = (f'Avg volume ≥ {volume_words(rules.min_avg_volume)}' if rules.min_avg_volume > 0
+                       else 'Avg volume (no minimum)')
+    at['volatility'] = f'ATR% > {_num(rules.min_atr_pct)}'
+    at['discount'] = f'In discount / premium (≤ {rules.max_discount * 100:.0f}%)'
+    return [(k, at[k]) for k, _ in STEPS]
 
 
 # ---------------------------------------------------------------------------

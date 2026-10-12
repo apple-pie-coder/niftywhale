@@ -26,7 +26,7 @@ Pure functions, like smc.py: frames in, dicts out. The clock is always passed in
 from dataclasses import dataclass, fields
 import os
 from datetime import date, datetime, time as dtime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -165,6 +165,16 @@ STEPS = (
     ('discount',    'In discount / premium'),
     ('rr',          'Target pool + R:R'),
 )
+
+
+def step_labels(rules: IntradayRules) -> List[Tuple[str, str]]:
+    """STEPS named with the rules in force (the tuner changes the thresholds; the names must follow)."""
+    at = dict(STEPS)
+    at['liquidity'] = (f'Avg volume ≥ {smc.volume_words(rules.min_avg_volume)}' if rules.min_avg_volume > 0
+                       else 'Avg volume (no minimum)')
+    at['volatility'] = f'Daily ATR% ≥ {smc._num(rules.min_atr_pct)}'
+    at['discount'] = f'In discount / premium (≤ {rules.max_discount * 100:.0f}%)'
+    return [(k, at[k]) for k, _ in STEPS]
 
 # Where a target came from, per side, in order of preference at the same price.
 POOLS = {
