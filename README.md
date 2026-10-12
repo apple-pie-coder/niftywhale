@@ -348,6 +348,12 @@ Alerts from before paper trading started (6 Oct 2026) stay as they were: trigger
   **Rows** choice (10 / 25 / 50 / 100, remembered per table) underneath once it has more than 10. The News list pages its cards
   in twelves (12 / 24 / 48 / 96, 24 to start). The page you are on survives the dashboard's refresh; changing a filter or sort
   goes back to page 1. The zone watcher keeps closed zones for 14 days, and the alert and signal logs their last 300.
+- **Search any table:** each of those tables (and the News list, and the Trading tab's orders and requests to Dhan) has a
+  **Search** box beside its filter pills. It keeps the rows holding every word you type, in any order and any case, in the
+  stock, instrument, note and everything else the row carries (`nifty target` finds Nifty trades that hit their target). It
+  works with the pills, whose counts then count within the search; like a pill, it shows every row it leaves, and the box
+  says how many (*8 of 80*). **×** or **Esc** clears it. A search that leaves nothing says so above the table, with a way
+  back. It is kept while the page is open, not saved.
 
 #### Theme
 

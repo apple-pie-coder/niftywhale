@@ -854,6 +854,24 @@
     .tf-pills[hidden], .tf-none[hidden] { display: none; }
     .panel-head .tf-pills { margin-right: auto; }        /* right after the title, as in Setups */
     .tf-none { font-size: 12.5px; color: var(--ink-3); margin: 0 0 8px; }
+    /* A table's search box: after its pills, the panel's note pushed to the right. */
+    .tf-search { position: relative; display: inline-flex; align-items: center; flex: 0 1 210px; min-width: 130px; align-self: center; }
+    .tf-search[hidden] { display: none; }
+    .panel-head .tf-pills:has(+ .tf-search) { margin-right: 0; }
+    .panel-head .tf-search { margin-right: auto; }
+    .tf-search > svg { position: absolute; left: 10px; color: var(--ink-3); pointer-events: none; }
+    .tf-search input { width: 100%; font: inherit; font-size: 12.5px; line-height: 1.3; padding: 5px 28px 5px 29px; color: var(--ink);
+                       border: 1px solid var(--line-strong); border-radius: var(--r-pill); background: var(--surface); }
+    .tf-search[data-on="1"] input { padding-right: 82px; }
+    .tf-search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .tf-search input::-webkit-search-cancel-button { display: none; }
+    .tf-search .tq-n { position: absolute; right: 28px; font-size: 11px; color: var(--ink-3); pointer-events: none;
+                       font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .tf-search .tq-x { position: absolute; right: 5px; width: 20px; height: 20px; display: grid; place-items: center; border: 0;
+                       border-radius: 50%; background: var(--sunk); color: var(--ink-2); font-size: 14px; line-height: 1; cursor: pointer; padding: 0; flex: none; }
+    .tf-search .tq-x[hidden] { display: none; }
+    .tf-search .tq-x:hover { background: var(--line-strong); color: var(--ink); }
+    @media (max-width: 640px) { .tf-search { flex: 1 1 100%; } .tf-search input { font-size: 16px; } }
     .fchip:disabled { opacity: .4; cursor: not-allowed; }
     /* A table filter with no rows right now stays clickable (the table then says nothing matches), just dimmer. */
     .fchip[data-empty="1"]:not([aria-pressed="true"]) { opacity: .55; }
@@ -2777,15 +2795,16 @@ const tfOpts = (key) => [['all', 'All'], ...TF_DEFS[key].groups.flatMap((g) => g
     .map((o) => [`${g.id}:${o[0]}`, o[1], o[2]]))];
 const tfCur = (key) => { const v = TFS()[key]; return typeof v === 'string' && tfOpts(key).some((o) => o[0] === v) ? v : 'all'; };
 
-function tfFilter(key, items) {
+function tfFilter(key, items, total = items.length) {
     if (!TF_DEFS[key]) return items;
     const o = tfOpts(key).find((x) => x[0] === tfCur(key));
     const out = o && o[2] ? items.filter(o[2]) : items;
-    tfBar(key, items, out.length);
+    tfBar(key, items, total);
     return out;
 }
 
-function tfBar(key, items, shown) {
+// `items`: the rows the search leaves (the pills count those); `total`: every row in the table.
+function tfBar(key, items, total) {
     const pg = $('pg-' + key), wrap = pg && pg.previousElementSibling;
     if (!wrap) return;
     let pills = $('tf-' + key);
@@ -2798,10 +2817,6 @@ function tfBar(key, items, shown) {
         pills.setAttribute('role', 'group'); pills.setAttribute('aria-label', 'Show');
         const title = head && head.querySelector('.panel-title');
         if (title) title.after(pills); else wrap.parentNode.insertBefore(pills, wrap);
-        const none = document.createElement('div');
-        none.className = 'tf-none'; none.id = 'tf-none-' + key; none.hidden = true;
-        none.innerHTML = `None right now. <button type="button" class="btn-link" data-tfclear="${key}">Show all</button>`;
-        wrap.parentNode.insertBefore(none, wrap);
     }
     const cur = tfCur(key), opts = tfOpts(key);
     // Made once, then updated in place: a table refreshing itself (every couple of seconds in a scan) must
@@ -2819,9 +2834,104 @@ function tfBar(key, items, shown) {
         const fn = b.querySelector('.fn');
         if (fn.textContent !== String(n)) fn.textContent = n;
     });
-    pills.hidden = !items.length;
-    $('tf-none-' + key).hidden = !(items.length && !shown);
+    pills.hidden = !total;
 }
+
+/* Search, on every paged table: a box beside its pills that keeps the rows holding every word typed (any order, any
+   case), in the row's name and everything else it carries. The pills then count within the search, and a search,
+   like a pill, shows every row it leaves. Kept while the page is open, not saved. */
+const TQ = {};
+const tqWords = (key) => (TQ[key] || '').toLowerCase().split(/\s+/).filter(Boolean);
+const TQ_ROW = { setups: (x) => x.r };           // a table whose items wrap the row (Setups: the row and its group heading)
+function tqText(key, r) {
+    const def = TF_DEFS[key];
+    if (TQ_ROW[key]) r = TQ_ROW[key](r);
+    let t = def && def.text ? def.text(r) : '';
+    const add = (o, deep) => Object.values(o || {}).forEach((v) => {
+        if (v == null) return;
+        if (Array.isArray(v)) t += ' ' + v.filter((x) => x != null && typeof x !== 'object').join(' ');
+        else if (typeof v === 'object') { if (deep) add(v, false); }
+        else t += ' ' + v;
+    });
+    add(r, true);
+    if (r && r.mode && MODE_NAME[r.mode]) t += ' ' + MODE_NAME[r.mode];
+    return t.toLowerCase();
+}
+function tqBox(key) {
+    let box = $('tq-' + key);
+    if (box) return box;
+    const pg = $('pg-' + key), wrap = pg && pg.previousElementSibling;
+    if (!wrap) return null;
+    let head = wrap.previousElementSibling;
+    while (head && !head.matches('.panel-head, .news-tools')) head = head.previousElementSibling;
+    box = document.createElement('label');
+    box.className = 'tf-search'; box.id = 'tq-' + key;
+    box.innerHTML = `<svg class="ic" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4 14 14"/></svg>
+        <input type="search" data-tq="${key}" placeholder="Search" aria-label="Search this table" autocomplete="off" spellcheck="false">
+        <span class="tq-n" aria-live="polite"></span>
+        <button type="button" class="tq-x" data-tqclear="${key}" aria-label="Clear the search" hidden>×</button>`;
+    // After the panel's own pills (or its title); in the News tools, first.
+    const after = head && ([...head.querySelectorAll(':scope > .fchips')].pop() || head.querySelector(':scope > .panel-title'));
+    if (after) after.after(box);
+    else if (head) head.prepend(box);
+    else wrap.parentNode.insertBefore(box, wrap);
+    return box;
+}
+function tfSearch(key, items) {
+    const box = tqBox(key), w = tqWords(key);
+    const out = w.length ? items.filter((r) => { const t = tqText(key, r); return w.every((x) => t.includes(x)); }) : items;
+    if (box) {
+        box.hidden = !items.length && !w.length;
+        const n = box.querySelector('.tq-n'), label = w.length ? `${out.length} of ${items.length}` : '';
+        if (n.textContent !== label) n.textContent = label;
+        box.dataset.on = w.length ? '1' : '';
+        box.querySelector('.tq-x').hidden = !w.length;
+    }
+    return out;
+}
+// The note above a table whose search or pill leaves nothing, with the way back.
+function tfNone(key, total, shown) {
+    const pg = $('pg-' + key), wrap = pg && pg.previousElementSibling;
+    if (!wrap) return;
+    let none = $('tf-none-' + key);
+    if (!none) {
+        none = document.createElement('div');
+        none.className = 'tf-none'; none.id = 'tf-none-' + key; none.hidden = true;
+        wrap.parentNode.insertBefore(none, wrap);
+    }
+    const q = TQ[key], pill = !!TF_DEFS[key] && tfCur(key) !== 'all';
+    const html = q ? `Nothing matches “${esc(q)}”${pill ? ' with this filter' : ''}. <button type="button" class="btn-link" data-tqclear="${key}">Clear the search</button>`
+                     + (pill ? ` · <button type="button" class="btn-link" data-tfclear="${key}">Show all</button>` : '')
+        : `None right now. <button type="button" class="btn-link" data-tfclear="${key}">Show all</button>`;
+    if (none._html !== html) { none.innerHTML = html; none._html = html; }
+    none.hidden = !(total && !shown && (q || pill));
+}
+const tqTimers = {};
+document.addEventListener('input', (e) => {
+    const i = e.target.closest('[data-tq]');
+    if (!i) return;
+    const key = i.dataset.tq;
+    clearTimeout(tqTimers[key]);
+    tqTimers[key] = setTimeout(() => { TQ[key] = i.value.trim(); pageNo[key] = 1; if (PAGED[key]) PAGED[key](); }, 120);
+});
+function tqClear(key) {
+    const i = document.querySelector(`[data-tq="${key}"]`);
+    if (i) i.value = '';
+    TQ[key] = ''; pageNo[key] = 1;
+    if (PAGED[key]) PAGED[key]();
+}
+document.addEventListener('keydown', (e) => {
+    const i = e.target.closest && e.target.closest('[data-tq]');
+    if (i && e.key === 'Escape' && i.value) { e.preventDefault(); e.stopPropagation(); tqClear(i.dataset.tq); }
+}, true);
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tqclear]');
+    if (!b) return;
+    const key = b.dataset.tqclear;
+    tqClear(key);
+    const i = document.querySelector(`[data-tq="${key}"]`);
+    if (i) i.focus();
+});
 
 function tfChanged(key) {
     store.set('nw.tfilter', TFS());
@@ -2838,9 +2948,11 @@ document.addEventListener('click', (e) => {
 // With a filter on, a table shows every row it leaves (up to TF_ALL_MAX, then it pages), so the table
 // takes the size of the selection; with none, the chosen page size.
 const TF_ALL_MAX = 200;
-const tfActive = (key) => key === 'setups' ? setupFilter !== 'all' : !!TF_DEFS[key] && tfCur(key) !== 'all';
+const tfActive = (key) => !!TQ[key] || (key === 'setups' ? setupFilter !== 'all' : !!TF_DEFS[key] && tfCur(key) !== 'all');
 function paged(key, items) {
-    items = tfFilter(key, items);
+    const rows = items.length;
+    items = tfFilter(key, tfSearch(key, items), rows);
+    tfNone(key, rows, items.length);
     const size = tfActive(key) ? Math.max(pageSize(key), TF_ALL_MAX) : pageSize(key), total = items.length;
     const last = Math.max(1, Math.ceil(total / size));
     const p = Math.min(Math.max(1, pageNo[key] || 1), last);
