@@ -3737,7 +3737,8 @@ def _demo_view() -> dict:
     events = [{'ts': x['ts'], 'amount': x['amount'] if x['kind'] == 'deposit' else -x['amount'], 'kind': x['kind'],
                'label': x.get('note') or ''} for x in store.demo_ledger()]
     events += [{'ts': p['exit_time'], 'amount': p['net'] or 0, 'kind': 'trade', 'label': p['instrument'], 'mode': p['mode'],
-                'symbol': p['symbol'], 'outcome': p.get('note') or ''} for p in positions if p['status'] == 'closed']
+                'symbol': p['symbol'], 'outcome': p.get('note') or '', 'charges': round(p['charges'] or 0, 2)}
+               for p in positions if p['status'] == 'closed']
     curve, run = [], 0.0
     for e in sorted(events, key=lambda e: (_when(e['ts']) or data.now_ist())):
         run += e['amount']

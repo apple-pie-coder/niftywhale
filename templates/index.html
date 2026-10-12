@@ -430,6 +430,26 @@
     .dmc-row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
     .dmc-row > span:first-child { color: var(--ink-3); }
     @media (max-width: 900px) { .dm-top { grid-template-columns: minmax(0, 1fr); } }
+    /* The demo account's Performance chart: a view, a period and a mode, a summary of what is shown, the chart. */
+    .dmc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; }
+    .dmc-bar .seg { flex: 0 0 auto; }
+    .dmc-bar .seg button { padding: 5px 14px; white-space: nowrap; }
+    .dmc-bar .fchips { flex-wrap: wrap; }
+    .dmc .sm-chart { position: relative; margin-top: 0; }
+    .dm-sum.dmc-sum { flex-wrap: nowrap; }
+    .dm-sum.dmc-sum > div { flex: 1 1 0; min-width: 0; }
+    .dm-sum.dmc-sum > div:last-child { background: none; }
+    @media (max-width: 1100px) { .dm-sum.dmc-sum { flex-wrap: wrap; } .dm-sum.dmc-sum > div { flex: 1 1 22%; border-bottom: 1px solid var(--line); } }
+    .dmc-sum .s { font-size: 11.5px; color: var(--ink-3); margin-top: 1px; font-variant-numeric: tabular-nums; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
+    .dmc-sum .v[data-tone="good"] { color: var(--good); } .dmc-sum .v[data-tone="bad"] { color: var(--bad); }
+    .dmc-empty { display: grid; place-items: center; gap: 8px; min-height: 160px; text-align: center; color: var(--ink-3); font-size: 13px; }
+    tr.dmc-pick[aria-selected="true"] td { background: var(--accent-soft, var(--sunk)); }
+    tr.dmc-pick[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+    @media (max-width: 640px) {
+        .dmc-bar { gap: 8px; } .dmc-bar .seg { width: 100%; } .dmc-bar .seg button { flex: 1; }
+        .dm-sum.dmc-sum > div { flex: 1 1 40%; }
+    }
     .smf { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 12px; align-items: stretch; }
     .smf-cards { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
     .smf-chart { margin-top: 0; }
@@ -2238,13 +2258,24 @@
             </div>
             <div class="stats dm-stats" id="dm-stats"></div>
         </section>
-        <section class="dm-top">
-            <div><div class="panel-head"><h2 class="panel-title">Balance</h2><span class="panel-meta">after each closed trade, net of charges</span></div>
-                <div class="sm-chart" id="dm-curve"></div></div>
-            <div><div class="panel-head"><h2 class="panel-title">By mode</h2>
-                <span class="panel-meta">Closed after charges · open at the latest price</span></div>
+        <section class="dmc">
+            <div class="panel-head"><h2 class="panel-title">Performance</h2><span class="panel-meta" id="dmc-meta"></span></div>
+            <div class="dmc-bar">
+                <div class="seg small" role="group" aria-label="Chart" id="dmc-view">
+                    <button type="button" data-dmcv="pnl" title="Profit and loss from trading, after charges: money added or withdrawn left out">P&amp;L</button>
+                    <button type="button" data-dmcv="day" title="Each day's net result, as a bar">Daily</button>
+                    <button type="button" data-dmcv="balance" title="The account's balance, money added and withdrawn included">Balance</button></div>
+                <div class="fchips" role="group" aria-label="Period" id="dmc-range"></div>
+                <div class="fchips" role="group" aria-label="Mode" id="dmc-mode"></div>
+            </div>
+            <div class="dm-sum dmc-sum" id="dmc-sum"></div>
+            <div class="sm-chart" id="dm-curve"></div>
+        </section>
+        <section>
+            <div class="panel-head"><h2 class="panel-title">By mode</h2>
+                <span class="panel-meta">Closed after charges · open at the latest price · click a mode to chart it alone</span></div>
             <div class="table-wrap"><table><thead><tr><th>Mode</th><th class="r">Closed · won</th><th class="r">Net P&amp;L</th><th class="r">Charges</th><th class="r">Open · P&amp;L</th><th class="r">Skipped</th></tr></thead>
-                <tbody id="dm-modes"></tbody></table></div></div>
+                <tbody id="dm-modes"></tbody></table></div>
         </section>
         <section>
             <div class="panel-head"><h2 class="panel-title">Open positions</h2><span class="panel-meta" id="dm-open-meta"></span></div>
@@ -5369,7 +5400,7 @@ function demoApply(L, d) {
     for (const m in L.by_mode) Object.assign(d.by_mode[m] || (d.by_mode[m] = {}), L.by_mode[m]);
     renderDemoTotals();
     patchDemoOpen();
-    demoCurveDraw($('dm-curve'), demoCurvePts());
+    dmcDraw();
     return true;
 }
 WS.listen('demo', (L) => { if (mode === 'demo' && demoData && L && L.open) demoApply(L, demoData); });
@@ -5383,15 +5414,6 @@ function demoOpenMeta() {
     const at = Math.max(0, ...d.open.map((p) => p.live_at || 0));
     const live = d.live && d.live.on && at ? `<span class="live-dot"></span>Live · ${new Date(at * 1000).toLocaleTimeString('en-IN', { hour12: false })} · ` : '';
     return `${live}${d.open.length} open · ${rs(a.blocked)} blocked`;
-}
-
-// The balance curve's points, and while positions are open a last "now" point at the equity
-// (balance + open P&L), which the live refresh moves every second.
-function demoCurvePts() {
-    const d = demoData, pts = (d.curve || []).slice(), a = d.account || {};
-    if (pts.length && a.open) pts.push({ kind: 'now', ts: new Date().toISOString(), amount: a.unreal || 0, balance: a.equity,
-                                         closed: a.balance, open: a.open, label: '' });
-    return pts;
 }
 
 // The open table's totals: every open position (not just this page) by mode, as in the
@@ -6514,25 +6536,162 @@ LIVE.hooks.push({
 const rsShort = (v) => { const a = Math.abs(v), sg = v < 0 ? '−' : '';
     if (moneyHidden) return MONEY_MASK;
     return sg + '₹' + (a >= 1e7 ? (a / 1e7).toFixed(2) + 'Cr' : a >= 1e5 ? (a / 1e5).toFixed(2) + 'L' : a >= 1e3 ? (a / 1e3).toFixed(1) + 'K' : a.toFixed(0)); };
-let dmCurve = null;          // the drawn curve's points and geometry, for the hover
+let dmCurve = null;          // the drawn chart's points, for the hover and a click
 
-// The balance after every deposit, withdrawal and closed trade, against the money put in:
-// green where the account is above it, red where below; a dot per trade (won / lost),
-// amber for money in or out; hover for the line's story, click a trade to open its stock.
-// The balance after each event (a closed trade, money in or out), evenly spaced, against the money put in so far
-// (dashed): green between them where the account is up, red where it is down. A dot per event: green a win, red a loss,
-// amber money in or out; while positions are open, a dashed last step to "now". Hover for the event, click a trade
-// to open its stock.
-function demoCurveDraw(box, pts) {
-    if (pts.length < 2) {
+// The Performance chart's choices, kept in this browser: what to chart (P&L from trading, each day's result, or the
+// balance with money in and out), over which period, and for which mode (the balance is the whole account's).
+const DMC_VIEWS = ['pnl', 'day', 'balance'];
+const DMC_RANGES = [['today', 'Today', 0], ['week', '7 days', 7], ['month', '30 days', 30], ['all', 'All time', Infinity]];
+let dmc_ = null;
+function dmcState() {
+    if (!dmc_) {
+        const v = store.get('nw.dmc', null) || {};
+        dmc_ = { view: DMC_VIEWS.includes(v.view) ? v.view : 'pnl', range: DMC_RANGES.some((r) => r[0] === v.range) ? v.range : 'all',
+                 mode: MODE_NAME[v.mode] ? v.mode : 'all' };
+    }
+    return dmc_;
+}
+const dmcIn = (range, ts) => range === 'all' ? true : range === 'today' ? tfDay(ts) === todayIST()
+    : tfAge(ts) <= DMC_RANGES.find((r) => r[0] === range)[2];
+const dmcModeOk = (mode, p) => mode === 'all' || p.mode === mode;
+function dmcSet(k, v) {
+    dmcState()[k] = v;
+    store.set('nw.dmc', dmc_);
+    document.querySelectorAll('tr[data-dmcm]').forEach((r) => r.setAttribute('aria-selected', String(dmc_.mode === r.dataset.dmcm)));
+    dmcDraw();
+}
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dmcv], [data-dmcr], [data-dmcm], [data-dmc-all]');
+    if (!b || b.disabled) return;
+    if (b.dataset.dmcv) dmcSet('view', b.dataset.dmcv);
+    else if (b.dataset.dmcr) dmcSet('range', b.dataset.dmcr);
+    else if (b.dataset.dmcm) {
+        // A By mode row charts that mode alone, and a second click shows them all again; it also leaves the Balance
+        // view, which is the whole account's.
+        const m = b.tagName === 'TR' && dmcState().mode === b.dataset.dmcm ? 'all' : b.dataset.dmcm;
+        if (b.tagName === 'TR' && dmc_.view === 'balance') dmc_.view = 'pnl';
+        dmcSet('mode', m);
+        if (b.tagName === 'TR') $('dm-curve').closest('section').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } else { dmc_.mode = 'all'; dmcSet('range', 'all'); }
+});
+
+// The period and mode pills: made once, then their counts (closed trades) and states updated in place.
+function dmcBar() {
+    const st = dmcState(), trades = (demoData.curve || []).filter((p) => p.kind === 'trade');
+    $('dmc-view').querySelectorAll('[data-dmcv]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.dmcv === st.view)));
+    const pills = (id, attr, opts, count, cur) => {
+        const el = $(id);
+        if (!el.childElementCount) el.innerHTML = opts.map(([v, l]) => `<button type="button" class="fchip" ${attr}="${v}">${l}<span class="fn"></span></button>`).join('');
+        opts.forEach(([v]) => {
+            const b = el.querySelector(`[${attr}="${v}"]`), n = count(v);
+            b.setAttribute('aria-pressed', String(cur === v));
+            b.disabled = !n && cur !== v;
+            const fn = b.querySelector('.fn');
+            if (fn.textContent !== String(n)) fn.textContent = n;
+        });
+        return el;
+    };
+    const modeOk = (p) => st.view === 'balance' || dmcModeOk(st.mode, p);
+    pills('dmc-range', 'data-dmcr', DMC_RANGES, (r) => trades.filter((p) => dmcIn(r, p.ts) && modeOk(p)).length, st.range);
+    pills('dmc-mode', 'data-dmcm', [['all', 'All modes'], ...Object.entries(MODE_NAME)],
+          (m) => trades.filter((p) => dmcIn(st.range, p.ts) && dmcModeOk(m, p)).length, st.mode).hidden = st.view === 'balance';
+}
+
+// What is charted: the closed trades in the period (and mode), and the open positions' P&L now.
+function dmcData() {
+    const d = demoData, st = dmcState(), mode = st.view === 'balance' ? 'all' : st.mode;
+    const trades = (d.curve || []).filter((p) => p.kind === 'trade' && dmcIn(st.range, p.ts) && dmcModeOk(mode, p));
+    const open = (d.open || []).filter((p) => dmcModeOk(mode, p));
+    return { st, trades, open, unreal: open.reduce((t, p) => t + (p.unreal || 0), 0) };
+}
+
+// Each day's closed trades, oldest first.
+function dmcDays(trades) {
+    const by = {};
+    trades.forEach((p) => {
+        const k = tfDay(p.ts), x = by[k] || (by[k] = { kind: 'day', day: k, ts: k + 'T15:30:00+05:30', amount: 0, n: 0, won: 0, charges: 0 });
+        x.amount += p.amount; x.n += 1; x.won += p.amount > 0 ? 1 : 0; x.charges += p.charges || 0;
+    });
+    return Object.values(by).sort((a, b) => a.day.localeCompare(b.day));
+}
+
+// The numbers over what is shown: net, trades and win rate, the average, the best and worst, the deepest fall.
+function dmcSummary(x) {
+    const t = x.trades, n = t.length, st = x.st;
+    const sum = (a) => a.reduce((s, p) => s + p.amount, 0);
+    const wins = t.filter((p) => p.amount > 0), losses = t.filter((p) => p.amount <= 0);
+    const net = sum(t), charges = t.reduce((s, p) => s + (p.charges || 0), 0);
+    const gw = sum(wins), gl = -sum(losses);
+    let cum = 0, peak = 0, dd = 0, ddPeak = 0;
+    t.forEach((p) => { cum += p.amount; if (cum > peak) peak = cum; if (cum - peak < dd) { dd = cum - peak; ddPeak = peak; } });
+    const tone = (v) => v > 0 ? 'good' : v < 0 ? 'bad' : '';
+    const cell = (k, v, sub, tn) => `<div><div class="k">${k}</div><div class="v num"${tn ? ` data-tone="${tn}"` : ''}>${v}</div><div class="s" title="${esc(sub || '')}">${sub || '&nbsp;'}</div></div>`;
+    if (!n && !x.open.length) { $('dmc-sum').hidden = true; return; }
+    $('dmc-sum').hidden = false;
+    const days = dmcDays(t), byDay = st.view === 'day';
+    const best = byDay ? days.reduce((a, b) => (!a || b.amount > a.amount ? b : a), null) : t.reduce((a, b) => (!a || b.amount > a.amount ? b : a), null);
+    const worst = byDay ? days.reduce((a, b) => (!a || b.amount < a.amount ? b : a), null) : t.reduce((a, b) => (!a || b.amount < a.amount ? b : a), null);
+    const what = (q) => q ? (byDay ? dmDay(q.day) : esc(q.label)) : '';
+    $('dmc-sum').innerHTML = cell('Net P&L', n ? rsSigned(net, 2) : '—', n ? `after ${rs(charges, 2)} charges` : 'no closed trades', tone(net))
+        + cell('Trades', n, n ? `${wins.length} won · ${losses.length} lost` : '')
+        + cell('Win rate', n ? Math.round(100 * wins.length / n) + '%' : '—', gl > 0 ? `profit factor ${(gw / gl).toFixed(2)}` : gw > 0 ? 'no losses' : '')
+        + (byDay ? cell('Days', days.length, `${days.filter((q) => q.amount > 0).length} up · ${days.filter((q) => q.amount <= 0).length} down`)
+                 : cell('Average', n ? rsSigned(Math.round(net / n)) : '—', n ? `win ${wins.length ? rsSigned(Math.round(gw / wins.length)) : '—'} · loss ${losses.length ? rsSigned(-Math.round(gl / losses.length)) : '—'}` : ''))
+        + cell(byDay ? 'Best day' : 'Best trade', best ? rsSigned(best.amount) : '—', what(best), best && tone(best.amount))
+        + cell(byDay ? 'Worst day' : 'Worst trade', worst ? rsSigned(worst.amount) : '—', what(worst), worst && tone(worst.amount))
+        + cell('Deepest fall', dd < 0 ? rsSigned(dd) : 'none', dd < 0 ? `from ${rsSigned(ddPeak)} at its best` : n ? 'never below its best' : '', dd < 0 ? 'bad' : '')
+        + (x.open.length ? cell('Open now', rsSigned(x.unreal), `${x.open.length} position${x.open.length === 1 ? '' : 's'}, not in the above`, tone(x.unreal)) : '');
+}
+
+// The Performance chart. P&L: the running total of the closed trades' net, from zero at the start of the period, green
+// above zero and red below, with a dashed last step to "now" (the open positions' P&L). Daily: a bar a day. Balance: the
+// account after each closed trade and each deposit or withdrawal, against the money put in (dashed). A dot per trade
+// (won / lost), amber for money in or out. Hover for the point's story; click a trade to open its stock.
+function dmcDraw() {
+    const box = $('dm-curve'), d = demoData;
+    if (!d || !d.since) { dmCurve = null; box.innerHTML = ''; $('dmc-sum').hidden = true; $('dmc-meta').textContent = ''; return; }
+    dmcBar();
+    const x = dmcData(), st = x.st, view = st.view, T = lwcTheme(document.body);
+    dmcSummary(x);
+    const rng = DMC_RANGES.find((r) => r[0] === st.range)[1].toLowerCase(), mname = st.mode === 'all' || view === 'balance' ? '' : MODE_NAME[st.mode] + ' ';
+    const span = x.trades.length ? `${dmDay(tfDay(x.trades[0].ts))}${tfDay(x.trades[0].ts) === tfDay(x.trades[x.trades.length - 1].ts) ? '' : ' to ' + dmDay(tfDay(x.trades[x.trades.length - 1].ts))}` : '';
+    $('dmc-meta').textContent = view === 'balance' ? 'The whole account: closed trades after charges, and money added or withdrawn'
+        : `${x.trades.length} closed ${mname}trade${x.trades.length === 1 ? '' : 's'}${span ? ' · ' + span : ''} · after charges`;
+
+    let pts = [], base = [];
+    if (view === 'pnl') {
+        let cum = 0;
+        pts = x.trades.map((p) => ({ ...p, cum: (cum += p.amount) }));
+        if (pts.length) pts.unshift({ kind: 'start', ts: pts[0].ts, cum: 0 });
+        if (pts.length && x.open.length) pts.push({ kind: 'now', ts: new Date().toISOString(), amount: x.unreal, cum: cum + x.unreal, closed: cum, open: x.open.length });
+        pts.forEach((p) => { p.v = p.cum; });
+        base = pts.map(() => 0);
+    } else if (view === 'balance') {
+        const all = d.curve || [];
+        let inv = 0;
+        const money = all.map((p) => (inv += p.kind === 'trade' ? 0 : p.amount));
+        const first = all.findIndex((p) => dmcIn(st.range, p.ts));
+        if (first >= 0) {
+            if (first > 0) { pts.push({ kind: 'start', ts: all[first - 1].ts, balance: all[first - 1].balance }); base.push(money[first - 1]); }
+            all.forEach((p, i) => { if (i >= first) { pts.push(p); base.push(money[i]); } });
+        }
+        const a = d.account || {};
+        if (pts.length && a.open) { pts.push({ kind: 'now', ts: new Date().toISOString(), amount: a.unreal || 0, balance: a.equity, closed: a.balance, open: a.open }); base.push(base[base.length - 1]); }
+        pts.forEach((p) => { p.v = p.balance; });
+    } else {
+        pts = dmcDays(x.trades);
+        pts.forEach((p) => { p.v = p.amount; });
+    }
+    const need = view === 'day' ? 1 : 2;
+    if (pts.length < need) {
         dmCurve = null;
-        box.innerHTML = '<div class="empty"><b>The balance curve starts with your first closed trade</b>Each deposit, withdrawal and closed trade moves it.</div>';
+        const all = st.range === 'all' && (st.mode === 'all' || view === 'balance');
+        box.innerHTML = `<div class="dmc-empty"><div><b>No closed ${mname}trades ${st.range === 'all' ? 'yet' : rng === 'today' ? 'today' : 'in the last ' + rng}</b>
+            <div>${all ? 'The chart starts with the first closed trade.' : '<button type="button" class="btn-link" data-dmc-all>Show all time, all modes</button>'}</div></div></div>`;
         return;
     }
-    const n = pts.length, T = lwcTheme(document.body), isNow = pts[n - 1].kind === 'now';
-    let inv = 0;
-    const base = pts.map((p) => (inv += p.kind === 'trade' || p.kind === 'now' ? 0 : p.amount));      // money put in so far
-    const c = lwlChart('demo', 190);
+    const n = pts.length, isNow = pts[n - 1].kind === 'now';
+    const c = lwlChart('demo', matchMedia('(max-width: 640px)').matches ? 220 : 280);
     if (c.host.parentNode !== box) {
         box.innerHTML = '<div class="dmc-tip" hidden></div><div class="sm-legend"></div>';
         lwlInto(c, box);
@@ -6542,6 +6701,8 @@ function demoCurveDraw(box, pts) {
         c.series.base = c.chart.addLineSeries({ lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
         c.series.bal = c.chart.addLineSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4, priceFormat: fmt });
         c.series.now = c.chart.addLineSeries({ lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
+        c.series.bars = c.chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false, priceFormat: fmt });
+        c.series.bal.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: 0.08 } });
         c.fill = new LwlBetween();
         c.series.bal.attachPrimitive(c.fill);
         c.chart.subscribeCrosshairMove((p) => dmTip(box, p));
@@ -6550,43 +6711,60 @@ function demoCurveDraw(box, pts) {
             if (q && q.symbol) openStock(q.symbol);
         });
     }
-    c.redraw = () => demoCurveDraw(box, pts);
-    c.labels = pts.map((p) => (p.kind === 'now' ? 'now' : dmWhen(p.ts)));
-    c.axis = lwlAxis(pts.map((p) => (p.kind === 'now' ? null : p.ts))).map((x, i) => (pts[i].kind === 'now' ? 'now' : x));
-    const real = isNow ? n - 1 : n;
+    c.redraw = () => dmcDraw();
+    c.labels = pts.map((p) => (p.kind === 'now' ? 'now' : p.kind === 'start' ? 'start' : p.kind === 'day' ? dmDay(p.day) : dmWhen(p.ts)));
+    c.axis = view === 'day' ? pts.map((p) => dmDay(p.day).replace(/ \d{4}$/, ''))
+        : lwlAxis(pts.map((p) => (p.kind === 'now' ? null : p.ts))).map((a, i) => (pts[i].kind === 'now' ? 'now' : a));
+    const line = view !== 'day', real = isNow ? n - 1 : n;
+    c.series.base.setData(line ? base.map((v, i) => ({ time: i, value: v })) : []);
     c.series.base.applyOptions({ color: T.ink });
-    c.series.base.setData(base.map((v, i) => ({ time: i, value: v })));
-    c.series.bal.applyOptions({ color: T.accent });
-    c.series.bal.setData(pts.slice(0, real).map((p, i) => ({ time: i, value: p.balance })));
+    c.series.bal.applyOptions({ color: T.accent, lastValueVisible: line });
+    c.series.bal.setData(line ? pts.slice(0, real).map((p, i) => ({ time: i, value: p.v })) : []);
     c.series.now.applyOptions({ color: T.accent });
-    c.series.now.setData(isNow ? [{ time: n - 2, value: pts[n - 2].balance }, { time: n - 1, value: pts[n - 1].balance }] : []);
-    c.series.bal.setMarkers(pts.slice(0, real).map((p, i) => ({ time: i, position: 'inBar', shape: 'circle', size: p.kind !== 'trade' ? 0.9 : 0.6,
-        color: p.kind !== 'trade' ? T.warn : p.amount >= 0 ? T.good : T.bad })));
+    c.series.now.setData(line && isNow ? [{ time: n - 2, value: pts[n - 2].v }, { time: n - 1, value: pts[n - 1].v }] : []);
+    c.series.bal.setMarkers(line ? pts.slice(0, real).map((p, i) => [p, i]).filter(([p]) => p.kind !== 'start')
+        .map(([p, i]) => ({ time: i, position: 'inBar', shape: 'circle', size: p.kind !== 'trade' ? 0.9 : 0.6,
+                            color: p.kind !== 'trade' ? T.warn : p.amount >= 0 ? T.good : T.bad })) : []);
+    c.series.bars.setData(line ? [] : pts.map((p, i) => ({ time: i, value: p.v, color: lwcAlpha(p.v >= 0 ? T.good : T.bad, 0.85) })));
     const seps = [];
-    pts.forEach((p, i) => { if (i && (p.ts || '').slice(0, 10) !== (pts[i - 1].ts || '').slice(0, 10)) seps.push(i); });
-    c.fill.set({ a: pts.map((p) => p.balance), b: base, up: lwcAlpha(T.good, 0.18), down: lwcAlpha(T.bad, 0.18), line: T.line, seps });
-    if (c.n !== n) { c.n = n; c.chart.timeScale().fitContent(); }
-    dmCurve = { pts, base, n };
-    // Peak and the deepest fall from a peak, after charges.
-    let peak = -Infinity, dd = 0, ddPct = 0;
-    pts.forEach((p) => { peak = Math.max(peak, p.balance); const f = p.balance - peak; if (f < dd) { dd = f; ddPct = 100 * f / peak; } });
-    const wins = pts.filter((p) => p.kind === 'trade' && p.amount > 0).length, losses = pts.filter((p) => p.kind === 'trade' && p.amount < 0).length;
-    box.querySelector('.sm-legend').innerHTML = `<span><i style="background:var(--good)"></i>${wins} won</span><span><i style="background:var(--bad)"></i>${losses} lost</span>
-        <span><i style="background:var(--warn)"></i>money in / out</span><span class="muted">dashed: money put in</span>
-        <span class="muted">peak ${rsShort(peak)} · deepest fall ${dd < 0 ? rsShort(dd) + ' (' + ddPct.toFixed(1) + '%)' : 'none'}</span>`;
+    if (line) pts.forEach((p, i) => { if (i && p.kind !== 'now' && tfDay(p.ts) !== tfDay(pts[i - 1].ts)) seps.push(i); });
+    c.fill.set(line ? { a: pts.map((p) => p.v), b: base, up: lwcAlpha(T.good, 0.18), down: lwcAlpha(T.bad, 0.18), line: T.line, seps } : null);
+    const sig = `${view}|${st.range}|${st.mode}|${n}`;
+    if (c.sig !== sig) { c.sig = sig; c.chart.timeScale().fitContent(); }
+    dmCurve = { pts, base, n, view };
+    const dot = (v, t) => `<span><i style="background:var(--${v})"></i>${t}</span>`;
+    const won = x.trades.filter((p) => p.amount > 0).length, lost = x.trades.length - won;
+    box.querySelector('.sm-legend').innerHTML = view === 'day'
+        ? dot('good', 'a day up') + dot('bad', 'a day down') + '<span class="muted">hover a bar for the day</span>'
+        : dot('good', `${won} won`) + dot('bad', `${lost} lost`) + (view === 'balance' ? dot('warn', 'money in / out') + '<span class="muted">dashed: money put in</span>'
+            : '<span class="muted">dashed: zero</span>') + (isNow ? '<span class="muted">last step: open positions now</span>' : '')
+          + '<span class="muted">scroll to zoom · drag to pan · double-click to fit</span>';
 }
 
 function dmTip(box, p) {
     const tip = box.querySelector('.dmc-tip'), c = dmCurve;
     if (!tip || !c || !p || p.logical == null || !p.point) { if (tip) tip.hidden = true; box.style.cursor = ''; return; }
-    const i = Math.max(0, Math.min(c.n - 1, Math.round(p.logical))), q = c.pts[i], vs = q.balance - c.base[i];
-    const what = q.kind === 'now' ? `<b>Now, with ${q.open} open position${q.open === 1 ? '' : 's'}</b><div class="muted">balance ${rs(q.closed, 2)} + open ${rsSigned(q.amount, 2)}</div>`
-        : q.kind === 'trade' ? `<b>${esc(q.label)}</b><div class="muted">${MODE_NAME[q.mode] || ''}${q.outcome ? ' · ' + esc(q.outcome) : ''}</div>`
-        : `<b>${q.kind === 'withdraw' ? 'Funds withdrawn' : i === 0 ? 'Opening balance' : 'Funds added'}</b>${q.label ? `<div class="muted">${esc(q.label)}</div>` : ''}`;
-    tip.innerHTML = `<div class="muted">${dmWhen(q.ts)}</div>${what}
-        <div class="dmc-row"><span>${q.kind === 'trade' ? 'Net' : q.kind === 'now' ? 'Open P&L' : 'Amount'}</span>${rsSigned(q.amount, 2)}</div>
-        <div class="dmc-row"><span>Balance</span><b>${rs(q.balance, 2)}</b></div>
-        <div class="dmc-row"><span>vs money in</span>${rsSigned(vs, 2)} <span class="muted">(${c.base[i] ? (100 * vs / c.base[i]).toFixed(2) : '0'}%)</span></div>`;
+    const i = Math.max(0, Math.min(c.n - 1, Math.round(p.logical))), q = c.pts[i];
+    const row = (k, v) => `<div class="dmc-row"><span>${k}</span>${v}</div>`;
+    let html;
+    if (c.view === 'day') {
+        html = `<b>${dmDay(q.day)}</b>${row('Net', rsSigned(q.amount, 2))}${row('Trades', `${q.n} <span class="muted">· ${q.won} won</span>`)}${row('Charges', rs(q.charges, 2))}`;
+    } else {
+        const what = q.kind === 'now' ? `<b>Now, with ${q.open} open position${q.open === 1 ? '' : 's'}</b>`
+            : q.kind === 'start' ? `<b>${c.view === 'balance' ? 'Balance before the period' : 'Start of the period'}</b>`
+            : q.kind === 'trade' ? `<b>${esc(q.label)}</b><div class="muted">${MODE_NAME[q.mode] || ''}${q.outcome ? ' · ' + esc(q.outcome) : ''}</div>`
+            : `<b>${q.kind === 'withdraw' ? 'Funds withdrawn' : i === 0 ? 'Opening balance' : 'Funds added'}</b>${q.label ? `<div class="muted">${esc(q.label)}</div>` : ''}`;
+        html = `${q.kind === 'start' ? '' : `<div class="muted">${q.kind === 'now' ? 'at the latest prices' : dmWhen(q.ts)}</div>`}${what}`;
+        if (q.kind === 'trade') html += row('Net', rsSigned(q.amount, 2)) + (q.charges ? row('Charges', rs(q.charges, 2)) : '');
+        else if (q.kind === 'now') html += row('Open P&L', rsSigned(q.amount, 2));
+        else if (q.kind !== 'start') html += row('Amount', rsSigned(q.amount, 2));
+        if (c.view === 'pnl') html += row(q.kind === 'now' ? 'P&L with open' : 'P&L so far', `<b>${rsSigned(q.cum, 2)}</b>`);
+        else {
+            const vs = q.balance - c.base[i];
+            html += row('Balance', `<b>${rs(q.balance, 2)}</b>`) + row('vs money in', `${rsSigned(vs, 2)} <span class="muted">(${c.base[i] ? (100 * vs / c.base[i]).toFixed(2) : '0'}%)</span>`);
+        }
+    }
+    tip.innerHTML = html;
     tip.hidden = false;
     // Beside the point, flipped to the other side near the right edge.
     const bw = box.clientWidth, bh = box.clientHeight, hostTop = LWL.demo.host.offsetTop, px0 = p.point.x + LWL.demo.host.offsetLeft;
@@ -6609,7 +6787,8 @@ function renderDemoTotals() {
           + box('Return', a.return_pct == null ? '—' : (a.return_pct > 0 ? '+' : '') + a.return_pct + '%', `on ${rs(a.deposits - a.withdrawals)} put in`, tone(a.return_pct || 0));
     $('dm-modes').innerHTML = ['swing', 'intraday', 'options'].map((m) => {
         const x = d.by_mode[m] || {}, on = d.settings[m];
-        return `<tr><td><b>${MODE_NAME[m]}</b>${on ? '' : ' <span class="muted">· off</span>'}</td>
+        return `<tr class="clickable dmc-pick" data-dmcm="${m}" aria-selected="${dmcState().mode === m}" title="Chart ${MODE_NAME[m]} alone (click again for all)">
+            <td><b>${MODE_NAME[m]}</b>${on ? '' : ' <span class="muted">· off</span>'}</td>
             <td class="r num">${x.closed || 0}<span class="muted"> · ${x.closed ? Math.round(100 * x.wins / x.closed) + '%' : '—'}</span></td>
             <td class="r num">${rsSigned(x.net || 0)}</td><td class="r num">${rs(x.charges || 0)}</td>
             <td class="r num">${x.open || 0}${x.open ? ` <span class="muted">·</span> ${rsSigned(x.unreal || 0)}` : ''}</td>
@@ -6625,7 +6804,7 @@ function renderDemo() {
         + ` · ${d.settings.max_open ? 'at most ' + d.settings.max_open + ' open' : 'no limit open'} · ${d.settings.max_per_day ? d.settings.max_per_day + ' a day' : 'no daily limit'}`
         : 'Add demo money to start: every trade the app takes from then on is mirrored here';
     renderDemoTotals();
-    if (started) demoCurveDraw($('dm-curve'), demoCurvePts()); else $('dm-curve').innerHTML = '';
+    dmcDraw();
     const qty = (p) => p.lots ? `${p.lots} lot${p.lots > 1 ? 's' : ''} × ${p.lot_size}` : p.qty.toLocaleString('en-IN');
     const prod = (p) => `<span class="ctype">${esc((d.products || {})[p.product] || p.product || '')}</span>`;
     const side = (p) => p.mode === 'options' ? `<span class="muted">buy</span> ${p.direction === 'short' ? 'bearish' : 'bullish'}`

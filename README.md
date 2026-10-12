@@ -506,7 +506,7 @@ Opens from any table row, funnel list, tuner result or search result. From top t
     stock, timeframe or range.
   - On a phone: pinch to zoom, sideways swipes move the chart, up-and-down swipes scroll the panel; in the expanded chart
     every gesture moves the chart.
-  - The Performance curve, the Demo balance curve and an option chain's day lines zoom with the wheel too; drag to move,
+  - The Performance curve, the Demo Performance chart and an option chain's day lines zoom with the wheel too; drag to move,
     double-click to see all of it again.
 - **Price scale:** prices on the right with faint gridlines, and the current price in a tag (green if the last candle closed
   up, red if down) with a dotted line across the chart. Level labels (Target, Stop and the rest) sit at the right edge of the
@@ -1127,9 +1127,17 @@ quantity (one order's brokerage is charged per position), Dhan's ₹20 auto squa
 rate changes, update `RATES` and `SCHEDULE_AS_OF`. Charges can be turned off in Settings.
 
 **On the tab:** equity (balance plus open positions at their latest price), free funds, realised P&L after charges, return on
-the money put in; the **Balance** chart beside **By mode** (the balance after every closed trade against the money put in,
-green above it and red below, a dot per trade coloured won or lost, the peak and the deepest fall; hover a point for the trade,
-its net, the balance and how far it is from the money put in; click a trade's point to open its stock); open positions marked to their latest price, every closed
+the money put in; the **Performance** chart, with a choice of what to chart, over which period (today, 7 days, 30 days, all
+time) and for which mode, each pill counting its closed trades (the choices are kept in this browser):
+  - **P&L** (the default): the running total of the closed trades' net, from zero at the start of the period, green above
+    zero and red below, a dot per trade coloured won or lost, and a dashed last step to the open positions' P&L now. Money
+    added or withdrawn is left out, so a withdrawal never shows as a loss.
+  - **Daily**: each day's net as a bar.
+  - **Balance**: the whole account after every closed trade, deposit and withdrawal, against the money put in (dashed).
+  Above the chart, the numbers for what it shows: net P&L and charges, trades won and lost, win rate and profit factor, the
+  average trade (or the number of days up and down), the best and worst trade (or day), the deepest fall from a high point
+  of the running P&L, and the open positions' P&L. Hover a point for its trade (or day); click a trade's point to open its
+  stock. In **By mode**, click a mode to chart it alone (again to show all); open positions marked to their latest price, every closed
 trade with its gross, charges and net (hover the charges for the lines), the skipped trades, **Charges paid** (each charge
 summed over the closed trades, with its share of the total and how it is levied) and the **Statement**: a summary bar (opening
 balance, funds added and withdrawn, trading P&L, charges, closing balance, and the period it covers), then money in and out,
