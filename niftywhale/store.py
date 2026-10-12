@@ -1582,6 +1582,25 @@ def exec_orders(statuses: Optional[List[str]] = None, limit: int = 500) -> List[
     return rows
 
 
+EXEC_ACTIVE = ('shadow', 'offered', 'placing', 'placed', 'open')
+
+
+def exec_orders_active(day: str) -> List[Dict[str, Any]]:
+    """Every live-trading row that still matters, however old: not finished (a shadow plan, an offer, an order
+    sent or open), or entered, closed or changed on `day` (YYYY-MM-DD) or later. What the limits, the tied
+    money and the reconciler must see: the newest-N rows lose a swing holding once enough newer rows pile up."""
+    q = (f"SELECT * FROM exec_orders WHERE status IN ({','.join('?' * len(EXEC_ACTIVE))})"
+         " OR entry_time >= ? OR exit_time >= ? OR updated >= ? ORDER BY id DESC")
+    with connect() as c:
+        rows = _rows(c.execute(q, list(EXEC_ACTIVE) + [day, day, day]))
+    for r in rows:
+        try:
+            r['body'] = json.loads(r['body']) if r.get('body') else None
+        except ValueError:
+            r['body'] = None
+    return rows
+
+
 def exec_refs() -> set:
     with connect() as c:
         return {r[0] for r in c.execute('SELECT ref FROM exec_orders')}

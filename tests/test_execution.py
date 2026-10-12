@@ -307,5 +307,106 @@ class Flow(unittest.TestCase):
         self.assertIn('own endpoints', r['error'])
 
 
+class LiveBook(unittest.TestCase):
+    """What the limits see. Every unfinished row however old (a swing holding outlives the newest 500 rows), and
+    the follow-up goes on with every mode off; Shadow meets the guards Automatic would, on its own book; money tied
+    up is margin, not the full value, and not counted twice against Dhan's balance; the daily loss limit measures
+    what today lost (open rows marked, what they carried in left out) against the capital the day started with."""
+    tearDown, row = Flow.tearDown, Flow.row                              # Flow's world, without running its tests again
+
+    def setUp(self):
+        Flow.setUp(self)
+        app._exec_cache['funds'] = (0.0, None)                           # Dhan's balance is read afresh in each test
+        store.set_kv('exec_day', '')
+
+    def add(self, ref, status, level='auto', **kw):
+        row = {'ref': ref, 'mode': 'swing', 'symbol': ref.split(':')[-1].upper(), 'side': 'long', 'level': level,
+               'status': status, 'product': 'CNC', 'qty': 10, 'price': 100.0, 'entry_time': '2026-10-08T10:00:00+05:30', **kw}
+        return store.add_exec_order(row)
+
+    def age(self, *ids):
+        with store.connect() as c:
+            c.execute(f"UPDATE exec_orders SET updated = '2026-09-01T10:00:00' WHERE id IN ({','.join('?' * len(ids))})", ids)
+
+    def test_an_old_holding_is_never_out_of_sight(self):
+        held = self.add('swing:old', 'open', entry_time='2026-09-01T10:00:00+05:30')
+        filler = [self.add(f'swing:f{k}', 'skipped', entry_time='2026-10-07T10:00:00+05:30') for k in range(600)]
+        self.age(held, *filler)
+        self.assertNotIn(held, [r['id'] for r in store.exec_orders()])          # the newest 500 had lost it
+        rows = app.exec_rows()
+        self.assertIn(held, [r['id'] for r in rows])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(app.exec_book(rows)['open'], 1)
+
+    def test_every_mode_off_still_follows_what_is_open(self):
+        self.add('swing:old', 'open')
+        store.set_settings({'exec': {'swing': 'off', 'capital': 1_000_000}})
+        with mock.patch.object(app, 'exec_reconcile', return_value={}) as rec:
+            app.exec_sync()
+        rec.assert_called_once()
+        self.assertEqual([r['ref'] for r in store.exec_orders()], ['swing:old'])   # nothing new taken
+
+    def test_shadow_meets_the_limits(self):
+        store.set_settings({'exec': {'swing': 'shadow', 'capital': 1_000_000, 'max_open': 1}})
+        self.add('swing:other', 'shadow', level='shadow')
+        app.exec_sync()
+        r = next(r for r in store.exec_orders() if r['ref'] != 'swing:other')
+        self.assertEqual(r['status'], 'blocked')
+        self.assertTrue(r['note'].startswith('Automatic would not have sent it'))
+        self.assertIn('positions open', r['note'])
+
+    def test_shadow_meets_the_price_checks(self):
+        self.last = 128.0                                                      # ran 1.2 % past the entry
+        app.exec_sync()
+        self.assertEqual(self.row()['status'], 'blocked')
+        self.assertIn('has run', self.row()['note'])
+
+    def test_money_tied_up(self):
+        st = execution.settings_from({})
+        margin = lambda **kw: app.exec_margin({'mode': 'swing', 'qty': 10, 'price': 100.0, **kw}, st)   # noqa: E731
+        self.assertEqual((margin(product='CNC'), margin(product='INTRADAY'), margin(product='MARGIN'),
+                          margin(product='MARGIN', mode='options')), (1000.0, 200.0, 200.0, 1000.0))
+        for k, status in enumerate(('offered', 'placing', 'placed', 'open')):
+            self.add(f'swing:t{k}', status)
+        self.add('swing:s', 'shadow', level='shadow')
+        rows = store.exec_orders()
+        # Dhan's available balance already leaves out what its orders hold: only the offers and sends in flight.
+        self.assertEqual(app.exec_tied(rows, execution.settings_from({'capital': 0}), shadow=False), 2000.0)
+        self.assertEqual(app.exec_tied(rows, execution.settings_from({'capital': 500_000}), shadow=False), 4000.0)
+        self.assertEqual(app.exec_tied(rows, st, shadow=True), 1000.0)
+
+    def test_the_day_starts_once(self):
+        store.set_kv('exec_day', '')
+        st = execution.settings_from({'capital': 0})
+        carried = self.add('swing:held', 'open', entry_time='2026-10-07T10:00:00+05:30', unreal=-500.0)
+        shut = self.add('swing:shut', 'open', entry_time='2026-10-07T10:00:00+05:30', unreal=-400.0)
+        day = app.exec_day(st, store.exec_orders())
+        self.assertEqual(day['capital'], 500_000 + 2 * 1000.0)                 # Dhan's balance plus what its orders hold
+        self.assertEqual(day['base'], {str(carried): -500.0, str(shut): -400.0})
+        app._exec_cache['funds'] = (0.0, None)
+        with mock.patch.object(app.broker, 'funds', return_value=100_000.0):   # money out at Dhan mid-day
+            self.assertEqual(app.exec_day(st)['capital'], 502_000.0)
+        # Today: the held one fell 200 more, the other closed 900 down in all (500 of it today).
+        store.update_exec_order(carried, unreal=-700.0)
+        store.update_exec_order(shut, status='closed', net=-900.0, exit_time='2026-10-08T10:30:00+05:30')
+        self.assertEqual(app.exec_book(store.exec_orders(), day=day)['day_pnl'], -700.0)
+
+    def test_a_day_without_dhan_asks_again(self):
+        st = execution.settings_from({'capital': 0})
+        store.set_kv('exec_day', '{"day": "2026-10-08", "capital": 0, "base": {"9": -50}}')
+        with mock.patch.object(app.broker, 'funds', return_value=300_000.0):
+            app._exec_cache['funds'] = (0.0, None)
+            day = app.exec_day(st, [])
+        self.assertEqual((day['capital'], day['base']), (300_000.0, {'9': -50}))
+
+    def test_open_rows_are_marked(self):
+        sid = self.add('swing:m', 'shadow', level='shadow', qty=654)
+        rid = self.add('swing:r', 'open', qty=10, fill=126.0)
+        rows = store.exec_orders()
+        trade = {'entry': 126.5, 'stop': 122.68, 'last': 130.0}
+        app.exec_mark(rows, {'swing:m': trade, 'swing:r': trade})
+        got = {r['id']: r['unreal'] for r in store.exec_orders()}
+        self.assertEqual((got[sid], got[rid]), (round(3.5 * 654, 2), 40.0))    # a real row from its fill
+
 if __name__ == '__main__':
     unittest.main()

@@ -1929,7 +1929,7 @@ def demo_statement(positions: list = None, ledger: list = None) -> dict:
 # Place) or auto. exec_sync runs beside demo_sync every minute; reconcile follows what was sent at Dhan.
 EXEC_LOCK = threading.Lock()
 EXEC_OPEN = ('placing', 'placed', 'open')            # sent (or being sent) and not finished
-EXEC_HOLD = ('shadow', 'placing', 'placed', 'open')  # count against the limits
+EXEC_PRODUCT = {'CNC': 'CNC', 'INTRADAY': 'MIS'}      # Dhan's product -> demo's ('MARGIN': OPT or FUT by mode)
 EXEC_STALE_S = 300                                     # an alert older than this is never sent
 _exec_cache: dict = {'funds': (0.0, None), 'ip': (0.0, None)}
 
@@ -1982,14 +1982,102 @@ def cost_settings_slip() -> float:
         return costs.DEFAULT_SLIPPAGE_BPS
 
 
-def exec_book(rows: list) -> dict:
-    """Open positions, entries today and today's P&L (closed net + open marks) of the live rows."""
+def exec_rows() -> list:
+    """The live rows the limits, the money tied up and the reconciler must see: every unfinished row however old,
+    and everything entered, closed or changed today (store.exec_orders_active)."""
+    return store.exec_orders_active(data.now_ist().date().isoformat())
+
+
+def exec_margin(r: dict, st: dict) -> float:
+    """What a row ties up: the price times the quantity for delivery and an option's premium, a share of it for
+    intraday (the leverage) and a future (the margin %)."""
+    value = float(r.get('price') or (r.get('body') or {}).get('price') or 0) * (r.get('qty') or 0)
+    if r.get('product') == 'INTRADAY':
+        return value / st['intraday_leverage']
+    if r.get('product') == 'MARGIN' and r.get('mode') != 'options':
+        return value * st['futures_margin_pct'] / 100
+    return value
+
+
+def exec_tied(rows: list, st: dict, shadow: bool) -> float:
+    """Money already spoken for, to keep out of the next trade's size. Shadow: its own open plans (nothing is at
+    Dhan). Real: the offers and orders not yet sent, and with a set capital the orders at Dhan too; with Dhan's
+    available balance as the capital, the orders it already holds are out of that balance already (Dhan blocks
+    margin when an order is placed), so counting them again would take the same money twice."""
+    if shadow:
+        held = [r for r in rows if r['level'] == 'shadow' and r['status'] == 'shadow']
+    else:
+        statuses = ('offered', 'placing') + (('placed', 'open') if st['capital'] else ())
+        held = [r for r in rows if r['level'] in execution.REAL and r['status'] in statuses]
+    return round(sum(exec_margin(r, st) for r in held), 2)
+
+
+def exec_mark(rows: list, by_ref: dict) -> None:
+    """Open rows (a real position, a shadow plan) marked to the latest price, as the demo account marks its own:
+    the feed, else the paper trade's last price, else its open R. A future is marked on the share's move (its
+    basis is not profit); a real row from its fill otherwise."""
+    for r in rows:
+        if r['status'] not in ('open', 'shadow'):
+            continue
+        t = by_ref.get(r['ref'])
+        if not t or t.get('entry') is None:
+            continue
+        hit = live_px(_live_keys.get(r['ref'], '') if r['mode'] == 'options' else r['symbol'])
+        last = hit[0] if hit else t.get('last')
+        sign = -1 if r['side'] == 'short' else 1
+        if last is None and t.get('r_open') is not None and t.get('stop') is not None:
+            last = float(t['entry']) + float(t['r_open']) * abs(float(t['entry']) - float(t['stop'])) * sign
+        if last is None:
+            continue
+        base = float(t['entry']) if r['status'] == 'shadow' or r.get('product') == 'MARGIN' and r['mode'] != 'options' \
+            else float(r.get('fill') or r.get('price') or t['entry'])
+        unreal = round((float(last) - base) * (r.get('qty') or 0) * sign, 2)
+        if unreal != r.get('unreal'):
+            store.update_exec_order(r['id'], only_if=r['status'], last=float(last), unreal=unreal)
+            r['last'], r['unreal'] = float(last), unreal
+
+
+def exec_day(st: dict, rows: list = None) -> dict:
+    """Today's starting point for the daily loss limit, taken at the first look of the day and kept: the capital
+    (the set capital, else Dhan's available balance plus what its open orders held then) and each open row's
+    P&L carried in from earlier days. The limit then measures only what today lost, against a sum that money
+    moved in or out at Dhan, or margin blocked and released, does not shift."""
     today = data.now_ist().date().isoformat()
-    real = [r for r in rows if r['level'] in execution.REAL]
-    return {'open': sum(1 for r in real if r['status'] in EXEC_OPEN),
-            'today': sum(1 for r in real if r['status'] in EXEC_OPEN + ('closed',) and (r.get('entry_time') or '')[:10] == today),
-            'day_pnl': round(sum(r['net'] or 0 for r in real if r['status'] == 'closed' and (r.get('exit_time') or '')[:10] == today)
-                             + sum(r['unreal'] or 0 for r in real if r['status'] == 'open'), 2)}
+    try:
+        day = json.loads(store.get_kv('exec_day') or '{}')
+    except ValueError:
+        day = {}
+    fresh = day.get('day') != today
+    if fresh or not (day.get('capital') or st['capital']):
+        # A new day; or Dhan had no balance to give at the first look (it was down): ask again rather than keep
+        # a zero, which would leave the day without a loss limit.
+        rows = exec_rows() if rows is None else rows
+        cap = float(st['capital']) if st['capital'] else exec_capital(st) + sum(
+            exec_margin(r, st) for r in rows if r['level'] in execution.REAL and r['status'] in ('placed', 'open'))
+        day = {'day': today, 'capital': round(cap, 2),
+               'base': {str(r['id']): r.get('unreal') or 0 for r in rows if r['status'] in ('open', 'shadow')}
+               if fresh else day.get('base') or {}}
+        store.set_kv('exec_day', json.dumps(day))
+    if st['capital']:
+        day = {**day, 'capital': float(st['capital'])}       # a capital you set applies at once
+    return day
+
+
+def exec_book(rows: list, shadow: bool = False, day: dict = None) -> dict:
+    """Open positions, entries today and today's P&L of the real rows (or, `shadow`, the shadow plans, which keep
+    their own book so Shadow meets the same limits Automatic would). Today's P&L is what today made or lost: the
+    closed rows' net less what they had carried into the day, and the open rows' P&L less the same."""
+    today = data.now_ist().date().isoformat()
+    base = (day or {}).get('base') or {}
+    carried = lambda r: float(base.get(str(r['id'])) or 0)       # noqa: E731
+    if shadow:
+        mine, open_st, done = [r for r in rows if r['level'] == 'shadow'], ('shadow',), 'shadow_closed'
+    else:
+        mine, open_st, done = [r for r in rows if r['level'] in execution.REAL], EXEC_OPEN, 'closed'
+    return {'open': sum(1 for r in mine if r['status'] in open_st),
+            'today': sum(1 for r in mine if r['status'] in open_st + (done,) and (r.get('entry_time') or '')[:10] == today),
+            'day_pnl': round(sum((r['net'] or 0) - carried(r) for r in mine if r['status'] == done and (r.get('exit_time') or '')[:10] == today)
+                             + sum((r['unreal'] or 0) - carried(r) for r in mine if r['status'] in open_st), 2)}
 
 
 def _exec_instrument(t: dict, product: str) -> dict:
@@ -2031,22 +2119,28 @@ def exec_sync() -> dict:
     and reconcile what was sent. Idempotent: a trade is taken once (exec_orders.ref)."""
     since = _when(store.settings().get('exec_since'))
     st = exec_settings()
-    if not since or not any(st[m] != 'off' for m in execution.MODES):
+    on = [m for m in execution.MODES if st[m] != 'off']
+    # Every mode off stops new trades, not the follow-up: a row still open (a real position, a shadow plan, an
+    # offer) is marked, settled, lapsed and reconciled until it ends.
+    if not since or not (on or store.exec_orders(list(store.EXEC_ACTIVE), limit=1)):
         return {'skipped': 'live trading is off'}
     if not EXEC_LOCK.acquire(blocking=False):
         return {'skipped': 'already syncing'}
     try:
         got = {'new': 0, 'settled': 0, 'expired': 0}
         have = store.exec_refs()
-        trades = [t for m in execution.MODES if st[m] != 'off' for t in store.live_trades(m) if t.get('ref') and t.get('entry')]
+        rows = exec_rows()
+        modes = set(on) | {r['mode'] for r in rows if r['status'] in store.EXEC_ACTIVE}
+        trades = [t for m in execution.MODES if m in modes for t in store.live_trades(m) if t.get('ref') and t.get('entry')]
         by_ref = {t['ref']: t for t in trades}
-        rows = store.exec_orders()
+        day = exec_day(st, rows)                          # the day's starting point, before today's marks move
+        exec_mark(rows, by_ref)
         halt = exec_halted()
-        for t in sorted((t for t in trades if t['ref'] not in have and (_when(t['entry_time']) or since) >= since),
+        for t in sorted((t for t in trades if t['mode'] in on and t['ref'] not in have and (_when(t['entry_time']) or since) >= since),
                         key=lambda t: _when(t['entry_time'])):
-            exec_take(t, st, rows, halt)
+            exec_take(t, st, rows, halt, day)
             got['new'] += 1
-            rows = store.exec_orders()
+            rows = exec_rows()
         now = data.now_ist()
         for r in rows:
             t = by_ref.get(r['ref'])
@@ -2063,7 +2157,7 @@ def exec_sync() -> dict:
         EXEC_LOCK.release()
 
 
-def exec_take(t: dict, st: dict, rows: list, halt: str) -> None:
+def exec_take(t: dict, st: dict, rows: list, halt: str, day: dict = None) -> None:
     """One new trade: sized and planned; recorded at its level (shadow), offered (confirm) or sent (auto),
     unless a guard stops it (then recorded as blocked, with the reason)."""
     level = st[t['mode']]
@@ -2071,7 +2165,8 @@ def exec_take(t: dict, st: dict, rows: list, halt: str) -> None:
     lot = (t.get('lot') or dhan.lot_size(t['symbol'])) if t['mode'] == 'options' else \
         dhan.lot_size(t['symbol']) if t['mode'] == 'swing' and t.get('side') == 'short' else None
     capital = exec_capital(st)
-    tied = sum(float((r.get('body') or {}).get('price') or 0) * (r.get('qty') or 0) for r in rows if r['status'] in EXEC_HOLD)
+    day = day or exec_day(st, rows)
+    tied = exec_tied(rows, st, shadow=level == 'shadow')
     base = {'ref': t['ref'], 'mode': t['mode'], 'symbol': t['symbol'], 'side': product_side, 'level': level,
             'entry_time': t['entry_time'], 'stop': t.get('stop'), 'target': t.get('target'), 'instrument': _instrument(t)}
     free = max(0.0, capital - tied)
@@ -2091,14 +2186,19 @@ def exec_take(t: dict, st: dict, rows: list, halt: str) -> None:
         return
     row = {**base, **{k: p[k] for k in ('segment', 'product', 'security_id', 'qty', 'price', 'stop', 'target', 'correlation_id')},
            'instrument': _instrument(t, sz['product']), 'risk': sz['risk'], 'body': p['body'], 'last': inst.get('last')}
-    if level == 'shadow':
-        store.add_exec_order({**row, 'status': 'shadow', 'note': 'planned only: nothing sent'})
-        return
-    why = ([f'live trading is halted: {halt}'] if halt else []) + ([broker.sending()] if broker.sending() else [])
+    # The checks Automatic makes before sending. Shadow meets them too, on its own book, so its record holds only
+    # the trades Automatic would have sent; it skips only the two about sending itself (a halt, sending off).
     age = (data.now_ist() - (_when(t['entry_time']) or data.now_ist())).total_seconds()
-    if age > EXEC_STALE_S:
-        why.append(f'the alert is {age / 60:.0f} minutes old')
-    why += execution.guards({**p, 'risk': sz['risk']}, t, exec_book(rows), st, capital, inst.get('last'), _exec_session_open(t))
+    checks = ([f'the alert is {age / 60:.0f} minutes old'] if age > EXEC_STALE_S else []) \
+        + execution.guards({**p, 'risk': sz['risk']}, t, exec_book(rows, shadow=level == 'shadow', day=day), st,
+                           day['capital'], inst.get('last'), _exec_session_open(t))
+    if level == 'shadow':
+        if checks:
+            store.add_exec_order({**row, 'status': 'blocked', 'note': 'Automatic would not have sent it: ' + '; '.join(checks)})
+        else:
+            store.add_exec_order({**row, 'status': 'shadow', 'note': 'planned only: nothing sent'})
+        return
+    why = ([f'live trading is halted: {halt}'] if halt else []) + ([broker.sending()] if broker.sending() else []) + checks
     if why:
         store.add_exec_order({**row, 'status': 'blocked', 'note': '; '.join(why)})
         exec_notice(row, 'blocked', '; '.join(why))
@@ -2124,6 +2224,7 @@ def exec_send(oid: int) -> dict:
         store.update_exec_order(oid, only_if='placing', status='placed', order_id=str(known['orderId']), note='found at Dhan')
         return {'placed': known['orderId']}
     ok, ans, err = broker.place_super(row['body'])
+    _exec_cache['funds'] = (0.0, None)              # the order holds margin now: Dhan's balance is read afresh
     if ok and isinstance(ans, dict) and ans.get('orderId'):
         store.update_exec_order(oid, only_if='placing', status='placed', order_id=str(ans['orderId']),
                                 note=f"sent: {ans.get('orderStatus') or 'accepted'}")
@@ -2216,8 +2317,10 @@ def exec_close(r: dict, px, how: str) -> None:
                                net=res['net'], note=how):
         exec_notice({**r, 'net': res['net']}, 'closed', f"{how}: ₹{res['net']:,.0f} after charges")
         st = exec_settings()
-        book = exec_book(store.exec_orders())
-        cap = exec_capital(st)
+        rows = exec_rows()
+        day = exec_day(st, rows)
+        book = exec_book(rows, day=day)
+        cap = day['capital']
         if cap and book['day_pnl'] <= -cap * st['daily_loss_pct'] / 100:
             exec_halt(f"today's loss ₹{-book['day_pnl']:,.0f} reached the daily limit")
 
@@ -2260,7 +2363,7 @@ def exec_view() -> dict:
             'sending': {'on': store.settings().get('exec_send') == '1', 'why_not': broker.sending(),
                         'primary_ip': ip.get('primaryIP') or None, 'secondary_ip': ip.get('secondaryIP') or None},
             'dhan': dhan.available(), 'capital': exec_capital(st) if dhan.available() or st['capital'] else None,
-            'gates': gates, 'book': exec_book(rows),
+            'gates': gates, 'book': exec_book(exec_rows(), day=exec_day(st)),
             'offers': [r for r in rows if r['status'] == 'offered'],
             'rows': rows,
             'totals': {'shadow': {'trades': len(shadow), 'net': round(sum(r['net'] or 0 for r in shadow), 2)},
@@ -4001,9 +4104,10 @@ def api_exec_offer(oid):
         store.update_exec_order(oid, only_if='offered', status='expired', note='the trade is no longer open')
         return jsonify({'error': 'the trade has already closed'}), 409
     inst = _exec_instrument(t, {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if row['mode'] == 'options' else 'FUT'}.get(row['product'], 'CNC'))
-    others = [r for r in store.exec_orders() if r['id'] != oid]
+    others = [r for r in exec_rows() if r['id'] != oid]
+    day = exec_day(st, others)
     why = ([f'live trading is halted: {exec_halted()}'] if exec_halted() else []) + ([broker.sending()] if broker.sending() else [])
-    why += execution.guards(row, t, exec_book(others), st, exec_capital(st), inst.get('last'), _exec_session_open(t))
+    why += execution.guards(row, t, exec_book(others, day=day), st, day['capital'], inst.get('last'), _exec_session_open(t))
     if why:
         return jsonify({'error': '; '.join(why)}), 409
     if not store.update_exec_order(oid, only_if='offered', status='placing'):

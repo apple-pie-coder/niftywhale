@@ -1189,7 +1189,7 @@ mode (swing, intraday, options) has its own level:
 | Level | What happens |
 |---|---|
 | **Off** | Nothing beyond the paper journal and the demo account. |
-| **Shadow** | Every trade becomes the exact order it would send (instrument, quantity, prices, legs), logged and followed to its exit in rupees after charges. Nothing is sent. |
+| **Shadow** | Every trade becomes the exact order it would send (instrument, quantity, prices, legs), logged and followed to its exit in rupees after charges. Nothing is sent. It meets the same limits Automatic would (on its own book of shadow positions): a trade Automatic would have blocked is recorded as blocked, with why, so the shadow record is what Automatic would have done. |
 | **Confirm each** | The order is offered (in the tab, the bell and Telegram) and sent only when you press **Place**, within the offer's minutes and while the price is still near the alert's. |
 | **Automatic** | Sent on the trigger, within the limits. |
 
@@ -1208,7 +1208,10 @@ mode (swing, intraday, options) has its own level:
     in their exchange lots, shares one at a time (an NSE equity lot is one share). A trade whose margin or cost is
     more than the money available is skipped, with the reason; the most a trade may risk still applies.
 
-  The capital is the balance Dhan reports, or a fixed amount.
+  The capital is the balance Dhan reports, or a fixed amount. Money already spoken for is kept out of the next trade:
+  each position's margin (the full price for delivery and an option's premium, a fifth for intraday, the margin % of a
+  future), counting offers and orders in flight; with Dhan's balance as the capital, orders Dhan already holds are left
+  out, as that balance already excludes them.
 - Each order carries a correlation ID made from the trade. Before any retry the app asks Dhan for it, so a lost
   answer never becomes two orders.
 - A swing holding whose super-order legs did not carry over to the next session gets its stop and target back as a
@@ -1222,7 +1225,11 @@ mode (swing, intraday, options) has its own level:
   record positive after costs over at least 30 trades. API tokens can never arm, place or resume.
 - **Limits** (Trading → Settings): positions open at once, entries a day, the most a trade may risk, and a day's loss
   (1 % of the capital by default) that halts everything. Also the most the price may have run past the entry, and how
-  long an offer waits.
+  long an offer waits. The day's loss is what today lost: trades closed today and open positions marked every minute,
+  less whatever they had carried in from earlier days, against the capital the day started with (taken at the day's
+  first look, so money moved at Dhan or margin blocked and released during the day does not shift the limit). The
+  limits see every position still open however old, and with every mode Off the app still follows open positions to
+  their exit.
 - **Kill switch:** halts, lowers every mode to Shadow and cancels entries not yet filled. Optionally it also exits every
   position at Dhan, which cancels the day's open orders too, including ones the app did not place.
 - **Requests to Dhan:** every request and answer is kept (without the token) and shown at the bottom of the tab.
