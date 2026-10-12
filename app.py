@@ -1577,6 +1577,7 @@ def marks_loop() -> None:
                 if ok:
                     charts.FEED.mark(_open_live_keys())
                     live_warnings(_open_trades(), data.now_ist())
+                    options_feed_exits(data.now_ist())
                     charts.SOURCE.prune()
                 feed_watch(ok, data.now_ist())
             elif time.time() - pruned > 86400:
@@ -2334,8 +2335,14 @@ def exec_close(r: dict, px, how: str) -> None:
     exit_px = px if px is not None else (float(t['exit']) if t.get('exit') is not None else r.get('last'))
     if exit_px is None:
         return
-    pos = {'mode': r['mode'], 'side': r['side'], 'product': {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if r['mode'] == 'options' else 'FUT'}
-           .get(r['product'], 'CNC'), 'qty': r['qty'], 'entry': float(r.get('fill') or r['price']), 'entry_time': r['entry_time']}
+    product = {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if r['mode'] == 'options' else 'FUT'}.get(r['product'], 'CNC')
+    entry = float(r.get('fill') or r['price'])
+    if px is None and product == 'FUT' and t.get('entry') is not None:
+        # No exit price from Dhan: the fallback (the paper trade's exit, or the mark) is the share's price, and the fill
+        # the future's. Measure both ends on the share, as Shadow and the demo do: the future's premium over the
+        # share is not profit or loss.
+        entry = float(t['entry'])
+    pos = {'mode': r['mode'], 'side': r['side'], 'product': product, 'qty': r['qty'], 'entry': entry, 'entry_time': r['entry_time']}
     res = demo.settle(pos, float(exit_px), True, data.now_ist().isoformat(timespec='seconds'))
     if store.update_exec_order(r['id'], only_if=['open', 'placed'], status='closed', exit=float(exit_px),
                                exit_time=data.now_ist().isoformat(timespec='seconds'), gross=res['gross'], charges=res['charges'],
@@ -2981,6 +2988,28 @@ def _follow_idea(i: dict, chain: dict, now: datetime, tg: bool, final: bool = Fa
                                                                                                   str(res['note']).capitalize()))
         logger.info(f"Option idea {i['symbol']} {i['strike']:g} {i['side']}: {res['note']} at {res['exit']} ({res['r']:+}R)")
     return bool(claimed)
+
+
+def options_feed_exits(now: datetime) -> int:
+    """Open option ideas' stops and targets on the live feed, every few seconds (marks_loop), between the chain
+    passes (every OPT_CYCLE_MIN minutes), which alone miss a premium that touches either and comes back in
+    between. Only a fresh feed price, and only those two exits: the OI level and the square-off stay with the
+    chain passes, which have the spot and the clock. Closed through _follow_idea, so a close is claimed once
+    however the pass and this race."""
+    if store.settings().get('options') != '1' or not session.fo_open(now):
+        return 0
+    closed, tg = 0, None
+    for i in store.ideas(status='open'):
+        hit = live_px(_live_keys.get(f"options:{i['id']}", ''))
+        if not hit or i.get('target') is None or i.get('stop') is None:
+            continue
+        px = float(hit[0])
+        if not (px >= i['target'] or px <= i['stop']):
+            continue
+        tg = _opt_alerts_on() if tg is None else tg
+        chain = {'strikes': [{'k': i['strike'], i['side'].lower(): {'ltp': px}}], 'spot': None}
+        closed += _follow_idea(i, chain, now, tg)
+    return closed
 
 
 def _level_alert(sym: str, summary: dict, series: list, st: dict) -> None:
@@ -3786,11 +3815,19 @@ def api_board():
         prev = float(before['Close'].iloc[-1]) if len(before) else None
         day_high, day_low = float(today['High'].max()), float(today['Low'].min())
         q = live.get(z['symbol'] + '.NS')
+        # A new session that has no candle yet (09:15 to the first close): the candles' last day is the previous
+        # session, so its close is today's previous close, and without a live price today's move is not known yet
+        # (comparing that close with the one before showed yesterday's move as today's).
+        unknown = False
+        if data.market_open(now) and day < now.date():
+            prev, unknown = last, not q
+        if unknown:
+            day_high = day_low = None
         if q:                                        # real-time price beats the last candle's close
             last = q['last']
             prev = q.get('prev_close') or prev
-            day_high = max(day_high, q.get('high') or day_high, last)
-            day_low = min(day_low, q.get('low') or day_low, last)
+            day_high = max(day_high or last, q.get('high') or last, last)
+            day_low = min(day_low or last, q.get('low') or last, last)
         lo, hi = z['zone_low'], z['zone_high']
         where = 'in' if lo <= last <= hi else 'above' if last > hi else 'below'
         t = z.get('trigger') or {}
@@ -3807,7 +3844,7 @@ def api_board():
             'symbol': z['symbol'], 'name': z['name'], 'status': z['status'], 'source': z.get('source'),
             'side': z.get('side') or 'long',
             'last': last, 'prev_close': prev,
-            'change_pct': (last - prev) / prev * 100 if prev else None,
+            'change_pct': (last - prev) / prev * 100 if prev and not unknown else None,
             'day_high': day_high, 'day_low': day_low, 'live_price': bool(q),
             'as_of': today.index[-1].isoformat(), 'session': str(day),
             'zone_low': lo, 'zone_high': hi, 'target': z['target'], 'where': where,

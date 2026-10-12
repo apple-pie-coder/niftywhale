@@ -6585,7 +6585,7 @@ LIVE.hooks.push({
             const v = P[c.symbol], p = v && v[0];
             if (!(p > 0) || !c.bars || !c.bars.length || c.last === p) return;
             c.last = p;
-            c.day_high = Math.max(c.day_high, p); c.day_low = Math.min(c.day_low, p);
+            c.day_high = c.day_high == null ? p : Math.max(c.day_high, p); c.day_low = c.day_low == null ? p : Math.min(c.day_low, p);
             const start = Date.parse(c.as_of), slot = 15 * 60000;
             if (isFinite(start) && Date.now() >= start + slot) {
                 c.bars.push([p, p, p, p]);                          // a new 15m candle has begun

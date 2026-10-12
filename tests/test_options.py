@@ -423,5 +423,45 @@ class EndToEnd(unittest.TestCase):
                          [('2026-09-25', 0), ('2026-09-25', 0), ('2026-09-25', 1), ('2026-10-07', 1), ('2026-10-07', 1)])
 
 
+class FeedExits(unittest.TestCase):
+    """An idea's stop and target are watched on the live feed every few seconds, not only at the chain passes every
+    3 minutes, which miss a premium touching either and coming back in between."""
+    def setUp(self):
+        _reset_options()
+        store.set_settings({'options': '1'})
+        self.iid = store.add_idea({'symbol': 'NIFTY', 'expiry': '2026-10-13', 'strike': 100, 'side': 'CE', 'direction': 'long',
+                                   'created_at': NOW.isoformat(), 'session': '2026-10-07', 'status': 'open', 'entry': 4.0,
+                                   'stop': 3.0, 'target': 6.0, 'level': 90, 'lot': 65, 'last': 4.4})
+        app._live_keys[f'options:{self.iid}'] = 'OPT:NSE_FNO:1'
+        self.patches = [mock.patch.object(app.session, 'fo_open', return_value=True),
+                        mock.patch.object(app.notify, 'send', return_value=True)]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        app._live_keys.pop(f'options:{self.iid}', None)
+        _reset_options()
+
+    def at(self, px):
+        with mock.patch.object(app, 'live_px', return_value=(px, NOW.timestamp())):
+            return app.options_feed_exits(NOW)
+
+    def test_inside_the_range_nothing_happens(self):
+        self.assertEqual(self.at(4.8), 0)
+        self.assertEqual(store.ideas()[0]['status'], 'open')
+
+    def test_a_stop_on_the_feed(self):
+        self.assertEqual(self.at(2.6), 1)
+        i = store.ideas()[0]
+        self.assertEqual((i['status'], i['exit'], i['note']), ('lost', 2.6, 'stop'))     # the price seen: a stop slips
+        self.assertEqual(self.at(2.0), 0)                                                  # closed once
+
+    def test_a_target_on_the_feed(self):
+        self.assertEqual(self.at(6.4), 1)
+        i = store.ideas()[0]
+        self.assertEqual((i['status'], i['exit'], i['note']), ('won', 6.0, 'target'))     # a resting limit: at the target
+
 if __name__ == '__main__':
     unittest.main()

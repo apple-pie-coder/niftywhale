@@ -351,7 +351,9 @@ def outcome(frame5: pd.DataFrame, t: Dict[str, Any], rules: IntradayRules, now, 
     What happened to a triggered trade, from the 5m candles after the entry:
       won     a candle reached the target
       lost    a candle reached the stop (a candle that touches both counts as
-              lost: 5m candles cannot say which came first, so assume the worse)
+              lost: 5m candles cannot say which came first, so assume the worse),
+              out at the stop, or at the candle's open when it opened beyond it
+              (a jump on news: the stop fills at the next price, as swing's do)
       closed  neither by the square-off time; out at that candle's close
       open    still running
     Returns {'status', 'exit', 'exit_time', 'r'} (r = result in multiples of risk).
@@ -373,7 +375,9 @@ def outcome(frame5: pd.DataFrame, t: Dict[str, Any], rules: IntradayRules, now, 
         stopped = bar['High'] >= stop if short else bar['Low'] <= stop
         reached = bar['Low'] <= target if short else bar['High'] >= target
         if stopped:
-            return {'status': 'lost', 'exit': stop, 'exit_time': ts.isoformat(), 'r': r_of(stop)}
+            o = float(bar['Open'])
+            px = max(stop, o) if short else min(stop, o)
+            return {'status': 'lost', 'exit': px, 'exit_time': ts.isoformat(), 'r': r_of(px)}
         if reached:
             return {'status': 'won', 'exit': target, 'exit_time': ts.isoformat(), 'r': r_of(target)}
         if bar_close_time >= cutoff:

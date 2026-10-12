@@ -1126,6 +1126,9 @@ the app's own records (paper trades, journals, Performance) are never touched.
 | DP charge, a scrip sold | ₹12.50 + GST | — | — | — | Dhan |
 | GST | 18 % of brokerage, exchange, IPFT, SEBI and DP charges | | | | |
 
+Delivery shares bought and sold on the same day are settled by the exchange as an intraday trade: they pay the intraday
+STT and stamp duty and no DP charge (nothing leaves the demat account); the brokerage stays the delivery rate.
+
 A swing short held across a monthly expiry (the last Tuesday of the month) also pays for the roll: closing the expiring
 month and opening the next is one more round trip, costed at the entry price, once per expiry crossed. Option ideas square off
 the same day, so options exercise STT never applies. Not modelled: an expiry moved by a holiday, orders split at NSE's freeze
@@ -1363,7 +1366,8 @@ the sweep high.
   because the sweep that comes before a CHoCH often breaks the 15m picture for a moment.
 - **How the outcome is judged.** Every open trade is followed on 5-minute candles. A candle that
   touches both the stop and the target counts as **stopped**, because 5-minute candles can't
-  show which came first, so the worse case is assumed. **R** is the result in units of risk:
+  show which came first, so the worse case is assumed. A stop fills at the stop, or at the candle's
+  open when it opened beyond it (a jump on news), so a loss can be more than 1R, as on swing. **R** is the result in units of risk:
   +2.4R means the trade made 2.4 times what it risked.
 
 ### 5.6 The Intraday tab
@@ -1555,11 +1559,14 @@ An idea is an **at-the-money option buy** on the nearest expiry that isn't today
 
 All thresholds are tunable from **Options → Tune…** in the sidebar.
 
-Ideas are followed on every pass with the chain's own prices:
+Ideas are followed on every pass with the chain's own prices, and between passes on the live feed (every few seconds),
+so a premium that touches the stop or the target and comes back within the 3 minutes still counts:
 
 - **Target:** fills at the target.
 - **Stop:** fills at the price seen, which can be worse than the stop, as a real stop-market order would be.
-- **Level break and square-off:** exit at the price seen.
+- **Level break and square-off:** exit at the price seen, on the passes (they need the spot and the clock).
+
+Backtests of options can only follow the prices recorded at each pass, so they still miss a touch between two.
 
 The journal shows each idea's result in R and in ₹ for one lot. Lot sizes come from Dhan's instrument list.
 
@@ -4702,8 +4709,8 @@ changes for the long; the short follows. Intraday-only logic (target pools, the 
   the stock's (cash) prices. Futures trade at a small premium and in lots; options behave
   differently again. Size and place the F&O trade yourself.
 - **Paper trades are the alerts' results, not your fills.** Both journals assume you got the
-  CHoCH close and your target exactly, your stop exactly (swing: or the open, when price gapped
-  through it), and paid no costs. They assume the worse case when one candle touches both levels.
+  CHoCH close and your target exactly, your stop exactly (or the open, when price gapped or
+  jumped through it), and paid no costs. They assume the worse case when one candle touches both levels.
 - **Demo funds are an estimate.** Charges come from the published rates, not a contract note; futures margin is a flat
   percentage, not NSE's SPAN; fills are the app's paper prices with no slippage (4.16).
 - **Smart money is end-of-day and public.** It shows what NSE publishes after each session; no one's live orders are visible.

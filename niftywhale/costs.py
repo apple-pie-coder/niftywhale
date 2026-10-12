@@ -78,7 +78,8 @@ def cost_r(t: Dict[str, Any], mode: str, stop: Optional[float] = None, lot: Opti
         qty = sized['qty']
     exit_ = float(t['exit']) if t.get('exit') is not None else entry
     buy, sell = (entry * qty, exit_ * qty) if side == 'long' else (exit_ * qty, entry * qty)
-    charges = demo.charges(prod, buy, sell)['total'] / qty
+    a, b = demo._day(t.get('entry_time')), demo._day(t.get('exit_time'))
+    charges = demo.charges(prod, buy, sell, same_day=bool(a and b and a == b))['total'] / qty
     slip = entry * slippage_bps / 1e4
     if t.get('status') in MARKET_EXITS:
         slip += exit_ * slippage_bps / 1e4

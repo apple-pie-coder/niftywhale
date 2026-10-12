@@ -416,6 +416,18 @@ class LiveBook(unittest.TestCase):
         got = {r['id']: r['unreal'] for r in store.exec_orders()}
         self.assertEqual((got[sid], got[rid]), (round(3.5 * 654, 2), 40.0))    # a real row from its fill
 
+    def test_a_future_closed_without_dhans_price_is_measured_on_the_share(self):
+        # Filled on the future at 130 (the share 126.5 plus its premium); Dhan gave no exit price, so the exit is the
+        # paper trade's, on the share: both ends on the share, or the premium would read as a loss.
+        with store.connect() as c:
+            c.execute("UPDATE zones SET status = 'won', trigger = json_set(trigger, '$.exit', 151.0, '$.exit_time', "
+                      "'2026-10-09T11:00:00+05:30', '$.r', 6.41) WHERE id = ?", (self.zid,))
+        ref = next(t['ref'] for t in store.live_trades('swing') if t['symbol'] == 'ABC')
+        oid = self.add(ref, 'open', product='MARGIN', qty=10, fill=130.0)
+        app.exec_close(next(r for r in store.exec_orders() if r['id'] == oid), None, 'closed at Dhan')
+        r = next(r for r in store.exec_orders() if r['id'] == oid)
+        self.assertEqual((r['status'], r['gross']), ('closed', round((151.0 - 126.5) * 10, 2)))
+
 class Evidence(unittest.TestCase):
     """Live trading's evidence is about what would trade: costs at the size live trading trades (a flat brokerage
     weighs far more on one lot than on the nominal ₹10 lakh account), an option's charges over its whole lot, the

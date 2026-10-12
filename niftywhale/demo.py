@@ -159,18 +159,21 @@ DP_CHARGE = 12.5         # a scrip sold out of the demat account (delivery), plu
 CHARGE_KEYS = ('brokerage', 'stt', 'exchange', 'ipft', 'sebi', 'stamp', 'dp', 'gst')
 
 
-def charges(product: str, buy_value: float, sell_value: float) -> Dict[str, float]:
+def charges(product: str, buy_value: float, sell_value: float, same_day: bool = False) -> Dict[str, float]:
     """The charges on a round trip (one buy and one sell order), in rupees, line by line as on a
-    contract note, plus their total."""
+    contract note, plus their total. `same_day`: delivery shares bought and sold the same day, which the
+    exchange settles as an intraday trade: intraday STT (on the sale) and stamp duty, and nothing leaves
+    the demat account, so no DP charge. The brokerage stays Dhan's delivery rate."""
     r = RATES[product]
+    taxed = RATES['MIS'] if product == 'CNC' and same_day else r
     turnover = buy_value + sell_value
     brok = r['brok'](buy_value) + r['brok'](sell_value)
-    stt = buy_value * r['stt'][0] + sell_value * r['stt'][1]
+    stt = buy_value * taxed['stt'][0] + sell_value * taxed['stt'][1]
     exch = turnover * r['exch']
     ipft = turnover * IPFT
     sebi = turnover * SEBI
-    stamp = buy_value * r['stamp']
-    dp = DP_CHARGE if product == 'CNC' else 0.0
+    stamp = buy_value * taxed['stamp']
+    dp = DP_CHARGE if product == 'CNC' and not same_day else 0.0
     gst = (brok + exch + ipft + sebi + dp) * GST
     out = dict(zip(CHARGE_KEYS, (brok, stt, exch, ipft, sebi, stamp, dp, gst)))
     out = {k: round(v, 2) for k, v in out.items()}
@@ -223,7 +226,8 @@ def settle(pos: Dict[str, Any], exit_price: float, with_charges: bool = True,
     if not with_charges:
         return {'gross': gross, 'charges': 0.0, 'charges_detail': {'total': 0.0}, 'net': gross}
     buy, sell = (qty * entry, qty * exit_price) if sign > 0 else (qty * exit_price, qty * entry)
-    ch = charges(pos['product'], buy, sell)
+    a, b = _day(pos.get('entry_time')), _day(exit_time)
+    ch = charges(pos['product'], buy, sell, same_day=bool(a and b and a == b))
     rolls = rollovers(pos.get('entry_time'), exit_time) if pos['product'] == 'FUT' else 0
     if rolls:
         roll = charges('FUT', qty * entry, qty * entry)

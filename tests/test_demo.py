@@ -77,6 +77,14 @@ class Charges(unittest.TestCase):
         self.assertEqual(c['gst'], round((6.44679 + 0.21 + 0.00021 + 12.5) * 0.18, 2))
         self.assertAlmostEqual(c['total'], sum(c[k] for k in demo.CHARGE_KEYS), places=6)
 
+    def test_delivery_bought_and_sold_the_same_day(self):
+        # The exchange settles it as intraday: STT on the sale only, intraday stamp duty, nothing leaves the demat.
+        c = demo.charges('CNC', 100_000, 110_000, same_day=True)
+        self.assertEqual((c['brokerage'], c['stt'], c['stamp'], c['dp']), (0.0, 27.5, 3.0, 0.0))
+        pos = {'qty': 100, 'entry': 1000.0, 'side': 'long', 'product': 'CNC', 'entry_time': '2026-10-08T10:00:00+05:30'}
+        self.assertEqual(demo.settle(pos, 1100.0, True, '2026-10-08T14:00:00+05:30')['charges_detail']['dp'], 0.0)
+        self.assertEqual(demo.settle(pos, 1100.0, True, '2026-10-09T14:00:00+05:30')['charges_detail']['dp'], 12.5)
+
     def test_options_and_intraday(self):
         c = demo.charges('OPT', 36_000, 48_000)
         self.assertEqual((c['brokerage'], c['stt'], c['stamp']), (40.0, 72.0, 1.08))  # Rs 20 an order; 0.15 % of the premium sold

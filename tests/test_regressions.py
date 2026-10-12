@@ -271,7 +271,7 @@ class IntradaySpentSetups(unittest.TestCase):
     """A dismissed intraday zone was re-armed by the next 15m scan."""
     def setUp(self):
         _reset()
-        self.session = datetime.now().date().isoformat()
+        self.session = store.now_local().date().isoformat()          # the app's day is IST's, whatever the test machine's clock
 
     def row(self, ob='10:15', zone=(122.0, 125.0)):
         r = _row(ob_date=f'{self.session} {ob}', zone=zone)
@@ -690,7 +690,7 @@ class LiveBoardAndCharts(unittest.TestCase):
     def test_a_watched_zone_beats_an_older_trigger(self):
         recent = (datetime.now(data.IST) - timedelta(days=1)).isoformat(timespec='seconds')
         _zone(status='triggered', last_checked=recent)
-        zid = _zone(status='watching', created_at=datetime.now().isoformat(timespec='seconds'))
+        zid = _zone(status='watching', created_at=store.now_local().isoformat(timespec='seconds'))
         self.assertEqual(app._open_zone('ABC')['id'], zid)
 
 

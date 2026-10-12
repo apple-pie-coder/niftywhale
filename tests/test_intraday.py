@@ -161,6 +161,13 @@ class Outcome(unittest.TestCase):
         o = intraday.outcome(self.frame([(126.8, 136, 121, 130)]), self.t, R, AFTER)
         self.assertEqual(o['status'], 'lost')
 
+    def test_a_jump_through_the_stop_fills_at_the_open(self):
+        # A candle that opens below the stop (news) fills there, not at the stop: the loss is more than 1R.
+        s = self.t['stop']
+        o = intraday.outcome(self.frame([(s - 2, s - 1, s - 3, s - 2.5)]), self.t, R, AFTER)
+        self.assertEqual((o['status'], o['exit']), ('lost', s - 2))
+        self.assertLess(o['r'], -1.0)
+
     def test_open_then_squared_off(self):
         drift = [(127, 127.5, 126.6, 127.2)] * 70           # 10:00 + 83 bars passes 15:20
         f = self.frame(drift)
