@@ -349,6 +349,56 @@ class OptionsLearning(unittest.TestCase):
         o = options.path_outcome([('2026-10-07T15:16:00', 4.2, 100)], 4.0, 25, 50, 'long', 98)
         self.assertEqual(o['status'], 'closed')
 
+    def test_bars_outcome_sees_between_the_snapshots(self):
+        # Bought at 4.0, stop 3.0 (25 %), target 6.0 (50 %). The premium reaches 6.2 inside 11:01 and is back at 4.1
+        # by the 11:03 snapshot: the snapshots never see it, the minute candles do.
+        touch = [('2026-10-07T11:01:00+05:30', 4.0, 6.2, 3.9, 4.1, 100.6)]
+        o = options.bars_outcome(touch, 4.0, 25, 50, 'long', 98)
+        self.assertEqual((o['status'], o['exit'], o['source']), ('won', 6.0, '1m'))
+        self.assertEqual(options.path_outcome([('2026-10-07T11:03:00', 4.1, 100.6)], 4.0, 25, 50, 'long', 98)['status'], 'closed')
+        # A minute that opens below the stop fills there; one that reaches both counts as stopped.
+        o = options.bars_outcome([('2026-10-07T11:01:00+05:30', 2.5, 2.6, 2.4, 2.5, 100)], 4.0, 25, 50, 'long', 98)
+        self.assertEqual((o['status'], o['exit'], o['r']), ('lost', 2.5, -1.5))
+        o = options.bars_outcome([('2026-10-07T11:01:00+05:30', 4.0, 6.5, 2.9, 5.0, 100)], 4.0, 25, 50, 'long', 98)
+        self.assertEqual((o['status'], o['exit']), ('lost', 3.0))
+        # The support breaking, and the square-off minute, close at the minute's close.
+        o = options.bars_outcome([('2026-10-07T11:01:00+05:30', 4.2, 4.6, 4.1, 4.5, 97.8)], 4.0, 25, 50, 'long', 98)
+        self.assertEqual((o['status'], o['exit']), ('won', 4.5))
+        o = options.bars_outcome([('2026-10-07T15:14:00+05:30', 4.2, 4.4, 4.1, 4.3, 100)], 4.0, 25, 50, 'long', 98)
+        self.assertEqual((o['status'], o['exit']), ('closed', 4.3))
+
+    def test_candidates_replayed_on_minute_candles(self):
+        with store.connect() as c:
+            c.execute('DELETE FROM oc_candidates')
+            c.execute('DELETE FROM oc_snapshots')
+        cand = {'symbol': 'NIFTY', 'direction': 'long', 'side': 'CE', 'strike': 100.0, 'entry': 4.0, 'level': 98, 'f': {}}
+        cid = store.add_candidate(cand, '2026-10-13', '2026-10-07', '2026-10-07T11:00:30+05:30', False)
+        snap = {'spot': 100.6, 'strikes': [{'k': 100.0, 'ce': {'ltp': 4.1}, 'pe': None}]}
+        store.add_snapshot('NIFTY', '2026-10-13', '2026-10-07T11:03:00+05:30', '2026-10-07', 100.6, {}, options.compact(snap))
+        idx = pd.DatetimeIndex(['2026-10-07 11:00', '2026-10-07 11:01', '2026-10-07 11:02']).tz_localize('Asia/Kolkata')
+        opt = pd.DataFrame({'Open': [4.0, 4.0, 4.1], 'High': [4.1, 6.2, 4.2], 'Low': [3.95, 3.9, 4.0], 'Close': [4.0, 4.1, 4.1],
+                            'Volume': [1, 1, 1]}, index=idx)
+        und = pd.DataFrame({'Open': 100.5, 'High': 100.7, 'Low': 100.4, 'Close': 100.6, 'Volume': 1}, index=idx)
+        later = datetime(2026, 10, 8, 20, 30, tzinfo=IST)
+
+        def run(candles):
+            with mock.patch.object(lab.data, 'now_ist', return_value=later), \
+                    mock.patch.object(lab.dhan, 'available', return_value=True), \
+                    mock.patch.object(lab.dhan, 'option_id', return_value=('4001', 'NSE_FNO')), \
+                    mock.patch.object(lab.dhan, 'chart_candles', side_effect=candles):
+                lab.candidate_outcomes(lambda m: None)
+            return next(c for c in store.option_candidates() if c['id'] == cid)['outcomes']['25/50']
+
+        def down(*a):
+            raise RuntimeError('Dhan is down')
+        # Dhan down: the snapshots, which miss the touch.
+        o = run(down)
+        self.assertEqual((o['status'], o['source']), ('closed', 'snapshots'))
+        # The next evening, with candles: tried again, and the touch at 11:01 is a win (the 11:00 minute,
+        # partly before the entry at 11:00:30, is left out).
+        o = run(lambda sid, seg, inst, *a: opt if inst == 'OPTIDX' else und)
+        self.assertEqual((o['status'], o['exit'], o['source']), ('won', 6.0, '1m'))
+
     def test_simulate_candidates_limits(self):
         def cand(ts, sym='NIFTY', bias=0.5, exit_t=None):
             return {'symbol': sym, 'ts': ts, 'direction': 'long', 'entry': 4.0,

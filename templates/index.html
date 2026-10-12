@@ -8298,7 +8298,9 @@ function renderPerf() {
     $('pf-rules').innerHTML = (params.length ? `Rules in this run: ${params.map(([k, v]) => `${esc(PARAM_LABEL[k] || k)} <b>${esc(fmtParam(k, v))}</b>`).join(' · ')}` : '')
         + (ck ? `<br>${ck.on ? `After costs: Dhan's charges and ${ck.slippage_bps} bps slippage a side, about <b>${sgnR(-(ck.avg_cost_r || 0))}</b> a trade.
             Before costs: ${sgnR(ck.gross_avg_r)} a trade, ${sgnR(ck.gross_total_r, 1)} in all.` : '<b>Before costs</b> (switched off in Lab settings).'}`
-              : pfSrc === 'backtest' && d.run ? '<br><span class="muted">This run is from before costs were counted.</span>' : '');
+              : pfSrc === 'backtest' && d.run ? '<br><span class="muted">This run is from before costs were counted.</span>' : '')
+        + (pfSrc === 'backtest' && d.sources && d.sources.all ? `<br>Exits replayed on each option's 1-minute candles for <b>${d.sources['1m']}</b> of
+            ${d.sources.all} candidates; the rest on the chain snapshots taken every 3 minutes, which miss a touch in between.` : '');
     if (pfSrc === 'backtest' && !d.run) {
         $('pf-meta').textContent = 'No backtest yet';
         $('pf-stats').innerHTML = stat('Backtest', 'Not run yet', 'The lab runs one after the history has downloaded', 'warn');

@@ -1566,7 +1566,11 @@ so a premium that touches the stop or the target and comes back within the 3 min
 - **Stop:** fills at the price seen, which can be worse than the stop, as a real stop-market order would be.
 - **Level break and square-off:** exit at the price seen, on the passes (they need the spot and the clock).
 
-Backtests of options can only follow the prices recorded at each pass, so they still miss a touch between two.
+Backtests of options replay each candidate on its option's own **1-minute candles** from Dhan, fetched after the session
+(with the underlying's minute closes for the level), so a touch between two passes counts there too: the target at the
+target, the stop at the stop or at the minute's open below it, a minute reaching both counted as stopped. When Dhan has no
+candles (not connected that evening, a session more than 90 days back), the outcome comes from the passes' prices and is
+tried on candles again for 7 days. The Performance view says how many candidates were replayed on minute candles.
 
 The journal shows each idea's result in R and in ₹ for one lot. Lot sizes come from Dhan's instrument list.
 

@@ -22,7 +22,7 @@ Reading a chain
   hold); fresh call writing is bearish. That balance is the `bias` here.
 """
 import math
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 INDICES = {
@@ -563,6 +563,36 @@ def path_outcome(path: List[Tuple[str, float, Optional[float]]], entry: float, s
     if last:
         return {'status': 'closed', 'exit': last[1], 'exit_time': last[0], 'r': r_of(last[1])}
     return {'status': 'closed', 'exit': entry, 'exit_time': None, 'r': 0.0}
+
+
+def bars_outcome(bars: List[Tuple[str, float, float, float, float, Optional[float]]], entry: float, stop_pct: float,
+                 target_pct: float, direction: str, level: Optional[float], square_off: str = TIMES['square_off']) -> Dict[str, Any]:
+    """What an idea bought at `entry` would have done along the option's 1-minute candles `bars`
+    [(iso start, open, high, low, close, the underlying's close)], with the exits follow() makes live:
+    the target fills at the target (a resting limit); the stop at the stop, or at the minute's open when it
+    opened below it (a stop-market order); a minute that reaches both counts as stopped (one minute cannot
+    say which came first, so the worse); the underlying closing through the OI level, or the square-off,
+    out at the minute's close. Every touch between two chain snapshots is seen, unlike path_outcome."""
+    stop, target = entry * (1 - stop_pct / 100), entry * (1 + target_pct / 100)
+    risk = entry - stop
+    r_of = lambda px: round((px - entry) / risk, 3) if risk > 0 else 0.0      # noqa: E731
+    sq = _hhmm(square_off)
+    last = None
+    for at, o, hi, lo, c, spot in bars:
+        last = (at, c)
+        if lo <= stop:
+            px = round(min(stop, o), 2)
+            return {'status': 'lost', 'exit': px, 'exit_time': at, 'r': r_of(px), 'source': '1m'}
+        if hi >= target:
+            return {'status': 'won', 'exit': round(target, 2), 'exit_time': at, 'r': r_of(target), 'source': '1m'}
+        if level and spot and ((direction == 'long' and spot < level) or (direction == 'short' and spot > level)):
+            r = r_of(c)
+            return {'status': 'won' if r > 0 else 'lost', 'exit': c, 'exit_time': at, 'r': r, 'source': '1m'}
+        if (datetime.fromisoformat(at) + timedelta(minutes=1)).time() >= sq:
+            return {'status': 'closed', 'exit': c, 'exit_time': at, 'r': r_of(c), 'source': '1m'}
+    if last:
+        return {'status': 'closed', 'exit': last[1], 'exit_time': last[0], 'r': r_of(last[1]), 'source': '1m'}
+    return {'status': 'closed', 'exit': entry, 'exit_time': None, 'r': 0.0, 'source': '1m'}
 
 
 def simulate_candidates(cands: List[Dict[str, Any]], thr: Dict[str, float]) -> List[Dict[str, Any]]:

@@ -310,7 +310,10 @@ def baseline(mode: str, bench: Optional['Bench'] = None) -> Optional[Dict[str, A
                            s, perf.breakdown(trades), perf.equity(trades),
                            {'highlights': perf.highlights(perf.breakdown(trades)),
                             'symbols': len(bench.records) if mode != 'options' else None,
-                            'by_symbol': _by_symbol(trades), 'costs': cost_note})
+                            'by_symbol': _by_symbol(trades), 'costs': cost_note,
+                            # Options: how many candidates' exits were replayed on 1-minute candles, not snapshots.
+                            'outcome_sources': {'1m': sum(1 for c in bench.cands if _from_minutes(c)), 'all': len(bench.cands)}
+                            if mode == 'options' else None})
     store.prune_runs()
     return {'run_id': run_id, **s}
 
@@ -586,35 +589,98 @@ def claim_revert(mode: str, lc: Dict[str, Any]) -> bool:
 
 
 # ---------------------------------------------------------------- options candidates
+MINUTE_RETRY_DAYS = 7      # an outcome still from the snapshots (no candles then) is tried on candles again this long
+
+
+def _minute_bars(c: Dict[str, Any], cache: Dict) -> Optional[List[Tuple]]:
+    """The candidate's option on its session as 1-minute candles from its time on, each with the underlying's close
+    that minute: [(iso start, open, high, low, close, spot)], or None when Dhan has none (not connected, an unknown
+    contract, a session over Dhan's 90 days). One request per contract and one per underlying a session (cached)."""
+    day = date.fromisoformat(c['session'])
+    back = (data.now_ist().date() - day).days + 1
+    if back > 89 or not dhan.available():
+        return None
+
+    def candles(key, what):
+        if key not in cache:
+            cache[key] = None
+            if what and what[0]:
+                try:
+                    f = dhan.chart_candles(*what, 1, back)
+                    f = f[[ts.date() == day for ts in f.index]] if len(f) else f
+                    cache[key] = f if len(f) else None
+                except Exception as e:
+                    logger.warning(f"1-minute candles for {key}: {dhan._redact(e)}")
+        return cache[key]
+
+    hit = dhan.option_id(c['symbol'], c['expiry'], c['strike'], c['side'])
+    f = candles(('opt', c['symbol'], c['expiry'], c['strike'], c['side'], c['session']),
+                (hit[0], hit[1], 'OPTIDX' if options.is_index(c['symbol']) else 'OPTSTK') if hit else None)
+    if f is None:
+        return None
+    if options.is_index(c['symbol']):
+        sid, seg, _ = options.INDICES[c['symbol']]
+        und = (str(sid), seg, 'INDEX')
+    else:
+        und = (dhan.security_id(c['symbol']), 'NSE_EQ', 'EQUITY')
+    u = candles(('und', c['symbol'], c['session']), und)
+    spot = u['Close'] if u is not None else None
+    at = pd.Timestamp(c['ts'])
+    if at.tzinfo is None:
+        at = at.tz_localize('Asia/Kolkata')             # stored times are IST
+    f = f[f.index >= at]                                    # minutes that start at or after the entry
+    return [(ts.isoformat(), float(r['Open']), float(r['High']), float(r['Low']), float(r['Close']),
+             float(spot[ts]) if spot is not None and ts in spot.index else None) for ts, r in f.iterrows()]
+
+
+def _from_minutes(c: Dict[str, Any]) -> bool:
+    return any((o or {}).get('source') == '1m' for o in (c.get('outcomes') or {}).values())
+
+
 def candidate_outcomes(progress: Callable[[str], None]) -> int:
-    """For each finished session's candidates, the option's later prices from that day's
-    snapshots, and what every stop / target pair would have done."""
+    """For each finished session's candidates, what every stop / target pair would have done: on the option's own
+    1-minute candles from Dhan (options.bars_outcome), so a touch between two chain snapshots counts; on the
+    snapshots taken every few minutes (options.path_outcome) when Dhan has no candles. An outcome from the
+    snapshots is tried on candles again for MINUTE_RETRY_DAYS (Dhan down that evening, or recorded before the
+    candles were used). Each outcome says which it came from (`source`)."""
     today = data.now_ist().date().isoformat()
     after_close = not busy_market() and data.now_ist().time() >= dtime(15, 35)
-    pending = [c for c in store.option_candidates(pending=True) if c['session'] < today or after_close]
-    done = 0
+    retry_from = (data.now_ist().date() - timedelta(days=MINUTE_RETRY_DAYS)).isoformat()
+    pending = [c for c in store.option_candidates() if (c['session'] < today or after_close)
+               and (not c.get('outcomes') or (not _from_minutes(c) and c['session'] >= retry_from))]
+    done, minutes = 0, 0
     snaps: Dict = {}
+    cache: Dict = {}
     for c in pending:
-        key = (c['symbol'], c['expiry'], c['session'])
-        if key not in snaps:
-            snaps[key] = store.snapshots_for(*key)
-        path = []
-        for sn in snaps[key]:
-            if sn['ts'] <= c['ts']:
+        bars = _minute_bars(c, cache)
+        grid = [(sp, tp) for sp in options.EXIT_GRID['stop_pct'] for tp in options.EXIT_GRID['target_pct']]
+        if bars:
+            outs = {f'{sp:g}/{tp:g}': options.bars_outcome(bars, c['entry'], sp, tp, c['direction'], c.get('level'))
+                    for sp, tp in grid}
+            minutes += 1
+        else:
+            if c.get('outcomes'):
+                continue                    # already from the snapshots: nothing new to learn without candles
+            key = (c['symbol'], c['expiry'], c['session'])
+            if key not in snaps:
+                snaps[key] = store.snapshots_for(*key)
+            path = []
+            for sn in snaps[key]:
+                if sn['ts'] <= c['ts']:
+                    continue
+                ch = options.expand(sn['chain'])
+                row = next((r for r in ch['strikes'] if r['k'] == c['strike']), None)
+                o = (row or {}).get(c['side'].lower())
+                path.append((sn['ts'], (o or {}).get('ltp'), ch.get('spot')))
+            if not path:                    # no later read of this chain: nothing to learn from it
+                store.set_candidate_outcomes(c['id'], {})
                 continue
-            ch = options.expand(sn['chain'])
-            row = next((r for r in ch['strikes'] if r['k'] == c['strike']), None)
-            o = (row or {}).get(c['side'].lower())
-            path.append((sn['ts'], (o or {}).get('ltp'), ch.get('spot')))
-        if not path:                       # no later read of this chain: nothing to learn from it
-            store.set_candidate_outcomes(c['id'], {})
-            continue
-        outs = {f'{sp:g}/{tp:g}': options.path_outcome(path, c['entry'], sp, tp, c['direction'], c.get('level'))
-                for sp in options.EXIT_GRID['stop_pct'] for tp in options.EXIT_GRID['target_pct']}
+            outs = {f'{sp:g}/{tp:g}': {**options.path_outcome(path, c['entry'], sp, tp, c['direction'], c.get('level')),
+                                       'source': 'snapshots'} for sp, tp in grid}
         store.set_candidate_outcomes(c['id'], outs)
         done += 1
     if done:
-        progress(f'options: outcomes for {done} candidates')
+        progress(f'options: outcomes for {done} candidates ({minutes} on 1-minute candles)')
     return done
 
 

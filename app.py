@@ -4727,7 +4727,8 @@ def api_perf():
                              'run': {k: run[k] for k in (
             'id', 'created', 'params', 'period_from', 'period_to', 'universe')}, 'summary': run['summary'],
             'breakdown': [perf.arrange(b) for b in run['breakdown'] or []], 'equity': run['equity'], 'highlights': extra.get('highlights', []),
-            'by_symbol': extra.get('by_symbol'), 'symbols': extra.get('symbols'), 'costs': extra.get('costs')}))
+            'by_symbol': extra.get('by_symbol'), 'symbols': extra.get('symbols'), 'costs': extra.get('costs'),
+            'sources': extra.get('outcome_sources')}))
     trades = store.live_trades(mode)
     bd = perf.breakdown(trades)
     return jsonify(safe({'source': 'live', 'mode': mode, 'summary': perf.summary(trades), 'week': perf.by_period(trades, 7),
