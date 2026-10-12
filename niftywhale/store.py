@@ -406,6 +406,16 @@ def set_kv(key: str, value: str) -> None:
                   'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
 
 
+RULE_SETTINGS = ('rules', 'intraday_rules', 'options_rules')
+
+
+def _json_or(v: Any) -> Any:
+    try:
+        return json.loads(v) if isinstance(v, str) else v
+    except ValueError:
+        return v
+
+
 def set_settings(updates: Dict[str, Any]) -> Dict[str, str]:
     with connect() as c:
         for k, v in updates.items():
@@ -415,9 +425,26 @@ def set_settings(updates: Dict[str, Any]) -> Dict[str, str]:
                 v = '1' if v else '0'
             elif isinstance(v, (dict, list)):
                 v = json.dumps(v)
+            if k in RULE_SETTINGS:
+                # When a mode's rules last changed (by you or the autopilot): its paper record counts from then
+                # when live trading asks for evidence, as earlier trades were taken on other rules.
+                old = c.execute('SELECT value FROM settings WHERE key = ?', (k,)).fetchone()
+                if _json_or(old['value'] if old else '{}') != _json_or(str(v)):
+                    c.execute('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+                              (f'rules_since:{k}', datetime.now().astimezone().isoformat(timespec='seconds')))
             c.execute('INSERT INTO settings (key, value) VALUES (?, ?) '
                       'ON CONFLICT(key) DO UPDATE SET value = excluded.value', (k, str(v)))
     return settings()
+
+
+def rules_since(key: str) -> str:
+    """When the rules saved under `key` last changed. Unknown (rules saved before this was kept): from now on,
+    recorded here once, as no earlier trade can be shown to have been taken on them."""
+    at = get_kv(f'rules_since:{key}')
+    if not at:
+        at = datetime.now().astimezone().isoformat(timespec='seconds')
+        set_kv(f'rules_since:{key}', at)
+    return at
 
 
 # ---------------------------------------------------------------- scans
@@ -1520,13 +1547,14 @@ def trade_notices(ref: str) -> List[Dict[str, Any]]:
     return [r for r in rows if r['key'].endswith(':' + ref) and r['key'].count(':') == ref.count(':') + 1]
 
 
-def demo_positions(status: Optional[str] = None, limit: int = 5000) -> List[Dict[str, Any]]:
+def demo_positions(status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     q, args = 'SELECT * FROM demo_positions', []
     if status:
         q += ' WHERE status = ?'
         args.append(status)
     with connect() as c:
-        rows = _rows(c.execute(q + ' ORDER BY entry_time DESC, id DESC LIMIT ?', args + [limit]))
+        # Every row by default: the account's balance and the trades already taken are read from all of them.
+        rows = _rows(c.execute(q + ' ORDER BY entry_time DESC, id DESC LIMIT ?', args + [-1 if limit is None else limit]))
     for r in rows:
         try:
             r['charges_detail'] = json.loads(r['charges_detail']) if r.get('charges_detail') else None
@@ -1599,6 +1627,15 @@ def exec_orders_active(day: str) -> List[Dict[str, Any]]:
         except ValueError:
             r['body'] = None
     return rows
+
+
+def exec_totals() -> Dict[str, Dict[str, Any]]:
+    """Every closed shadow plan and real order, counted and summed: the Trading tab's totals over the whole record."""
+    with connect() as c:
+        got = {r['status']: r for r in c.execute("SELECT status, COUNT(*) AS n, COALESCE(SUM(net), 0) AS net FROM exec_orders "
+                                                 "WHERE status IN ('shadow_closed', 'closed') GROUP BY status")}
+    one = lambda s: {'trades': got[s]['n'] if s in got else 0, 'net': round(got[s]['net'], 2) if s in got else 0.0}   # noqa: E731
+    return {'shadow': one('shadow_closed'), 'real': one('closed')}
 
 
 def exec_refs() -> set:

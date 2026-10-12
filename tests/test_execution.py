@@ -123,10 +123,17 @@ class Guards(unittest.TestCase):
         self.assertIn('shorts are not live', self.why(trade={**TRADE, 'side': 'short', 'stop': 130, 'target': 110}, last=None))
 
     def test_the_gate(self):
-        good = {'bt': {'trades': 90, 'avg_r': 0.08}, 'hold_r': 1.5, 'paper': {'trades': 40, 'total_r': 3.0}}
+        good = {'bt': {'trades': 90}, 'rules_ok': True, 'account': '1 lot a trade',
+                'live': {'account': '1 lot a trade', 'avg_r': 0.08, 'hold_r': 1.5}, 'paper': {'trades': 40, 'total_r': 3.0}}
         self.assertTrue(execution.gate('swing', good)['ok'])
-        g = execution.gate('swing', {**good, 'hold_r': None, 'paper': {'trades': 4, 'total_r': 1}})
-        self.assertEqual([c['label'] for c in g['checks'] if not c['ok']], ['Backtest R on the last 3 months', 'Paper trades closed'])
+        g = execution.gate('swing', {**good, 'live': {**good['live'], 'hold_r': None}, 'paper': {'trades': 4, 'total_r': 1}})
+        self.assertEqual([c['label'] for c in g['checks'] if not c['ok']],
+                         ['Backtest R on the last 3 months, at your size', 'Paper trades closed on these rules'])
+        # Evidence about other rules, or costed at another size, does not count.
+        g = execution.gate('swing', {**good, 'rules_ok': False, 'account': '2 lots a trade'})
+        self.assertEqual([c['label'] for c in g['checks'] if not c['ok']],
+                         ['Backtest on the rules in force', 'Backtest R a trade, after costs at your size',
+                          'Backtest R on the last 3 months, at your size'])
         self.assertEqual(execution.hold_r([['2026-06-01', 2.0], ['2026-08-01', 3.5], ['2026-09-01', 1.0]], '2026-07-10'), -1.0)
 
 
@@ -284,7 +291,8 @@ class Flow(unittest.TestCase):
         store.set_settings({'exec_send': '1'})
         r = call(app.api_exec_settings, '/api/exec/settings', {'settings': {'swing': 'confirm'}})
         self.assertIn('Backtest trades', r['error'])
-        good = {'bt': {'trades': 90, 'avg_r': 0.08}, 'hold_r': 1.5, 'paper': {'trades': 40, 'total_r': 3.0}}
+        good = {'bt': {'trades': 90}, 'rules_ok': True, 'account': 'x', 'live': {'account': 'x', 'avg_r': 0.08, 'hold_r': 1.5},
+                'paper': {'trades': 40, 'total_r': 3.0}}
         with mock.patch.object(app, 'exec_evidence', return_value=good):
             r = call(app.api_exec_settings, '/api/exec/settings', {'settings': {'swing': 'confirm'}})
         self.assertEqual(r['levels']['swing'], 'confirm')
@@ -407,6 +415,77 @@ class LiveBook(unittest.TestCase):
         app.exec_mark(rows, {'swing:m': trade, 'swing:r': trade})
         got = {r['id']: r['unreal'] for r in store.exec_orders()}
         self.assertEqual((got[sid], got[rid]), (round(3.5 * 654, 2), 40.0))    # a real row from its fill
+
+class Evidence(unittest.TestCase):
+    """Live trading's evidence is about what would trade: costs at the size live trading trades (a flat brokerage
+    weighs far more on one lot than on the nominal ₹10 lakh account), an option's charges over its whole lot, the
+    rules in force, and the paper trades taken since those rules were set."""
+    OPT = {'symbol': 'NIFTY', 'entry': 100.0, 'stop': 60.0, 'exit': 140.0, 'status': 'won', 'r': 1.0, 'lot': 75}
+
+    def test_costs_at_your_size(self):
+        from niftywhale import costs
+        one = costs.live_account({'sizing': 'lots', 'lots': 1})
+        self.assertEqual(one['label'], '1 lot a trade (a share for stocks)')
+        self.assertEqual(costs.live_account({'risk_pct': 0.5}, 200_000)['label'], '0.5% risk a trade on ₹200,000')
+        self.assertEqual(costs.live_account({'risk_pct': 0.5, 'capital': 300_000}, 200_000)['capital'], 300_000)
+        nominal = costs.cost_r(self.OPT, 'options', lot=75)
+        at_one = costs.cost_r(self.OPT, 'options', lot=75, account=one)
+        self.assertGreater(at_one, nominal)                      # the same trade costs more R on one lot
+        # Swing at one share: the DP charge alone is a large part of R.
+        self.assertGreater(costs.cost_r({'entry': 126.5, 'stop': 122.68, 'exit': 151.0, 'status': 'won'}, 'swing', account=one), 1.0)
+
+    def test_an_option_is_costed_over_its_lot(self):
+        from niftywhale import costs
+        with_lot = costs.apply([self.OPT], 'options')[0]['cost_r']
+        self.assertEqual(with_lot, round(costs.cost_r(self.OPT, 'options', lot=75), 4))
+        self.assertLess(with_lot, costs.cost_r({**self.OPT, 'lot': None}, 'options'))   # one unit carried the whole brokerage
+
+    def test_rules_since_follows_a_change(self):
+        store.set_kv('rules_since:rules', '2026-01-01T00:00:00+05:30')
+        store.set_settings({'rules': store.settings()['rules']})                          # saved again, unchanged
+        self.assertEqual(store.rules_since('rules'), '2026-01-01T00:00:00+05:30')
+        store.set_settings({'rules': {'min_rr': 2.5}})
+        self.assertGreater(store.rules_since('rules'), '2026-01-01T00:00:00+05:30')
+        store.set_settings({'rules': {}})
+
+    def test_paper_counts_from_the_rules_in_force(self):
+        _reset()
+        paper_trade('ABC', status='won', exit_=151.0, at='2026-10-06T10:58:00+05:30', r=6.4)
+        paper_trade('DEF', status='won', exit_=151.0, at='2026-10-08T10:58:00+05:30', r=6.4)
+        store.set_kv('rules_since:rules', '2026-10-07T09:00:00+05:30')
+        with mock.patch('niftywhale.lab.current_thresholds', return_value={'min_rr': 2.0}), \
+                mock.patch.object(app.store, 'latest_run', return_value={'params': {'min_rr': 3.0}, 'summary': {'trades': 90}}):
+            ev = app.exec_evidence('swing')
+        self.assertEqual((ev['paper']['trades'], ev['rules_ok']), (1, False))
+
+
+class Records(unittest.TestCase):
+    """Totals over the whole record, not the newest rows; the deepest fall in the order trades closed."""
+    def test_totals_count_every_row(self):
+        with store.connect() as c:
+            c.execute('DELETE FROM exec_orders')
+            c.executemany("INSERT INTO exec_orders (ref, level, status, net) VALUES (?, 'shadow', 'shadow_closed', 10)",
+                          [(f'swing:{k}',) for k in range(700)])
+        self.assertEqual(store.exec_totals()['shadow'], {'trades': 700, 'net': 7000.0})
+        with store.connect() as c:
+            c.execute('DELETE FROM exec_orders')
+
+    def test_demo_positions_are_not_capped(self):
+        with store.connect() as c:
+            c.execute('DELETE FROM demo_positions')
+            c.executemany("INSERT INTO demo_positions (ref, status, net, entry_time) VALUES (?, 'closed', 1, '2026-10-08')",
+                          [(f'x:{k}',) for k in range(5_050)])
+        self.assertEqual(len(store.demo_positions()), 5_050)
+        with store.connect() as c:
+            c.execute('DELETE FROM demo_positions')
+
+    def test_drawdown_in_exit_order(self):
+        from niftywhale import perf
+        t = lambda e, x, r: {'status': 'won' if r > 0 else 'lost', 'r': r, 'entry_time': e, 'exit_time': x}   # noqa: E731
+        # Entered A, B, C; closed B (-1), C (-1), A (+3): two losses in a row before the win.
+        trades = [t('2026-10-01', '2026-10-09', 3.0), t('2026-10-02', '2026-10-03', -1.0), t('2026-10-04', '2026-10-05', -1.0)]
+        self.assertEqual(perf.summary(trades)['max_drawdown'], -2.0)
+        self.assertEqual(perf.summary(trades)['first'], '2026-10-01')
 
 if __name__ == '__main__':
     unittest.main()

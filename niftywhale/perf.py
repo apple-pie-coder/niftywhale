@@ -30,8 +30,10 @@ def summary(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     losses = [r for r in rs if r <= 0]
     mean = sum(rs) / n
     sd = math.sqrt(sum((r - mean) ** 2 for r in rs) / (n - 1)) if n > 1 else 0.0
+    # The deepest fall as the equity curve draws it: trades in the order they closed (a swing trade held for days
+    # closes after trades entered later), not the order they were entered.
     curve, peak, dd = 0.0, 0.0, 0.0
-    for r in rs:
+    for r in (float(t['r']) for t in sorted(c, key=lambda t: t.get('exit_time') or t.get('entry_time') or '')):
         curve += r
         peak = max(peak, curve)
         dd = min(dd, curve - peak)
@@ -45,7 +47,7 @@ def summary(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         'max_drawdown': round(dd, 2), 'sd': round(sd, 3),
         # Mean minus one standard error: what the autopilot maximises (rewards consistency and sample size).
         'lcb': round(mean - (sd / math.sqrt(n) if n > 1 else abs(mean)), 3),
-        'first': c[0].get('entry_time'), 'last': c[-1].get('entry_time'),
+        'first': min((t.get('entry_time') or '' for t in c), default=None), 'last': max((t.get('entry_time') or '' for t in c), default=None),
     }
 
 

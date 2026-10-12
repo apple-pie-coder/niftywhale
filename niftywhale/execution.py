@@ -209,20 +209,32 @@ def guards(p: Dict[str, Any], trade: Dict[str, Any], book: Dict[str, Any], st: D
 
 
 def gate(mode: str, ev: Dict[str, Any]) -> Dict[str, Any]:
-    """Whether `mode` may trade real money: {ok, checks: [{label, value, need, ok}]}. `ev`: {bt: the latest
-    backtest's summary after costs, hold_r: its total R on the last months (None: no trades there),
-    paper: {trades, total_r} of the closed paper trades after costs}."""
-    bt, paper = ev.get('bt') or {}, ev.get('paper') or {}
+    """Whether `mode` may trade real money: {ok, checks: [{label, value, need, ok}], account}. Evidence that counts
+    is evidence about what would actually trade: the rules in force, at the size live trading would trade.
+    `ev`: {bt: the latest backtest's summary; rules_ok: it ran on the rules in force; live: that backtest after
+    costs at a size ({account, avg_r, hold_r}: hold_r its total R on the last months, None without trades there);
+    account: the size live trading trades now (costs.live_account's label); paper: {trades, total_r, since} of the
+    paper trades closed since the rules were last changed, after costs at that size}."""
+    bt, paper, live = ev.get('bt') or {}, ev.get('paper') or {}, ev.get('live') or {}
+    sized = bool(live) and live.get('account') == ev.get('account')   # the backtest was costed at today's size
+    later = '' if sized else ' (from the next backtest)'
     need_bt = GATE['bt_trades'][mode]
+    since = str(paper.get('since') or '')[:10]
     checks = [
+        {'label': 'Backtest on the rules in force', 'value': 'yes' if ev.get('rules_ok') else 'no',
+         'need': 'yes: backtest again after a change', 'ok': bool(ev.get('rules_ok'))},
         {'label': 'Backtest trades', 'value': bt.get('trades') or 0, 'need': f'≥ {need_bt}', 'ok': (bt.get('trades') or 0) >= need_bt},
-        {'label': 'Backtest R a trade, after costs', 'value': bt.get('avg_r'), 'need': '> 0', 'ok': (bt.get('avg_r') or 0) > 0},
-        {'label': 'Backtest R on the last 3 months', 'value': ev.get('hold_r'), 'need': '> 0', 'ok': (ev.get('hold_r') or 0) > 0},
-        {'label': 'Paper trades closed', 'value': paper.get('trades') or 0, 'need': f"≥ {GATE['paper_trades']}",
+        {'label': 'Backtest R a trade, after costs at your size', 'value': live.get('avg_r') if sized else None,
+         'need': '> 0' + later, 'ok': sized and (live.get('avg_r') or 0) > 0},
+        {'label': 'Backtest R on the last 3 months, at your size', 'value': live.get('hold_r') if sized else None,
+         'need': '> 0' + later, 'ok': sized and (live.get('hold_r') or 0) > 0},
+        {'label': 'Paper trades closed on these rules', 'value': paper.get('trades') or 0,
+         'need': f"≥ {GATE['paper_trades']}" + (f' since {since}' if since else ''),
          'ok': (paper.get('trades') or 0) >= GATE['paper_trades']},
-        {'label': 'Paper R after costs', 'value': paper.get('total_r'), 'need': '> 0', 'ok': (paper.get('total_r') or 0) > 0},
+        {'label': 'Paper R after costs at your size', 'value': paper.get('total_r'), 'need': '> 0',
+         'ok': (paper.get('total_r') or 0) > 0},
     ]
-    return {'ok': all(c['ok'] for c in checks), 'checks': checks}
+    return {'ok': all(c['ok'] for c in checks), 'checks': checks, 'account': ev.get('account')}
 
 
 def hold_r(equity: List[Any], since: str) -> Optional[float]:

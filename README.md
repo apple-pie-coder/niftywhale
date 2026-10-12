@@ -1221,8 +1221,16 @@ mode (swing, intraday, options) has its own level:
 
 **Safety:**
 - **Arming** Confirm each or Automatic needs a recent sign-in (the password otherwise), real sending on, no halt, and
-  the mode's evidence: the backtest positive after costs over enough trades, positive on its last 3 months, and the paper
-  record positive after costs over at least 30 trades. API tokens can never arm, place or resume.
+  the mode's evidence, about what would actually trade:
+  - the latest backtest ran on the rules in force (after a change, backtest again);
+  - it has enough trades, and is positive after costs **at your size** a trade and on its last 3 months;
+  - at least 30 paper trades closed **since the rules were last changed** (by you or the autopilot), positive after
+    costs at your size.
+
+  *Your size* is what live trading would trade (Trading settings): a fixed number of lots, or the risk % of the set
+  capital or of the day's capital at Dhan. Charges have flat parts (₹20 brokerage an order, the DP charge), so the same
+  trade costs far more R on one lot than on the nominal ₹10 lakh account backtests compare rules on; the lab works out
+  each backtest at both. Each check shows its figure and what it needs. API tokens can never arm, place or resume.
 - **Limits** (Trading → Settings): positions open at once, entries a day, the most a trade may risk, and a day's loss
   (1 % of the capital by default) that halts everything. Also the most the price may have run past the entry, and how
   long an offer waits. The day's loss is what today lost: trades closed today and open positions marked every minute,

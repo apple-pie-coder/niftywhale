@@ -1965,14 +1965,36 @@ def exec_static_ip() -> dict:
     return v or {}
 
 
+def exec_account() -> dict:
+    """The size live trading trades now, for costs (costs.live_account)."""
+    try:
+        saved = json.loads(store.settings().get('exec') or '{}')
+        day = json.loads(store.get_kv('exec_day') or '{}')
+    except ValueError:
+        saved, day = {}, {}
+    return costs.live_account(saved, day.get('capital'))
+
+
+def _same_thresholds(a: dict, b: dict) -> bool:
+    keys = set(a or {}) & set(b or {})
+    return bool(keys) and all(abs(float(a[k]) - float(b[k])) < 1e-9 for k in keys)
+
+
 def exec_evidence(mode: str) -> dict:
-    """What the gate reads: the latest backtest after costs (and its last 3 months), and the paper record after costs."""
+    """What the gate reads: the latest backtest (did it run on the rules in force; its result after costs at the
+    size live trading would trade, which the lab works out with each backtest), and the paper trades closed since
+    the rules last changed, after costs at that size."""
+    from niftywhale import lab
     run = store.latest_run(mode, 'baseline') or {}
-    since = (data.now_ist() - timedelta(days=91)).strftime('%Y-%m-%d')
-    paper = perf.closed(store.live_trades(mode))
-    paper = costs.apply(paper, mode, cost_settings_slip()) if paper else []
-    return {'bt': run.get('summary') or {}, 'hold_r': execution.hold_r(run.get('equity') or [], since),
-            'paper': {'trades': len(paper), 'total_r': round(sum(float(t['r']) for t in paper), 2) if paper else None}}
+    acct = exec_account()
+    key = {'swing': 'rules', 'intraday': 'intraday_rules', 'options': 'options_rules'}[mode]
+    since = store.rules_since(key)
+    paper = [t for t in perf.closed(store.live_trades(mode)) if (_when(t.get('entry_time')) or data.now_ist()) >= (_when(since) or data.now_ist())]
+    lots = {t['symbol']: dhan.lot_size(t['symbol']) for t in paper if t.get('side') == 'short'} if mode == 'swing' else None
+    paper = costs.apply(paper, mode, cost_settings_slip(), lots=lots, account=acct) if paper else []
+    return {'bt': run.get('summary') or {}, 'rules_ok': _same_thresholds(run.get('params'), lab.current_thresholds(mode)),
+            'live': ((run.get('extra') or {}).get('costs') or {}).get('live'), 'account': acct['label'],
+            'paper': {'trades': len(paper), 'total_r': round(sum(float(t['r']) for t in paper), 2) if paper else None, 'since': since}}
 
 
 def cost_settings_slip() -> float:
@@ -2356,8 +2378,6 @@ def exec_view() -> dict:
     rows = store.exec_orders(limit=300)
     gates = {m: execution.gate(m, exec_evidence(m)) for m in execution.MODES}
     ip = exec_static_ip() if dhan.available() else {}
-    shadow = [r for r in rows if r['status'] == 'shadow_closed']
-    real = [r for r in rows if r['status'] == 'closed']
     return {'settings': st, 'levels': {m: st[m] for m in execution.MODES}, 'labels': execution.LEVEL_LABEL,
             'since': store.settings().get('exec_since') or None, 'halt': exec_halted() or None,
             'sending': {'on': store.settings().get('exec_send') == '1', 'why_not': broker.sending(),
@@ -2366,8 +2386,7 @@ def exec_view() -> dict:
             'gates': gates, 'book': exec_book(exec_rows(), day=exec_day(st)),
             'offers': [r for r in rows if r['status'] == 'offered'],
             'rows': rows,
-            'totals': {'shadow': {'trades': len(shadow), 'net': round(sum(r['net'] or 0 for r in shadow), 2)},
-                       'real': {'trades': len(real), 'net': round(sum(r['net'] or 0 for r in real), 2)}},
+            'totals': store.exec_totals(),
             'log': [{**l, 'answer': (l['answer'] or '')[:300]} for l in store.broker_log(500)]}
 
 

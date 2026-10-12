@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import autopilot, backfill, backtest, config, costs, data, dhan, history, intraday, notify, options, perf, smc, store, universe
+from niftywhale import autopilot, backfill, backtest, config, costs, data, dhan, execution, history, intraday, notify, options, perf, smc, store, universe
 
 logger = logging.getLogger('niftywhale.lab')
 
@@ -269,6 +269,26 @@ class Bench:
         return (date.fromisoformat(days[0]), date.fromisoformat(days[-1])) if days else (None, None)
 
 
+def live_costs(mode: str, bench: 'Bench', thr: Dict[str, Any], trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The same trades after costs at the size live trading would trade (Trading settings: fixed lots, or risk of
+    the set capital or the day's capital at Dhan), not the nominal account the rules are compared on. A flat ₹20
+    brokerage weighs far more on one lot than on a ₹10 lakh account's position: live trading's evidence gate reads
+    this."""
+    st = store.settings()
+    try:
+        saved = json.loads(st.get('exec') or '{}')
+        day = json.loads(store.get_kv('exec_day') or '{}')
+    except ValueError:
+        saved, day = {}, {}
+    acct = costs.live_account(saved, day.get('capital'))
+    live = costs.apply([{**t, 'r': t.get('r_gross', t.get('r'))} for t in trades], mode, bench.slippage_bps,
+                       thr.get('stop_pct'), bench.lots, account=acct)
+    s = perf.summary(live)
+    since = (data.now_ist() - timedelta(days=91)).strftime('%Y-%m-%d')
+    return {'account': acct['label'], 'trades': s.get('trades') or 0, 'avg_r': s.get('avg_r'), 'total_r': s.get('total_r'),
+            'hold_r': execution.hold_r(perf.equity(live), since)}
+
+
 def baseline(mode: str, bench: Optional['Bench'] = None) -> Optional[Dict[str, Any]]:
     """The current rules over all the history: what the Performance view shows."""
     bench = bench or Bench(mode)
@@ -283,7 +303,8 @@ def baseline(mode: str, bench: Optional['Bench'] = None) -> Optional[Dict[str, A
     paid = [t['cost_r'] for t in trades if t.get('cost_r') is not None]
     cost_note = {'on': bench.costs, 'slippage_bps': bench.slippage_bps,
                  'gross_avg_r': gross.get('avg_r'), 'gross_total_r': gross.get('total_r'),
-                 'avg_cost_r': round(sum(paid) / len(paid), 3) if paid else None}
+                 'avg_cost_r': round(sum(paid) / len(paid), 3) if paid else None,
+                 'live': live_costs(mode, bench, thr, trades)}
     run_id = store.add_run(mode, 'baseline', thr, (str(first), str(last)),
                            universe_key(mode) if mode != 'options' else 'options candidates',
                            s, perf.breakdown(trades), perf.equity(trades),
