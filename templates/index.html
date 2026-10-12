@@ -6877,7 +6877,8 @@ function dmTip(box, p) {
         if (c.view === 'pnl') html += row(q.kind === 'now' ? 'P&L with open' : 'P&L so far', `<b>${rsSigned(q.cum, 2)}</b>`);
         else {
             const vs = q.balance - c.base[i];
-            html += row('Balance', `<b>${rs(q.balance, 2)}</b>`) + row('vs money in', `${rsSigned(vs, 2)} <span class="muted">(${c.base[i] ? (100 * vs / c.base[i]).toFixed(2) : '0'}%)</span>`);
+            // The balance less the money put in so far: the P&L to date (no percentage of that sum, which a withdrawal would inflate).
+            html += row('Balance', `<b>${rs(q.balance, 2)}</b>`) + row('Money in', rs(c.base[i], 2)) + row('P&L so far', rsSigned(vs, 2));
         }
     }
     tip.innerHTML = html;
@@ -6900,7 +6901,8 @@ function renderDemoTotals() {
         : box('Equity', rs(a.equity), `balance ${rs(a.balance)} + open ${rs(a.unreal)}`)
           + box('Free funds', rs(a.free), `${rs(a.blocked)} in ${a.open} open position(s)`)
           + box('Realised P&L', (a.realized > 0 ? '+' : '') + rs(a.realized), `after ${rs(a.charges)} charges · ${a.closed} trade(s)`, tone(a.realized))
-          + box('Return', a.return_pct == null ? '—' : (a.return_pct > 0 ? '+' : '') + a.return_pct + '%', `on ${rs(a.deposits - a.withdrawals)} put in`, tone(a.return_pct || 0));
+          + box('Return', a.twr_pct == null ? '—' : (a.twr_pct > 0 ? '+' : '') + a.twr_pct + '%',
+                `time-weighted: money added or withdrawn does not move it · ${rs(a.deposits - a.withdrawals)} in now`, tone(a.twr_pct || 0));
     $('dm-modes').innerHTML = ['swing', 'intraday', 'options'].map((m) => {
         const x = d.by_mode[m] || {}, on = d.settings[m];
         return `<tr class="clickable dmc-pick" data-dmcm="${m}" aria-selected="${dmcState().mode === m}" title="Chart ${MODE_NAME[m]} alone (click again for all)">

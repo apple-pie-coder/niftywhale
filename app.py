@@ -1059,12 +1059,36 @@ def demo_account(at: datetime = None, positions: list = None, ledger: list = Non
     balance = round(deposits - withdrawals + realized, 2)
     blocked = round(sum(p['margin'] or 0 for p in open_), 2)
     unreal = round(sum(p['unreal'] or 0 for p in open_ if p['status'] == 'open'), 2)
-    return {'deposits': deposits, 'withdrawals': withdrawals, 'realized': realized,
+    return {'deposits': deposits, 'withdrawals': withdrawals, 'realized': realized, 'twr_pct': demo_twr(led, closed, unreal),
             'charges': round(sum(p['charges'] or 0 for p in closed), 2), 'gross': round(sum(p['gross'] or 0 for p in closed), 2),
             'balance': balance, 'blocked': blocked, 'free': round(balance - blocked, 2), 'unreal': unreal,
             'equity': round(balance + unreal, 2), 'open': len(open_), 'closed': len(closed),
             'return_pct': round((balance + unreal - (deposits - withdrawals)) / (deposits - withdrawals) * 100, 2)
             if deposits - withdrawals > 0 else None}
+
+
+def demo_twr(ledger: list, closed: list, unreal: float = 0.0):
+    """The account's time-weighted return, %: its growth between one deposit or withdrawal and the next (closed
+    trades' net, and the open positions' P&L at the end), chained. Money in or out does not move it, where profit
+    over the money put in jumps with every withdrawal (the same rupees over a smaller sum). None before any money."""
+    flows = [(_when(x['ts']), 0, x['amount'] if x['kind'] == 'deposit' else -x['amount']) for x in ledger
+             if x['kind'] in ('deposit', 'withdraw')]
+    if not flows:
+        return None
+    trades = [(_when(p['exit_time']), 1, p['net'] or 0) for p in closed]
+    growth, start, bal = 1.0, 0.0, 0.0
+    for _, is_trade, amount in sorted(flows + trades, key=lambda e: (e[0] or data.now_ist(), e[1])):
+        if is_trade:
+            bal += amount
+            continue
+        if start > 0 and bal > 0:
+            growth *= bal / start                 # the period that this deposit or withdrawal ends
+        bal += amount
+        start = bal
+    bal += unreal or 0
+    if start > 0 and bal > 0:
+        growth *= bal / start
+    return round((growth - 1) * 100, 2)
 
 
 # ---------------------------------------------------------------- live marks

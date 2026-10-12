@@ -416,5 +416,36 @@ class LivePrices(unittest.TestCase):
         self.assertEqual(app.underlying_key('HDFCBANK'), 'HDFCBANK')
 
 
+class TimeWeightedReturn(unittest.TestCase):
+    """The account's Return is time-weighted (app.demo_twr): the growth between one deposit or withdrawal and the next,
+    chained, so moving money in or out never changes it. Profit over the money put in did: withdrawing half the
+    account doubled the same rupees' percentage."""
+    def led(self, *rows):
+        return [{'ts': ts, 'kind': k, 'amount': a} for ts, k, a in rows]
+
+    def trade(self, ts, net):
+        return {'exit_time': ts, 'net': net}
+
+    def test_withdrawal_does_not_move_it(self):
+        base = self.led(('2026-10-09T09:15:00+05:30', 'deposit', 1_000_000))
+        trades = [self.trade('2026-10-09T15:00:00+05:30', 100_000)]                  # +10%
+        self.assertEqual(app.demo_twr(base, trades), 10.0)
+        out = base + self.led(('2026-10-10T09:00:00+05:30', 'withdraw', 550_000))
+        self.assertEqual(app.demo_twr(out, trades), 10.0)                            # profit over money in: 22.2%
+        back = out + self.led(('2026-10-10T09:05:00+05:30', 'deposit', 550_000))
+        self.assertEqual(app.demo_twr(back, trades), 10.0)
+
+    def test_periods_chain(self):
+        # +10% on 10 lakh, half withdrawn, then +10% on the 5.5 lakh left: 1.1 x 1.1 = +21%.
+        led = self.led(('2026-10-09T09:15:00+05:30', 'deposit', 1_000_000), ('2026-10-10T09:00:00+05:30', 'withdraw', 550_000))
+        trades = [self.trade('2026-10-09T15:00:00+05:30', 100_000), self.trade('2026-10-10T15:00:00+05:30', 55_000)]
+        self.assertEqual(app.demo_twr(led, trades), 21.0)
+        self.assertEqual(app.demo_twr(led, trades, unreal=-6_050), 19.79)            # the open P&L ends the last period
+
+    def test_no_money(self):
+        self.assertIsNone(app.demo_twr([], []))
+        everything = self.led(('2026-10-09T09:15:00+05:30', 'deposit', 100_000), ('2026-10-09T10:00:00+05:30', 'withdraw', 100_000))
+        self.assertEqual(app.demo_twr(everything, []), 0.0)
+
 if __name__ == '__main__':
     unittest.main()

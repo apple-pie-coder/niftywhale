@@ -1132,8 +1132,10 @@ the same day, so options exercise STT never applies. Not modelled: an expiry mov
 quantity (one order's brokerage is charged per position), Dhan's ₹20 auto square-off fee, and the stock futures' premium. When a
 rate changes, update `RATES` and `SCHEDULE_AS_OF`. Charges can be turned off in Settings.
 
-**On the tab:** equity (balance plus open positions at their latest price), free funds, realised P&L after charges, return on
-the money put in; the **Performance** chart, with a choice of what to chart, over which period (today, 7 days, 30 days, all
+**On the tab:** equity (balance plus open positions at their latest price), free funds, realised P&L after charges, and the
+**Return**, time-weighted: the account's growth between one deposit or withdrawal and the next, chained (open positions at
+their latest price end the last stretch). Money added or withdrawn never moves it; profit over the money put in did (withdraw
+half the account and the same rupees read as twice the percentage). Then the **Performance** chart, with a choice of what to chart, over which period (today, 7 days, 30 days, all
 time) and for which mode, each pill counting its closed trades (the choices are kept in this browser):
   - **P&L** (the default): the running total of the closed trades' net, from zero at the start of the period, green above
     zero and red below, a dot per trade coloured won or lost, and a dashed last step to the open positions' P&L now. Money
