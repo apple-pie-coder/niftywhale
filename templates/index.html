@@ -506,7 +506,9 @@
     .dm-why { white-space: normal; min-width: 150px; }
     .dm-inst { white-space: normal; min-width: 110px; }
     .dm-statement td.note { white-space: normal; min-width: 180px; }
-    @media (max-width: 640px) { .dm-how, .dm-break { display: none; } .dm-statement td.note { min-width: 110px; } .dm-statement th, .dm-statement td { padding: 8px 7px; } }
+    .dm-bal-sm { display: none; }
+    @media (max-width: 640px) { .dm-how, .dm-break { display: none; } .dm-statement td.note { min-width: 110px; } .dm-statement th, .dm-statement td { padding: 8px 7px; }
+        .dm-statement .dm-bal { display: none; } .dm-statement .dm-bal-sm { display: block; } .dm-statement th .dm-bal-sm { display: inline; font-weight: inherit; } }
     .dm-stmt-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
     .dm-csv { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
     .dm-sum { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; margin: 0 0 10px; border: 1px solid var(--line);
@@ -2273,7 +2275,7 @@
             <div class="panel-head"><h2 class="panel-title">Statement</h2><span class="dm-stmt-head"><span class="panel-meta" id="dm-stmt-meta"></span>
                 <a class="btn-link dm-csv" href="/api/demo/statement.csv" download><svg class="ic" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/></svg> Download CSV</a></span></div>
             <div class="dm-sum" id="dm-sum"></div>
-            <div class="table-wrap dm-statement"><table><thead><tr><th>When</th><th>Description</th><th class="r">Amount</th><th class="r">Balance</th></tr></thead>
+            <div class="table-wrap dm-statement"><table><thead><tr><th>When</th><th>Description</th><th class="r">Amount<span class="dm-bal-sm"> · balance</span></th><th class="r dm-bal">Balance</th></tr></thead>
                 <tbody id="dm-ledger"></tbody></table></div>
             <div class="pager" id="pg-dmledger" aria-label="Pages"></div>
             <p class="news-note">Demo money only: no order is ever placed. Every trade the app takes from the moment you add funds is mirrored
@@ -2813,10 +2815,30 @@ function paged(key, items) {
     const p = Math.min(Math.max(1, pageNo[key] || 1), last);
     pageNo[key] = p;
     const el = $('pg-' + key);
-    if (el) el.innerHTML = total > sizesFor(key)[0] ? pagerHtml(key, p, last, total, size) : '';
+    if (el) pagerSet(el, total > sizesFor(key)[0] ? pagerHtml(key, p, last, total, size, tfActive(key)) : '');
     return items.slice((p - 1) * size, p * size);
 }
-function pagerHtml(key, p, last, total, size) {
+// A table that refreshes itself (the demo account every 30 seconds) must not close an open Rows list or
+// swap a page button mid-press: the pager is left alone when nothing in it changed, and its Rows list is
+// kept while it has focus.
+function pagerSet(el, html) {
+    if (el._html === html) return;
+    const sel = el.querySelector('select');
+    if (sel && sel === document.activeElement && html) {
+        const t = document.createElement('div'); t.innerHTML = html;
+        const keep = sel.closest('label'), fresh = t.querySelector('label');
+        if (keep && fresh) {
+            [...el.children].forEach((c) => { if (c !== keep) c.remove(); });
+            [...t.children].forEach((c) => { if (c !== fresh) el.insertBefore(c, keep); });
+            el._html = html;
+            return;
+        }
+    }
+    el.innerHTML = html;
+    el._html = html;
+}
+// `filtered`: a filter shows every row it leaves (up to TF_ALL_MAX), so there is no page size to choose.
+function pagerHtml(key, p, last, total, size, filtered) {
     const btn = (to, label, aria, extra = '') =>
         `<button type="button" data-pg="${key}" data-to="${to}" aria-label="${aria}" ${extra}>${label}</button>`;
     // Page numbers: the first, the last, and two either side of the current one.
@@ -2829,11 +2851,12 @@ function pagerHtml(key, p, last, total, size) {
         prev = i;
     });
     const from = (p - 1) * size + 1, to = Math.min(total, p * size);
+    if (filtered && last === 1) return `<span>All ${total} shown</span>`;
     return `<span>${from}–${to} of ${total}</span>
         <div class="pg-btns">${btn(1, '«', 'First page', p === 1 ? 'disabled' : '')}${btn(p - 1, '‹', 'Previous page', p === 1 ? 'disabled' : '')}${
             pages}${btn(p + 1, '›', 'Next page', p === last ? 'disabled' : '')}${btn(last, '»', 'Last page', p === last ? 'disabled' : '')}</div>
-        <label>${key === 'news' ? 'Per page' : 'Rows'} <select data-pgsize="${key}" aria-label="Rows per page">${sizesFor(key).map((n) =>
-            `<option${n === size ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`;
+        ${filtered ? '<span></span>' : `<label>${key === 'news' ? 'Per page' : 'Rows'} <select data-pgsize="${key}" aria-label="Rows per page">${sizesFor(key).map((n) =>
+            `<option${n === size ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`}`;
 }
 const PAGED = { setups: () => renderSetups(), zones: () => renderZones(), signals: () => renderSignals(),
                 alerts: () => renderAlerts(), izones: () => renderIntraday(), isetups: () => renderIntraday(),
@@ -6660,7 +6683,7 @@ function renderDemo() {
         <td class="num">${dmWhen(x.ts)}<div class="muted">${LK[x.kind] || x.kind}</div></td>
         <td class="note"${x.charges ? ` title="${esc(chTip(x.charges))}"` : ''}><span class="dm-line-t">${esc(x.title || '')}</span>
             <div>${esc(x.detail || '')}${x.charges ? ` <span class="dm-break">· ${esc(chTip(x.charges))}</span>` : ''}</div></td>
-        <td class="r num">${x.kind === 'charges' ? '−' + rs(-x.amount, 2) : rsSigned(x.amount, 2)}</td><td class="r num">${rs(x.balance, 2)}</td></tr>`).join('')
+        <td class="r num">${x.kind === 'charges' ? '−' + rs(-x.amount, 2) : rsSigned(x.amount, 2)}<div class="muted dm-bal-sm">${rs(x.balance, 2)}</div></td><td class="r num dm-bal">${rs(x.balance, 2)}</td></tr>`).join('')
         : '<tr><td colspan="4"><div class="empty">No money in yet.</div></td></tr>';
 }
 
