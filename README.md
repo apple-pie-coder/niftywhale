@@ -1,7 +1,7 @@
 # NiftyWhale
 
-NiftyWhale scans NSE stocks for Smart Money Concepts (SMC) setups. It runs the 12-step
-filtering protocol from `stockpulse/INSTRUCTIONS.md` mechanically, long and short, in two modes:
+NiftyWhale scans NSE stocks for Smart Money Concepts (SMC) setups. It runs a 12-step
+filtering protocol mechanically, long and short, in two modes:
 
 - **Swing:** daily candles every evening, then 15-minute candles during market hours, so you are
   told when a setup actually triggers. Trades last days to weeks.
@@ -1148,7 +1148,8 @@ time) and for which mode, each pill counting its closed trades (the choices are 
   Above the chart, the numbers for what it shows: net P&L and charges, trades won and lost, win rate and profit factor, the
   average trade (or the number of days up and down), the best and worst trade (or day), the deepest fall from a high point
   of the running P&L, and the open positions' P&L. Hover a point for its trade (or day); click a trade's point to open its
-  stock. In **By mode**, click a mode to chart it alone (again to show all); open positions marked to their latest price, every closed
+  stock. In **By mode**, click a mode to chart it alone (again to show all); its pills total it for a period (today, the
+  last 7 or 30 days: closed trades by their close, skipped by their entry, open positions always) or one side (long or short); open positions marked to their latest price, every closed
 trade with its gross, charges and net (hover the charges for the lines), the skipped trades, **Charges paid** (each charge
 summed over the closed trades, with its share of the total and how it is levied) and the **Statement**: a summary bar (opening
 balance, funds added and withdrawn, trading P&L, charges, closing balance, and the period it covers), then money in and out,
@@ -1158,7 +1159,9 @@ them. A P&L line says what was traded and how it ended ("bought 2,932 shares @ 2
 the whole statement. **Start over** can count trades from now, from the app's first trade, or from a chosen day's open
 (09:15), with one opening-balance line; a backdated account is replayed at once. The tab's count is the open positions.
 
-**Settings** (the tab's **Settings** button): risk a trade (0.1–10 %), most in one position (1–100 %), intraday leverage (1–5×),
+**Settings** (the tab's **Settings** button, laid out as Live trading's): how each trade is sized, **By risk** (risk a trade,
+0.1–10 %, and most in one position, 1–100 %) or **Fixed lots** (the same 1–100 lots every trade whatever the stop, as live
+trading's: options and stock futures in exchange lots, shares one at a time; skipped when the money is not free), intraday leverage (1–5×),
 futures margin (5–50 %), the limits (most positions open at once, all modes together, and most new trades a day;
 default 20 each, 0 = no limit: once one is reached the account stops taking trades, listed under Skipped with the reason,
 until a position closes or the next day starts), which modes are taken, and charges on or off. Changes apply to trades taken after them.
@@ -1918,7 +1921,6 @@ the weekly report switch. The same settings can also be sent to `POST /api/setti
 1. In Telegram, talk to **@BotFather**, send `/newbot`, and copy the **token** it gives you.
 2. Send any message to your new bot, then open
    `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `chat.id` from the reply.
-   (If stockpulse already has a bot, you can reuse its token and chat ID.)
 3. Put both in `niftywhale/.env`:
    ```sh
    TELEGRAM_BOT_TOKEN=123456:ABC...

@@ -305,6 +305,23 @@ def _rows(f: pd.DataFrame, daily: bool) -> List[list]:
             for t, o, h, l, c, v in zip(ts, f['Open'], f['High'], f['Low'], f['Close'], vol)]
 
 
+def frame(sym: str, tf: int):
+    """`tf`-second candles (a minute or more) of an instrument as a frame, and where they came from: Dhan when it is
+    connected (real time), else yfinance. (None, 'none') when neither has them."""
+    f, src = None, 'none'
+    if dhan.available():
+        try:
+            f, src = _dhan(sym, tf), 'dhan'
+        except Exception as e:
+            logger.warning(f'chart {sym} {tf}s from Dhan failed: {dhan._redact(e)}')
+    if f is None or f.empty:
+        try:
+            f, src = _yf(sym, tf), 'yfinance'
+        except Exception as e:
+            logger.warning(f'chart {sym} {tf}s from yfinance failed: {e}')
+    return (f, src) if f is not None and not f.empty else (None, 'none')
+
+
 def candles(sym: str, tf: int) -> Dict[str, Any]:
     key = (sym, tf, dhan.available())
     with _lock:
@@ -312,18 +329,7 @@ def candles(sym: str, tf: int) -> Dict[str, Any]:
     if hit and time.time() - hit[0] < ttl(tf):
         return hit[1]
     daily = tf >= 86400
-    f, src = None, 'ticks'
-    if tf >= 60:
-        if dhan.available():
-            try:
-                f, src = _dhan(sym, tf), 'dhan'
-            except Exception as e:
-                logger.warning(f'chart {sym} {tf}s from Dhan failed: {dhan._redact(e)}')
-        if f is None or f.empty:
-            try:
-                f, src = _yf(sym, tf), 'yfinance'
-            except Exception as e:
-                logger.warning(f'chart {sym} {tf}s from yfinance failed: {e}')
+    f, src = frame(sym, tf) if tf >= 60 else (None, 'ticks')
     bars = _rows(f, daily) if f is not None else []
     if tf < 60:
         bars = FEED.bars(sym, tf, SHIFT)

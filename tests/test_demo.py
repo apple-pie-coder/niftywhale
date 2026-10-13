@@ -66,6 +66,9 @@ class Sizing(unittest.TestCase):
         st = demo.settings_from({'risk_pct': 99, 'intraday_leverage': 0, 'options': '0', 'junk': 1})
         self.assertEqual((st['risk_pct'], st['intraday_leverage'], st['options']), (10.0, 1.0, False))
         self.assertNotIn('junk', st)
+        st = demo.settings_from({'sizing': 'lots', 'lots': 250})
+        self.assertEqual((st['sizing'], st['lots']), ('lots', 100))
+        self.assertEqual(demo.settings_from({'sizing': 'all-in'})['sizing'], 'risk')
 
 
 class Charges(unittest.TestCase):
@@ -257,6 +260,37 @@ class Account(unittest.TestCase):
         self.assertEqual((b['status'], b['qty']), ('open', 2))                # 25 % of 50,000 / 5,000
         del iid
 
+    def test_day_keeps_what_open_positions_carried_in(self):
+        store.set_kv('demo_day', '')
+        pos = {'mode': 'swing', 'symbol': 'ABC', 'side': 'long', 'entry': 100.0, 'qty': 10}
+        rows = [{**pos, 'id': 1, 'status': 'open', 'entry_time': '2026-10-09T09:30:00+05:30', 'unreal': -250.0},
+                {**pos, 'id': 2, 'status': 'open', 'entry_time': '2026-10-13T10:00:00+05:30', 'unreal': 40.0},
+                {**pos, 'id': 3, 'status': 'closed', 'entry_time': '2026-10-09T09:30:00+05:30', 'unreal': None}]
+        with mock.patch.object(app.data, 'now_ist', return_value=datetime.fromisoformat('2026-10-13T11:00:00+05:30')), \
+             mock.patch.object(app.data, 'live_quotes', return_value={'ABC.NS': {'prev_close': 97.5}}):
+            # Only what was open before today, at yesterday's close (a look at 11:00 still leaves today's move in).
+            self.assertEqual(app.demo_day(rows)['base'], {'1': -25.0})
+            rows[0]['unreal'] = 900.0                                         # marked again later in the day
+            self.assertEqual(app.demo_day(rows)['base'], {'1': -25.0})         # kept from the first look
+        with mock.patch.object(app.data, 'now_ist', return_value=datetime.fromisoformat('2026-10-14T09:00:00+05:30')), \
+             mock.patch.object(app.data, 'live_quotes', return_value={}):
+            self.assertEqual(app.demo_day(rows)['base'], {'1': 900.0, '2': 40.0})   # no quote: the last mark
+
+    def test_skipped_trades_are_not_counted_open(self):
+        self.start(50_000)
+        idea = {'symbol': 'NIFTY', 'expiry': '2026-10-14', 'strike': 25000, 'side': 'CE', 'direction': 'long',
+                'created_at': '2026-10-08T10:30:00+05:30', 'session': '2026-10-08', 'status': 'open',
+                'entry': 120.0, 'stop': 90.0, 'target': 180.0, 'lot': 75, 'last': 130.0}
+        big = store.add_idea(idea)                                             # one lot risks 2,250: skipped
+        small = store.add_idea({**idea, 'strike': 25100, 'entry': 10.0, 'stop': 9.0, 'target': 15.0, 'last': 10.0})
+        app.demo_sync()
+        o = app.options_state()
+        self.assertEqual((o['stats']['open'], o['stats']['skipped']), (1, 1))
+        marks = {i['id']: i['skipped'] for i in o['journal']}
+        self.assertIn('one lot risks', marks[big])
+        self.assertIsNone(marks[small])
+        self.assertEqual(self.client.get('/api/state').get_json()['options']['open'], 1)
+
     def test_closed_between_syncs_releases_margin_in_order(self):
         self.start(100_000)
         paper_trade('ONE', entry=100, stop=99, at='2026-10-08T10:00:00+05:30', status='won', exit_=104, r=4)
@@ -340,6 +374,14 @@ class Account(unittest.TestCase):
         self.assertEqual((d['settings']['risk_pct'], d['settings']['swing']), (2.0, False))
         self.assertEqual(set(d['by_mode']), {'swing', 'intraday', 'options'})
         self.assertEqual(d['curve'][-1]['balance'], 1_000_000)
+
+    def test_fixed_lots(self):
+        self.start()
+        self.client.post('/api/demo/settings', json={'sizing': 'lots', 'lots': 3})
+        paper_trade()                                            # a swing long: 3 shares, whatever the stop
+        app.demo_sync()
+        p = store.demo_positions('open')[0]
+        self.assertEqual((p['product'], p['qty'], p['margin']), ('CNC', 3, round(3 * 126.5, 2)))
 
 
 class LiveMarks(unittest.TestCase):

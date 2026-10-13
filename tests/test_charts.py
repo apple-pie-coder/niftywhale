@@ -132,6 +132,22 @@ class Routes(unittest.TestCase):
         self.assertEqual(self.c.get('/api/charts/candles?symbol=IDX:13&tf=7').status_code, 400)
         self.assertEqual(self.c.get('/api/charts/candles?symbol=FOO&tf=60').status_code, 400)
 
+    def test_panel_candles_keep_their_sessions_with_indicators(self):
+        import pandas as pd
+        idx = pd.DatetimeIndex([]).tz_localize(app.data.IST)
+        for day in ('2026-10-08', '2026-10-09', '2026-10-12', '2026-10-13'):
+            idx = idx.append(pd.date_range(f'{day} 09:15', periods=75, freq='5min', tz=app.data.IST))
+        f = pd.DataFrame({'Open': 100.0, 'High': 101.0, 'Low': 99.0, 'Close': 100.5, 'Volume': 10}, index=idx)
+        app.PANEL_CANDLES.clear()
+        with mock.patch.object(charts, 'frame', return_value=(f, 'dhan')) as fr:
+            d = self.c.get('/api/candles/RELIANCE?tf=5').get_json()
+        fr.assert_called_with('RELIANCE', 300)
+        self.assertEqual((len(d['bars']), d['tf'], d['source']), (225, 5, 'dhan'))      # the last three sessions
+        self.assertEqual(d['bars'][0]['d'], '10-09 09:15')
+        self.assertEqual(len(d['ind']['bb_mid']), 225)
+        self.assertEqual(self.c.get('/api/candles/RELIANCE?tf=7').status_code, 400)
+        self.assertEqual(self.c.get('/api/candles/bad sym?tf=5').status_code, 400)
+
     def test_live_returns_ticks_since(self):
         charts.FEED.add({'IDX:13': 1.1}, 100.0)
         charts.FEED.add({'IDX:13': 1.2}, 200.0)

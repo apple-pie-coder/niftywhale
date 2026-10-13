@@ -64,7 +64,14 @@
     .brand-mark { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
                   background: var(--accent); color: var(--accent-ink); }
     .brand-name { font-weight: 700; letter-spacing: -0.01em; }
-    .brand-sub { color: var(--ink-3); font-size: 12.5px; padding-left: 10px; border-left: 1px solid var(--line); }
+    /* The market's mood in a line (brandMood), beside the name: a dot in the mood's colour and a quip. */
+    .brand-mood { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12.5px; font-style: italic;
+                  color: var(--ink-2); background: none; border: 0; border-left: 1px solid var(--line); padding: 0 0 0 10px;
+                  cursor: pointer; font-family: inherit; }
+    .brand-mood[hidden] { display: none; }
+    .brand-mood i { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--mood-dot, var(--ink-3)); }
+    .brand-mood span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    @media (max-width: 1180px) { .brand-mood span { max-width: 22ch; } }
     .top-right { display: flex; align-items: center; gap: 10px; }
     .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-pill);
             font-size: 12px; font-weight: 600; background: var(--sunk); color: var(--ink-2); white-space: nowrap; }
@@ -77,9 +84,9 @@
     /* The one market status: session, IST time and the data feed. Click for details + Dhan. */
     button.pill { border: 0; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
     button.pill:hover { filter: brightness(0.96); }
-    .pill .mp-src { font-weight: 500; opacity: 0.8; }
-    .pill .mp-cap { display: none; }
-    @media (max-width: 520px) { .pill .mp-word { display: none; } .pill .mp-cap { display: inline; } }
+    /* The market pill: the dot alone says live (green, pulsing), closed (grey) or disconnected (red); only delayed prices get a word. */
+    #market-pill:has(#market-text:empty) { background: none; padding: 6px; }
+    #market-pill:not([data-tone]) .dot, #market-pill[data-tone=""] .dot { color: var(--ink-3); }
     .pill[data-pulse="1"] .dot { animation: tk-pulse 2s infinite; }
     .mstat { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 18px; font-size: 13px; margin: 0; }
     .mstat dt { color: var(--ink-3); }
@@ -93,7 +100,7 @@
     .content { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
     @media (max-width: 960px) {
         .layout { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; }
-        .brand-sub { display: none; }
+        .brand-mood { display: none; }
     }
 
     .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -368,7 +375,8 @@
     .sm-legend .muted, td .muted, .sm-dl .muted, .newsbox .muted { color: var(--ink-3); }
     .sm-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; align-items: start; }
     .sm-two .table-wrap { margin-top: 10px; }
-    @media (max-width: 900px) { .sm-two { grid-template-columns: minmax(0, 1fr); } }
+    .sm-two.o-two { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+    @media (max-width: 900px) { .sm-two, .sm-two.o-two { grid-template-columns: minmax(0, 1fr); } }
     .dread { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: capitalize;
              background: var(--sunk); color: var(--ink-2); white-space: nowrap; }
     .dread[data-r="accumulation"] { background: var(--good-soft); color: var(--good); }
@@ -765,7 +773,7 @@
     .tag { font-size: 10.5px; font-weight: 650; padding: 1px 7px; border-radius: var(--r-pill);
            background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
     .tag[data-t="NSE"], .tag[data-t="out"] { background: var(--warn-soft); color: var(--warn); }
-    @media (max-width: 760px) { .search { margin: 0 8px; } #scan-pill, .pill .mp-time, .pill .mp-src { display: none; } }
+    @media (max-width: 760px) { .search { margin: 0 8px; } #scan-pill { display: none; } }
     @media (max-width: 520px) { .brand-name { display: none; } .topbar { padding: 0 12px; } }
 
     .guide-link { display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
@@ -1309,6 +1317,7 @@
     table.chain .ce .oibar { background: var(--bad); margin-left: auto; } table.chain .pe .oibar { background: var(--good); }
     .why { margin: 6px 0 12px; font-size: 12.5px; color: var(--ink-3); }
     .chip[data-s="open"] { background: var(--accent-soft); color: var(--accent); }
+    .chip[data-s="skipped"] { background: var(--sunk); color: var(--ink-3); }
     .stocks-edit { width: 100%; min-height: 140px; font: 13px/1.5 var(--mono); border: 1px solid var(--line-strong);
                    border-radius: var(--r-sm); padding: 10px; background: var(--surface); color: var(--ink); resize: vertical; }
     .otune { display: grid; gap: 12px; }
@@ -1339,10 +1348,11 @@
     .tk-item[data-dir="up"] .tk-chg { color: var(--up); } .tk-item[data-dir="down"] .tk-chg { color: var(--down); }
     .tk-item[data-flash="up"] { background: var(--good-soft); } .tk-item[data-flash="down"] { background: var(--bad-soft); }
     /* An open position's path since its entry (sparkDraw): the entry dashed, stop and target faint, the line coloured
-       by where it stands now, a dot on the latest price. */
-    .spark { display: inline-block; width: 96px; height: 28px; vertical-align: middle; margin-right: 8px; line-height: 0; }
-    .spark svg { width: 96px; height: 28px; overflow: visible; }
-    td .spark:only-child { margin-right: 0; }
+       by where it stands now, a dot on the latest price. Only those cells: the board cards' candle chart is an
+       svg.spark of its own, full width. */
+    .spark[data-spark] { display: inline-block; width: 96px; height: 28px; vertical-align: middle; margin-right: 8px; line-height: 0; }
+    .spark[data-spark] svg { width: 96px; height: 28px; overflow: visible; }
+    td .spark[data-spark]:only-child { margin-right: 0; }
     .dm-tick, [data-lp] { transition: background 0.6s; border-radius: 3px; }
     #dm-open-foot td { border-top: 1px solid var(--line); border-bottom: 0; }
     [data-lp][data-flash="up"] { background: var(--good-soft); } [data-lp][data-flash="down"] { background: var(--bad-soft); }
@@ -1700,7 +1710,7 @@
             </svg>
         </div>
         <span class="brand-name">NiftyWhale</span>
-        <span class="brand-sub">SMC setups · NSE</span>
+        <button type="button" class="brand-mood" id="brand-mood" hidden><i aria-hidden="true"></i><span></span></button>
     </div>
     <div class="search" id="search">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9"
@@ -1740,7 +1750,7 @@
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2a4 4 0 0 0-4 4v2.4l-1.4 2.2h10.8L12 8.6V6.2a4 4 0 0 0-4-4z"/>
                 <path d="M6.6 13a1.5 1.5 0 0 0 2.8 0"/></svg><span class="nb-count" id="nb-count" hidden></span></button>
         <button class="pill" id="market-pill" type="button" aria-haspopup="dialog" title="Market and data feed"><span class="dot"></span><span
-            id="market-text">—</span><span class="mp-time" id="market-time"></span><span class="mp-src" id="market-src"></span></button>
+            id="market-text"></span></button>
         <span class="pill" id="scan-pill" hidden></span>
     </div>
 </header>
@@ -1917,8 +1927,8 @@
                 <span class="mode-thumb" id="mode-thumb" aria-hidden="true"></span>
                 <button type="button" role="tab" data-mode="swing" aria-selected="true">Swing<small id="swing-badge"></small></button>
                 <button type="button" role="tab" data-mode="intraday" aria-selected="false">Intraday<small id="intra-badge"></small></button>
-                <button type="button" role="tab" data-mode="charts" aria-selected="false">Charts</button>
                 <button type="button" role="tab" data-mode="options" aria-selected="false">Options<small id="opt-badge"></small></button>
+                <button type="button" role="tab" data-mode="charts" aria-selected="false">Charts</button>
                 <button type="button" role="tab" data-mode="news" aria-selected="false">News<small id="news-badge"></small></button>
                 <button type="button" role="tab" data-mode="smart" aria-selected="false">Smart money</button>
                 <button type="button" role="tab" data-mode="demo" aria-selected="false">Demo funds<small id="demo-badge"></small></button>
@@ -2096,6 +2106,8 @@
             </section>
 
             <section>
+              <div class="sm-two o-two">
+                <div>
                 <div class="panel-head">
                     <h2 class="panel-title">Unusual activity</h2>
                     <span class="panel-meta">OI up 50 %+ or volume 3×+ since yesterday, at strikes that matter in their chain</span>
@@ -2107,6 +2119,21 @@
                         <tbody id="o-unusual"></tbody>
                     </table>
                 </div>
+                </div>
+                <div>
+                <div class="panel-head">
+                    <h2 class="panel-title">Skipped</h2>
+                    <span class="panel-meta" id="o-skipped-meta">Ideas the demo account could not take, still followed to their result</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Time</th><th>Option</th><th>Result</th><th class="r">R</th><th>Why</th></tr></thead>
+                        <tbody id="o-skipped"></tbody>
+                    </table>
+                </div>
+                <div class="pager" id="pg-oskipped" aria-label="Pages"></div>
+                </div>
+              </div>
             </section>
 
             <section>
@@ -2294,6 +2321,7 @@
                 <span class="panel-meta">Closed after charges · open at the latest price · click a mode to chart it alone</span></div>
             <div class="table-wrap"><table><thead><tr><th>Mode</th><th class="r">Closed · won</th><th class="r">Net P&amp;L</th><th class="r">Charges</th><th class="r">Open · P&amp;L</th><th class="r">Skipped</th></tr></thead>
                 <tbody id="dm-modes"></tbody></table></div>
+            <div class="pager" id="pg-dmmodes" aria-label="Pages"></div>
         </section>
         <section>
             <div class="panel-head"><h2 class="panel-title">Open positions</h2><span class="panel-meta" id="dm-open-meta"></span></div>
@@ -2691,6 +2719,14 @@ const fmtVol = (v) => {
 // Direction: the triangle alone, green ▲ long, red ▼ short; its word in the tooltip and for screen readers.
 const sideTag = (sd) => sd === 'short' ? '<span class="side" data-side="short" role="img" title="Short" aria-label="Short">' + IC.down + '</span>'
     : '<span class="side" data-side="long" role="img" title="Long" aria-label="Long">' + IC.up + '</span>';
+// A trade's status chip. One the demo account skipped reads "skipped" while it runs (the reason in the tooltip) and
+// keeps that mark once its result is in: the journal still follows it, the account never held it.
+const tradeChip = (status, label, skipped) => {
+    const chip = `<span class="chip" data-s="${esc(status)}">${esc(label)}</span>`;
+    if (!skipped) return chip;
+    const why = ` title="${esc('Demo account: ' + skipped)}"`;
+    return ['open', 'triggered'].includes(status) ? `<span class="chip" data-s="skipped"${why}>skipped</span>` : `${chip} <span class="muted"${why}>skipped</span>`;
+};
 // The board cards' compact form: the triangle alone, its meaning in the tooltip and for screen readers.
 const sideIcon = (sd) => sd === 'short'
     ? '<span class="side side-ic" data-side="short" title="Short setup" aria-label="Short">' + IC.down + '</span>'
@@ -2748,6 +2784,8 @@ const tfSide = (get = (r) => r.side) => ({ id: 'side', opts: [['all', 'Both side
                                                                 ['short', TF_DOWN + ' Short', (r) => get(r) === 'short']] });
 const tfWhen = (get) => ({ id: 'when', opts: [['all', 'Any time'], ['today', 'Today', (r) => tfDay(get(r)) === todayIST()],
                                               ['week', 'Last 7 days', (r) => tfAge(get(r)) <= 7]] });
+const DMC_PERIODS = [['today', 'Today', 0], ['week', 'Last 7 days', 7], ['month', 'Last 30 days', 30]];
+const dmmWhen = (p) => p.status === 'skipped' ? p.entry_time : p.exit_time;
 const tfMode = { id: 'mode', opts: [['all', 'All modes'], ['swing', 'Swing', (r) => r.mode === 'swing'],
                                     ['intraday', 'Intraday', (r) => r.mode === 'intraday'], ['options', 'Options', (r) => r.mode === 'options']] };
 const tfSt = (...names) => (z) => names.includes(z.status);
@@ -2782,6 +2820,12 @@ const TF_DEFS = {
     dmclosed: { groups: [tfMode, tfIs('result', ['won', 'Profit', (p) => (p.net || 0) > 0], ['lost', 'Loss', (p) => (p.net || 0) <= 0]),
                          tfWhen((p) => p.exit_time)], text: (p) => `${p.symbol} ${p.instrument} ${p.note || ''}` },
     dmskipped: { groups: [tfMode, tfWhen((p) => p.entry_time)], text: (p) => `${p.instrument} ${p.note || ''}` },
+    // By mode adds up what the pill leaves: closed trades by their close, skipped by their entry; open positions'
+    // P&L is part of every period, as in the Performance chart.
+    dmmodes: { groups: [{ id: 'when', opts: [['all', 'All time'],
+                   ...DMC_PERIODS.map(([v, l, days]) => [v, l, (p) => p.status === 'open'
+                       || (days ? tfAge(dmmWhen(p)) <= days : tfDay(dmmWhen(p)) === todayIST())])] },
+                         tfSide((p) => p.mode === 'options' ? (p.direction === 'short' ? 'short' : 'long') : p.side)] },
     dmledger: { groups: [tfIs('kind', ['pnl', 'Trade P&L', (x) => x.kind === 'pnl'], ['charges', 'Charges', (x) => x.kind === 'charges'],
                               ['funds', 'Funds', (x) => ['opening', 'deposit', 'withdraw'].includes(x.kind)]), tfWhen((x) => x.ts)],
                 text: (x) => `${x.title || ''} ${x.detail || ''} ${x.symbol || ''}` },
@@ -3007,9 +3051,9 @@ function pagerHtml(key, p, last, total, size, filtered) {
 const PAGED = { setups: () => renderSetups(), zones: () => renderZones(), signals: () => renderSignals(),
                 alerts: () => renderAlerts(), izones: () => renderIntraday(), isetups: () => renderIntraday(),
                 ijournal: () => renderIntraday(), sjournal: () => renderSwingTrades(),
-                orows: () => O && renderOptions(), ojournal: () => O && renderOptions(),
+                orows: () => O && renderOptions(), ojournal: () => O && renderOptions(), oskipped: () => O && renderOptions(),
                 news: () => renderNews(), smstocks: () => renderSmartStocks(), smdeals: () => renderDeals(),
-                dmopen: () => renderDemo(), dmclosed: () => renderDemo(), dmskipped: () => renderDemo(), dmledger: () => renderDemo(),
+                dmmodes: () => demoData && renderDemoTotals(), dmopen: () => renderDemo(), dmclosed: () => renderDemo(), dmskipped: () => renderDemo(), dmledger: () => renderDemo(),
                 trx: () => trxRender(), trxlog: () => trxRender() };
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-pg]');
@@ -3139,8 +3183,9 @@ function uniLabel(key) {
     return o ? o.label : key;
 }
 
-/* The market status lives in one place, the top-bar pill: session, IST time, data feed.
-   Amber when Dhan is set up but not delivering, or the market is open on delayed prices. */
+/* The market status lives in one place, the top-bar pill: in session a green pulsing dot on real-time prices, or "Delayed"
+   (amber) on yfinance; a grey dot once the market has closed; red whenever Dhan is set up but not delivering. Session and
+   time are in its tooltip. */
 const mdState = () => (S && S.market_data) || { live: false, mode: 'off', message: 'Not connected' };
 function feedLine(md) {
     const until = md.token_expiry ? hhmm(md.token_expiry) : null;
@@ -3151,13 +3196,14 @@ function feedLine(md) {
 function renderStatus() {
     const md = mdState(), mp = $('market-pill');
     const trouble = md.mode !== 'off' && !md.live;
-    mp.dataset.tone = trouble || (S.market_open && !md.live) ? 'warn' : S.market_open ? 'good' : '';
+    mp.dataset.tone = trouble ? 'bad' : !S.market_open ? '' : md.live ? 'good' : 'warn';
     mp.dataset.pulse = S.market_open && md.live ? '1' : '0';
-    $('market-text').innerHTML = S.market_open ? '<span class="mp-word">Market o</span><span class="mp-cap">O</span>pen'
-        : '<span class="mp-word">Market c</span><span class="mp-cap">C</span>losed';
-    $('market-time').textContent = ' · ' + new Date(S.now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST';
-    $('market-src').textContent = ' · ' + (md.live ? 'Real-time' : 'Delayed');
-    mp.title = (md.live ? 'Dhan · ' : 'yfinance · ') + feedLine(md) + (MOOD.m && MOOD.on ? ' · Mood: ' + moodWhy(MOOD.m) : '') + ' — click for details';
+    $('market-text').textContent = S.market_open && !md.live && !trouble ? 'Delayed' : '';
+    const when = (S.market_open ? 'Market open' : 'Market closed') + ' · '
+        + new Date(S.now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST · '
+        + (md.live ? 'Real-time' : trouble ? 'Disconnected' : 'Delayed');
+    mp.setAttribute('aria-label', when);
+    mp.title = when + ' · ' + (md.live ? 'Dhan · ' : 'yfinance · ') + feedLine(md) + (MOOD.m && MOOD.on ? ' · Mood: ' + moodWhy(MOOD.m) : '') + ' — click for details';
 }
 
 /* The market's mood as the page's background tint: the server's score (ticker.mood: Nifty's move,
@@ -3169,8 +3215,36 @@ const moodSigned = (v, d = 2) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d)
 const moodWhy = (m) => `${m.label} (Nifty ${moodSigned(m.nifty)}%, ${m.up} of ${m.count} indices up`
     + (m.vix != null ? `, VIX ${(+m.vix).toFixed(1)} ${moodSigned(m.vix_chg, 1)}%` : '') + (m.live ? '' : ', last session') + ')';
 const moodDark = () => document.documentElement.dataset.theme === 'dark';
+// The mood in words, beside the logo: a quip for each mood (one picked for the day, so it does not flicker), a
+// sharper one when the VIX jumps, a sleepier one once the market has closed. The numbers behind it in the tooltip.
+const MOOD_QUIPS = {
+    Euphoric: ['Bulls are ordering champagne', 'Everyone is a genius today', 'FOMO has entered the chat', 'Dalal Street is dancing'],
+    Upbeat: ['Bulls have the aux cord', 'Green is the new black', 'Cautiously smug', 'The chai tastes better today'],
+    Calm: ['Nifty is meditating', 'Sideways, like a crab on holiday', 'Theta is quietly eating lunch', 'Nothing to see, keep scrolling'],
+    Uneasy: ['Calm on the surface, VIX underneath', 'Smiling, nervously', 'Quiet. Too quiet.', 'Everyone is pretending to be fine'],
+    Nervous: ['Bears are sharpening their claws', 'Stop-losses are sweating', 'Someone check on the longs', 'Fingers hovering over Sell'],
+    Fearful: ['Bears are at the buffet', 'Sell first, ask questions later', 'Panic, but make it orderly', 'Hold on to your stop-losses'],
+};
+const MOOD_DOT = { Euphoric: 'var(--good)', Upbeat: 'var(--good)', Calm: 'var(--accent)', Uneasy: 'var(--warn)', Nervous: 'var(--warn)', Fearful: 'var(--bad)' };
+function brandMood() {
+    const el = $('brand-mood'), m = MOOD.m;
+    if (!el) return;
+    if (!m) { el.hidden = true; return; }
+    const list = MOOD_QUIPS[m.label] || MOOD_QUIPS.Calm, day = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+    let n = 0;
+    for (const ch of day + m.label) n = (n * 31 + ch.charCodeAt(0)) % 9973;
+    let quip = list[n % list.length];
+    if (m.live && (m.vix_chg || 0) >= 8) quip = `VIX up ${m.vix_chg.toFixed(0)}%: ${quip.charAt(0).toLowerCase() + quip.slice(1)}`;
+    if (!m.live) quip = `Market's asleep, still ${m.label.toLowerCase()}`;
+    el.querySelector('span').textContent = quip;
+    el.style.setProperty('--mood-dot', MOOD_DOT[m.label] || 'var(--ink-3)');
+    el.title = 'Market mood: ' + moodWhy(m) + '. Click for the market status.';
+    el.setAttribute('aria-label', 'Market mood: ' + quip + '. ' + moodWhy(m));
+    el.hidden = false;
+}
 function applyMood(m) {
     if (m !== undefined) MOOD.m = m && m.label ? m : null;
+    brandMood();
     const root = document.documentElement.style;
     m = MOOD.m;
     if (!m || !MOOD.on) { ['--mood-a', '--mood-b', '--mood-line'].forEach((k) => root.setProperty(k, 'transparent')); return; }
@@ -3209,6 +3283,7 @@ function openStatus() {
     if ($('st-mood')) $('st-mood').addEventListener('change', (e) => { MOOD.on = e.target.checked; store.set('nw.mood', MOOD.on); applyMood(); renderStatus(); });
 }
 $('market-pill').addEventListener('click', openStatus);
+$('brand-mood').addEventListener('click', openStatus);
 
 function openDhan() {
     const md = S.market_data || {};
@@ -3403,8 +3478,8 @@ function renderZones() {
     }
     $('zones').innerHTML = paged('zones', zs).map((z) => `<tr data-click="${esc(z.symbol)}"${['triggered', 'won', 'lost'].includes(z.status) && (z.trigger || {}).paper ? ` data-ref="swing:${z.id}"` : ''}>
         <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td>
-        <td><span class="chip" data-s="${esc(z.status)}">${esc(z.status === 'triggered' && (z.trigger || {}).paper ? 'open trade' : z.status)}</span>${
-            z.status === 'triggered' && (z.trigger || {}).paper ? sqBtn('paper', `swing:${z.id}`, z.symbol) : ''}</td>
+        <td>${tradeChip(z.status, z.status === 'triggered' && (z.trigger || {}).paper ? 'open trade' : z.status, z.skipped)}${
+            z.status === 'triggered' && (z.trigger || {}).paper && !z.skipped ? sqBtn('paper', `swing:${z.id}`, z.symbol) : ''}</td>
         <td class="r num">${px(z.zone_low)} – ${px(z.zone_high)}</td>
         <td class="note">${esc(z.note || 'not checked yet')}${z.last_checked ? `<br><span class="muted">${hhmm(z.last_checked)}</span>` : ''}</td>
         <td>${['watching', 'tapped'].includes(z.status)
@@ -3454,10 +3529,10 @@ function renderSwingTrades() {
         return `<tr data-click="${esc(z.symbol)}" data-ref="swing:${z.id}"><td class="num">${hhmm(t.choch_time)}</td>
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td>
             <td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td><td class="r num">${px(t.target)}</td>
-            <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span>${
+            <td>${tradeChip(z.status, { triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status, z.skipped)}${
                 t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${
                 t.approx ? ' <span class="muted" title="Partly judged on daily candles after a data gap">≈</span>' : ''}${
-                z.status === 'triggered' ? sqBtn('paper', `swing:${z.id}`, z.symbol) : ''}</td>
+                z.status === 'triggered' && !z.skipped ? sqBtn('paper', `swing:${z.id}`, z.symbol) : ''}</td>
             <td class="r num">${exit}</td>
             <td class="r num">${z.status === 'triggered' ? lpR(z.symbol, t, z.side, rfmt(t.r_open)) : rfmt(t.r != null ? t.r : t.r_open)}</td></tr>`;
     }).join('') : `<tr><td colspan="8"><div class="empty"><b>No paper trades yet</b>Each swing entry alert is followed on 15m
@@ -3469,7 +3544,30 @@ let drawerToken = 0;
 let overlays = Object.assign({ ob: true, fvg: true, liq: true, lv: true, zone: true, pat: true,
                                vwap: true, orb: true, bb: false, delta: true },
                              store.get('nw.overlays', {}));
-let tf = ['D', '15m'].includes(store.get('nw.tf', 'D')) ? store.get('nw.tf', 'D') : 'D';   // chart timeframe: 'D' or '15m'
+// Every side-panel chart (a stock, an intraday setup, a trade) offers the same timeframes in the same buttons.
+const PANEL_TFS = [['1m', 1], ['5m', 5], ['15m', 15], ['1h', 60], ['D', 1440]];
+const TF_MIN = Object.fromEntries(PANEL_TFS), TF_LABEL = Object.fromEntries(PANEL_TFS.map(([k, m]) => [m, k]));
+const tfButtons = (attr, cur, only) => PANEL_TFS.filter(([, m]) => !only || only.includes(m))
+    .map(([k]) => `<button type="button" data-${attr}="${k}" aria-pressed="${cur === k}">${k}</button>`).join('');
+// Candles a panel's own data does not have (/api/candles: Dhan in real time when connected), kept per panel as
+// current.frames[tf]; the stock's 15m keep coming with its zone and patterns (/api/intraday).
+function panelCandles(sym, t) {
+    if (t === '15m' && !current.intra) return api('/api/intraday/' + encodeURIComponent(sym));
+    return api('/api/candles/' + encodeURIComponent(sym) + '?tf=' + TF_MIN[t]).then((m) => ({ ...m, zone: zoneFor(sym) }));
+}
+async function panelFrame(t, redraw) {
+    const sym = current.symbol, frames = current.frames || (current.frames = {});
+    if (frames[t]) return frames[t];
+    $('chart-wrap').innerHTML = `<div class="empty">Loading ${t} candles…</div>`;
+    try {
+        const m = await panelCandles(sym, t);
+        if (current && current.symbol === sym && current.frames === frames) { frames[t] = m; redraw(); }
+    } catch (e) {
+        if (current && current.symbol === sym && $('chart-wrap')) $('chart-wrap').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    }
+    return null;
+}
+let tf = TF_MIN[store.get('nw.tf', 'D')] ? store.get('nw.tf', 'D') : 'D';   // the stock chart's timeframe
 let range = store.get('nw.range', 126);
 let current = null;                       // the stock open in the drawer
 
@@ -3485,7 +3583,7 @@ async function openStock(symbol, whatIf, wantTf) {
         const q = '?bars=260' + (whatIf ? '&rules=' + encodeURIComponent(JSON.stringify(whatIf)) : '');
         const d = await api('/api/stock/' + encodeURIComponent(symbol) + q);
         if (token !== drawerToken) return;
-        current = { symbol: d.symbol, d, whatIf: !!whatIf, m15: null };
+        current = { symbol: d.symbol, d, whatIf: !!whatIf, frames: {} };
         renderDrawer();
     } catch (e) {
         if (token === drawerToken) $('dw-sub').textContent = 'Could not load: ' + e.message;
@@ -3503,8 +3601,7 @@ function renderDrawer() {
     const ovl = [['ob', 'Order block'], ['fvg', 'FVG'], ['liq', 'Liquidity'], ['lv', 'Target / EQ / stop'],
                  ['zone', 'Watch zone'], ['pat', 'Patterns'], ...INDICATOR_TOGGLES]
         .map(([k, l]) => `<button type="button" data-ovl="${k}" aria-pressed="${!!overlays[k]}">${l}</button>`).join('');
-    const tfBtns = [['D', 'Daily'], ['15m', '15m']].map(([k, l]) =>
-        `<button type="button" data-tf="${k}" aria-pressed="${tf === k}">${l}</button>`).join('');
+    const tfBtns = tfButtons('tf', tf);
     $('dw-body').innerHTML =
         `<div class="tools"><div style="display:flex;gap:8px">
                 <div class="seg small" role="group" aria-label="Timeframe">${tfBtns}</div>
@@ -3633,7 +3730,8 @@ function openIndicatorSettings() {
             S.indicator_settings = JSON.parse(S.settings.indicators || '{}');
             applyIndicatorColors();
             closeModal(); toast('Indicator settings saved');
-            if (current && current.intra) openIntraday(current.symbol);
+            if (current && current.trade) openTrade(current.trade.ref);
+            else if (current && current.intra) openIntraday(current.symbol);
             else if (current && !current.options && !current.smart) openStock(current.symbol, undefined, tf);
         } catch (e) { toast('Could not save: ' + e.message); }
     };
@@ -3684,22 +3782,14 @@ window.addEventListener('resize', repaintIfResized);
 async function drawChart() {
     const wrap = $('chart-wrap');
     $('range-seg').style.display = tf === 'D' ? '' : 'none';
-    // The daily-only overlays mean nothing on 15m candles.
+    // The daily analysis' overlays mean nothing on intraday candles; the session tools nothing on daily ones.
     document.querySelectorAll('[data-ovl]').forEach((b) => {
-        b.hidden = (tf === '15m' && ['ob', 'fvg', 'liq'].includes(b.dataset.ovl)) ||
+        b.hidden = (tf !== 'D' && ['ob', 'fvg', 'liq'].includes(b.dataset.ovl)) || (!['D', '15m'].includes(tf) && b.dataset.ovl === 'pat') ||
                    (tf === 'D' && ['vwap', 'orb'].includes(b.dataset.ovl));
     });
-    if (tf === '15m') {
-        if (!current.m15) {
-            wrap.innerHTML = '<div class="empty">Loading 15m candles…</div>';
-            const sym = current.symbol;
-            try { current.m15 = await api('/api/intraday/' + encodeURIComponent(sym)); }
-            catch (e) { if (current && current.symbol === sym) wrap.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-            if (!current || current.symbol !== sym || tf !== '15m') return;
-        }
-        return drawCandles(intradaySpec());
-    }
-    drawCandles(dailySpec());
+    if (tf === 'D') return drawCandles(dailySpec());
+    const want = tf, m = await panelFrame(want, () => { if (current && current.d && tf === want) drawChart(); });
+    if (m && wrap && tf === want) drawCandles(intradaySpec(m));
 }
 
 /* Indicator toggles, shared by every chart. VWAP and ORB are session tools,
@@ -3759,9 +3849,9 @@ function dailySpec() {
     return spec;
 }
 
-/* What to draw on the 15m chart: three sessions, the zone, the patterns. */
-function intradaySpec() {
-    const m = current.m15, bars = m.bars, z = m.zone;
+/* What to draw on an intraday chart of the stock: its sessions, the zone, the levels, the patterns (15m). */
+function intradaySpec(m) {
+    const bars = m.bars, z = m.zone;
     const spec = { bars, label: (b) => b.d, axis: (b) => b.d.slice(6), boxes: [], lines: [], marks: [], seps: [], extra: [],
                    ind: m.ind };
     bars.forEach((b, k) => { if (k && b.day !== bars[k - 1].day) spec.seps.push({ k, label: b.d.slice(0, 5) }); });
@@ -4209,7 +4299,7 @@ function paintFull() {
     const wrap = $('full-wrap');
     if (!lastSpec || !wrap) return;
     if (current) $('fc-sub').textContent = current.trade ? ((current.candles || {}).label || 'trade') : current.intra ? 'intraday · ' + itf + ' candles'
-        : (tf === 'D' ? 'daily candles' : '15m candles');
+        : (tf === 'D' ? 'daily candles' : tf + ' candles');
     paintChart(lastSpec, wrap);
 }
 // The drawer chart's height follows its width (a phone turned sideways); a new theme or indicator colour redraws.
@@ -4487,8 +4577,9 @@ function sparkSvg(c) {
 
 function renderBoard(b) {
     const cards = b.cards || [];
-    // The tab's count, as Intraday's: open paper trades when there are any, else the zones being watched.
-    const trades = cards.filter((c) => c.trade).length;
+    // The tab's count, as Intraday's: open paper trades when there are any, else the zones being watched. A trade the
+    // demo account skipped is not counted.
+    const trades = cards.filter((c) => c.trade && !c.trade.skipped).length;
     const watched = cards.filter((c) => ['watching', 'tapped'].includes(c.status)).length;
     $('swing-badge').textContent = trades ? `${trades} open` : watched ? `${watched}` : '';
     $('swing-badge').parentElement.title = `${trades} open paper trade(s) · ${watched} zone(s) watched`;
@@ -4504,8 +4595,8 @@ function renderBoard(b) {
         return;
     }
     $('board').innerHTML = cards.map((c) => {
-        const head = (status) => `<div class="bc-head"><div class="bc-id"><b>${esc(c.symbol)}</b>${c.side ? sideIcon(c.side) : ''}</div>
-            <span class="chip" data-s="${esc(c.status)}">${esc(status)}</span></div>
+        const head = (status, s = c.status, why = '') => `<div class="bc-head"><div class="bc-id"><b>${esc(c.symbol)}</b>${c.side ? sideIcon(c.side) : ''}</div>
+            <span class="chip" data-s="${esc(s)}"${why ? ` title="${esc('Demo account: ' + why)}"` : ''}>${esc(status)}</span></div>
             <div class="bc-name">${esc(c.name || '')}</div>`;
         if (c.error) return `<button class="bcard" type="button" data-board="${esc(c.symbol)}">${head(c.status)}
             <div class="bc-empty">No 15m data right now.</div></button>`;
@@ -4516,7 +4607,7 @@ function renderBoard(b) {
         const pats = (c.patterns || []).length ? `<div class="pchips">${patChips(c.patterns, true)}</div>` : '';
         return `<button class="bcard" type="button" data-board="${esc(c.symbol)}" data-where="${c.where}" data-s="${esc(c.status)}"
                 title="${esc(c.name || '')} — open the 15m chart">
-            ${head(c.trade ? 'open trade' : c.status)}
+            ${c.trade && c.trade.skipped ? head('skipped', 'skipped', c.trade.skipped) : head(c.trade ? 'open trade' : c.status)}
             <div class="bc-price"><span class="num" data-lp="${esc(c.symbol)}" data-v="${c.last}">${px(c.last)}</span>
                 <span class="chg ${dir}"${c.prev_close ? ` data-lp="${esc(c.symbol)}" data-lk="chg" data-prev="${c.prev_close}"` : ''}>${chg == null ? '' : (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%'}</span>${newsBadge(c.news)}</div>
             ${sparkSvg(c)}
@@ -6122,7 +6213,7 @@ async function openTrade(ref, fallback) {
     try {
         const d = await api('/api/trade/' + encodeURIComponent(ref));
         if (token !== drawerToken) return;
-        current = { symbol: d.symbol, trade: d, candles: null, lpKey: null, tfMin: null };
+        current = { symbol: d.symbol, trade: d, candles: null, lpKey: null, tfMin: null, trTf: store.get('nw.trtf.' + d.mode, null) };
         renderTrade();
         loadTradeCandles(ref, token);
     } catch (e) {
@@ -6132,9 +6223,10 @@ async function openTrade(ref, fallback) {
 }
 
 async function loadTradeCandles(ref, token) {
+    const want = current && current.trTf;
     try {
-        const c = await api('/api/trade/' + encodeURIComponent(ref) + '/candles');
-        if (token !== drawerToken || !current || !current.trade || current.trade.ref !== ref) return;
+        const c = await api('/api/trade/' + encodeURIComponent(ref) + '/candles' + (want ? '?tf=' + want : ''));
+        if (token !== drawerToken || !current || !current.trade || current.trade.ref !== ref || current.trTf !== want) return;
         current.candles = c; current.lpKey = c.lp || null; current.tfMin = c.tf || null;
         drawTradeChart();
     } catch (e) {
@@ -6142,13 +6234,25 @@ async function loadTradeCandles(ref, token) {
     }
 }
 
+// The trade chart's timeframes (the panels' own, as many as the server offers for this trade's length) and its
+// indicator toggles.
+function trTfButtons(c) {
+    const seg = document.getElementById('tr-tf');
+    if (seg) seg.innerHTML = c && c.tfs ? tfButtons('trtf', TF_LABEL[c.tf], c.tfs) : '';
+    // VWAP and the opening range are session tools: not on daily candles.
+    document.querySelectorAll('#dw-body [data-ovl], #fc-tools [data-ovl]').forEach((b) => {
+        b.hidden = !!c && c.tf === 1440 && ['vwap', 'orb'].includes(b.dataset.ovl);
+    });
+}
+
 function drawTradeChart() {
     const d = current.trade, c = current.candles, wrap = $('chart-wrap');
     if (!wrap) return;
+    trTfButtons(c);
     if (!c || !(c.bars || []).length) { wrap.innerHTML = `<div class="empty">${esc((c && c.note) || 'No candles for this trade.')}</div>`; return; }
     $('tr-chart-label').textContent = `${c.label} · ${c.tf === 1440 ? 'daily' : c.tf === 60 ? 'hourly' : c.tf + 'm'} candles`;
     const bars = c.bars, daily = c.tf === 1440, own = d.mode !== 'options' || /premium$/.test(c.label || '');
-    const spec = { bars, label: (b) => b.d, axis: (b) => daily ? b.d.slice(2) : b.d.slice(6), boxes: [], lines: [], marks: [], seps: [], extra: [], ind: {} };
+    const spec = { bars, label: (b) => b.d, axis: (b) => daily ? b.d.slice(2) : b.d.slice(6), boxes: [], lines: [], marks: [], seps: [], extra: [], ind: c.ind || {} };
     // Day lines; one right by the entry or exit keeps its line but gives up its label.
     const busy = (k) => [c.entry_k, c.exit_k].some((m) => m != null && Math.abs(m - k) <= 4);
     if (!daily) bars.forEach((b, k) => { if (k && b.day !== bars[k - 1].day) spec.seps.push({ k, label: busy(k) ? '' : b.d.slice(0, 5) }); });
@@ -6250,7 +6354,10 @@ function renderTrade() {
             ${S.approx ? '<dt>Note</dt><dd>partly judged on daily candles after a data gap</dd>' : ''}</dl>`;
     const news = (d.news || []).length ? `<div class="box newsbox"><h3 class="label">News around the trade</h3>${d.news.map((n) => newsItemHtml(n, false)).join('')}</div>` : '';
     $('dw-body').innerHTML = banner + levels +
-        `<div class="tools"><span class="muted" id="tr-chart-label" style="font-size:12px"></span>${chartBtns()}</div>
+        `<div class="tools" id="tr-tools"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <div class="seg small" role="group" aria-label="Timeframe" id="tr-tf"></div>
+                <span class="muted" id="tr-chart-label" style="font-size:12px"></span></div>
+             <div class="ovl" role="group" aria-label="Indicators">${indicatorBtns()}</div>${chartBtns()}</div>
          <div class="chart-wrap" id="chart-wrap"><div class="empty">Loading the trade's candles…</div></div>
          <div class="tr-grid"><div class="box"><h3 class="label">Why it triggered</h3>${why}</div>
             <div class="box"><h3 class="label">Demo account</h3>${trDemo(d)}</div></div>
@@ -6260,6 +6367,22 @@ function renderTrade() {
             : `<button class="btn" type="button" data-tr-go="${d.mode === 'intraday' ? 'intra' : 'stock'}">${d.mode === 'intraday' ? 'Intraday chart and setup' : 'Stock chart and analysis'}</button>`}
             ${d.demo ? '<button class="btn" type="button" data-tr-go="demo">Demo funds</button>' : ''}</div>`;
     if (current.candles) drawTradeChart();
+    // The toolbar moves into the expanded view and back, so it listens itself.
+    $('tr-tools').addEventListener('click', (e) => {
+        const t = e.target.closest('[data-trtf]'), o = e.target.closest('[data-ovl]');
+        if (t && current && current.trade) {
+            const m = TF_MIN[t.dataset.trtf];
+            if (current.candles && current.candles.tf === m) return;
+            current.trTf = m; store.set('nw.trtf.' + d.mode, m);
+            document.querySelectorAll('[data-trtf]').forEach((x) => x.setAttribute('aria-pressed', String(x === t)));
+            if ($('chart-wrap') && $('fullchart').hidden) $('chart-wrap').innerHTML = '<div class="empty">Loading the candles…</div>';
+            loadTradeCandles(d.ref, drawerToken);
+        } else if (o) {
+            overlays[o.dataset.ovl] = !overlays[o.dataset.ovl]; store.set('nw.overlays', overlays);
+            o.setAttribute('aria-pressed', String(overlays[o.dataset.ovl]));
+            if (current && current.candles) drawTradeChart();
+        }
+    });
     $('dw-body').querySelectorAll('[data-tr-go]').forEach((b) => b.addEventListener('click', () => {
         const g = b.dataset.trGo;
         if (g === 'chain') openOptions(d.symbol, o.expiry, { k: o.strike, side: o.side });
@@ -6608,6 +6731,9 @@ LIVE.hooks.push({
 // candle follows the price; when its time is up the candles are fetched again for the next one.
 // Not while the chart is being dragged or the pointer is on it (the crosshair would jump).
 let lpRefetchAt = 0;
+// The drawer chart's candle length in minutes, and the session's hours (minutes after midnight, IST).
+const SESSION_OPEN = 9 * 60 + 15, SESSION_CLOSE = 15 * 60 + 30;
+const drawerMins = () => current.trade ? current.tfMin : TF_MIN[current.intra ? itf : tf];
 function lpRefetchDrawer() {
     if (Date.now() - lpRefetchAt < 20000 || !current) return;
     lpRefetchAt = Date.now();
@@ -6618,9 +6744,14 @@ function lpRefetchDrawer() {
         api('/api/intraday/chart/' + encodeURIComponent(sym)).then((d) => {
             if (current && current.intra && current.symbol === sym && !current.whatIf) { current.intra = d; drawIntra(); }
         }).catch(() => {});
-    } else if (tf === '15m' && current.d) {
-        api('/api/intraday/' + encodeURIComponent(sym)).then((m) => {
-            if (current && current.symbol === sym && tf === '15m') { current.m15 = m; drawCandles(intradaySpec()); }
+    }
+    // A timeframe fetched for the panel: its candles again (volume, the closed candle as the exchange has it).
+    const t = current.intra ? itf : tf, frames = current.frames;
+    if (frames && frames[t] && !(current.intra && ['5m', '15m'].includes(t)) && !(current.d && t === 'D')) {
+        panelCandles(sym, t).then((m) => {
+            if (!current || current.symbol !== sym || current.frames !== frames || (current.intra ? itf : tf) !== t) return;
+            frames[t] = m;
+            if (current.intra) drawIntra(); else drawChart();
         }).catch(() => {});
     }
 }
@@ -6633,16 +6764,28 @@ LIVE.hooks.push({
         const v = P[current.trade ? current.lpKey : current.symbol], p = v && v[0], bars = lastSpec.bars, b = bars && bars[bars.length - 1];
         if (!(p > 0) || !b) return;
         const ist = new Date(Date.now() + 330 * 60000).toISOString(), today = ist.slice(0, 10);
-        let forming;
-        if (b.day == null) forming = b.d === today;                 // daily candles
+        const now = +ist.slice(11, 13) * 60 + +ist.slice(14, 16), mins = drawerMins();
+        if (!LIVE.on || !mins || now < SESSION_OPEN) return;            // the session's prices only
+        // The candle this price belongs to: today's for daily candles, else the one the clock is in (from 09:15).
+        let d, day = today, t;
+        if (mins >= 1440) { d = today; day = null; }
         else {
-            const mins = current.tfMin || (current.intra && itf === '5m' ? 5 : 15);
-            const [hh, mm] = b.d.slice(6).split(':').map(Number), now = +ist.slice(11, 13) * 60 + +ist.slice(14, 16);
-            forming = b.day === today && now < hh * 60 + mm + mins;
-            if (!forming && b.day === today) lpRefetchDrawer();
+            if (now >= SESSION_CLOSE) return;
+            const at = SESSION_OPEN + Math.floor((now - SESSION_OPEN) / mins) * mins, hm = `${String(Math.floor(at / 60)).padStart(2, '0')}:${String(at % 60).padStart(2, '0')}`;
+            d = `${today.slice(5)} ${hm}`; t = `${today}T${hm}:00+05:30`;
         }
-        if (!forming || b.c === p) return;
-        b.c = p; b.h = Math.max(b.h, p); b.l = Math.min(b.l, p);
+        const key = (x) => (x.day || '') + x.d;
+        if (key(b) === (day || '') + d) {
+            if (b.c === p) return;
+            b.c = p; b.h = Math.max(b.h, p); b.l = Math.min(b.l, p);
+        } else if (key(b) < (day || '') + d) {
+            // The clock has moved on to a new candle: start it here, as the Charts tab does, and fetch the closed
+            // one as the exchange has it in the background.
+            b.live = false;
+            bars.push({ o: p, h: p, l: p, c: p, d, day, t, live: true });
+            Object.values(lastSpec.ind || {}).forEach((arr) => { if (Array.isArray(arr) && arr.length === bars.length - 1) arr.push(null); });
+            lpRefetchDrawer();
+        } else return;
         // Only the forming candle moves (the chart keeps its zoom and the crosshair stays where it is).
         paintChart(lastSpec, $('chart-wrap'));
         if (!$('fullchart').hidden) paintFull();
@@ -6709,17 +6852,22 @@ function dmcBar() {
         return el;
     };
     const modeOk = (p) => st.view === 'balance' || dmcModeOk(st.mode, p);
-    pills('dmc-range', 'data-dmcr', DMC_RANGES, (r) => trades.filter((p) => dmcIn(r, p.ts) && modeOk(p)).length, st.range);
+    // Each counts the closed trades in it and the positions open now, whose P&L is part of every period.
+    const open = demoData.open || [];
+    pills('dmc-range', 'data-dmcr', DMC_RANGES, (r) => trades.filter((p) => dmcIn(r, p.ts) && modeOk(p)).length + open.filter(modeOk).length, st.range);
     pills('dmc-mode', 'data-dmcm', [['all', 'All modes'], ...Object.entries(MODE_NAME)],
-          (m) => trades.filter((p) => dmcIn(st.range, p.ts) && dmcModeOk(m, p)).length, st.mode).hidden = st.view === 'balance';
+          (m) => trades.filter((p) => dmcIn(st.range, p.ts) && dmcModeOk(m, p)).length + open.filter((p) => dmcModeOk(m, p)).length, st.mode).hidden = st.view === 'balance';
 }
 
-// What is charted: the closed trades in the period (and mode), and the open positions' P&L now.
+// What is charted: the closed trades in the period (and mode), and the open positions' P&L now. Today is what today
+// made or lost: a position carried in from an earlier day counts only its move since (its P&L then, `carried`, left out).
 function dmcData() {
-    const d = demoData, st = dmcState(), mode = st.view === 'balance' ? 'all' : st.mode;
-    const trades = (d.curve || []).filter((p) => p.kind === 'trade' && dmcIn(st.range, p.ts) && dmcModeOk(mode, p));
+    const d = demoData, st = dmcState(), mode = st.view === 'balance' ? 'all' : st.mode, today = st.range === 'today';
+    const less = (p) => (today ? p.carried || 0 : 0);
+    const trades = (d.curve || []).filter((p) => p.kind === 'trade' && dmcIn(st.range, p.ts) && dmcModeOk(mode, p))
+        .map((p) => (less(p) ? { ...p, amount: p.amount - less(p) } : p));
     const open = (d.open || []).filter((p) => dmcModeOk(mode, p));
-    return { st, trades, open, unreal: open.reduce((t, p) => t + (p.unreal || 0), 0) };
+    return { st, trades, open, today, unreal: open.reduce((t, p) => t + (p.unreal || 0) - less(p), 0) };
 }
 
 // Each day's closed trades, oldest first.
@@ -6749,7 +6897,9 @@ function dmcSummary(x) {
     const best = byDay ? days.reduce((a, b) => (!a || b.amount > a.amount ? b : a), null) : t.reduce((a, b) => (!a || b.amount > a.amount ? b : a), null);
     const worst = byDay ? days.reduce((a, b) => (!a || b.amount < a.amount ? b : a), null) : t.reduce((a, b) => (!a || b.amount < a.amount ? b : a), null);
     const what = (q) => q ? (byDay ? dmDay(q.day) : esc(q.label)) : '';
-    $('dmc-sum').innerHTML = cell('Net P&L', n ? rsSigned(net, 2) : '—', n ? `after ${rs(charges, 2)} charges` : 'no closed trades', tone(net))
+    const dayTotal = net + x.unreal;
+    $('dmc-sum').innerHTML = (x.today ? cell("Today's P&L", rsSigned(dayTotal, 2), `closed ${rsSigned(net)} · open ${rsSigned(x.unreal)}`, tone(dayTotal)) : '')
+        + cell(x.today ? 'Closed today' : 'Net P&L', n ? rsSigned(net, 2) : '—', n ? `after ${rs(charges, 2)} charges` : 'no closed trades', tone(net))
         + cell('Trades', n, n ? `${wins.length} won · ${losses.length} lost` : '')
         + cell('Win rate', n ? Math.round(100 * wins.length / n) + '%' : '—', gl > 0 ? `profit factor ${(gw / gl).toFixed(2)}` : gw > 0 ? 'no losses' : '')
         + (byDay ? cell('Days', days.length, `${days.filter((q) => q.amount > 0).length} up · ${days.filter((q) => q.amount <= 0).length} down`)
@@ -6757,7 +6907,8 @@ function dmcSummary(x) {
         + cell(byDay ? 'Best day' : 'Best trade', best ? rsSigned(best.amount) : '—', what(best), best && tone(best.amount))
         + cell(byDay ? 'Worst day' : 'Worst trade', worst ? rsSigned(worst.amount) : '—', what(worst), worst && tone(worst.amount))
         + cell('Deepest fall', dd < 0 ? rsSigned(dd) : 'none', dd < 0 ? `from ${rsSigned(ddPeak)} at its best` : n ? 'never below its best' : '', dd < 0 ? 'bad' : '')
-        + (x.open.length ? cell('Open now', rsSigned(x.unreal), `${x.open.length} position${x.open.length === 1 ? '' : 's'}, not in the above`, tone(x.unreal)) : '');
+        + (x.open.length ? cell(x.today ? 'Open, today' : 'Open now', rsSigned(x.unreal), x.today
+            ? `${x.open.length} position${x.open.length === 1 ? '' : 's'}: their move today` : `${x.open.length} position${x.open.length === 1 ? '' : 's'}, not in the above`, tone(x.unreal)) : '');
 }
 
 // The Performance chart. P&L: the running total of the closed trades' net, from zero at the start of the period, green
@@ -6779,8 +6930,8 @@ function dmcDraw() {
     if (view === 'pnl') {
         let cum = 0;
         pts = x.trades.map((p) => ({ ...p, cum: (cum += p.amount) }));
-        if (pts.length) pts.unshift({ kind: 'start', ts: pts[0].ts, cum: 0 });
-        if (pts.length && x.open.length) pts.push({ kind: 'now', ts: new Date().toISOString(), amount: x.unreal, cum: cum + x.unreal, closed: cum, open: x.open.length });
+        if (pts.length || x.open.length) pts.unshift({ kind: 'start', ts: pts.length ? pts[0].ts : todayIST() + 'T09:15:00+05:30', cum: 0 });
+        if (x.open.length) pts.push({ kind: 'now', ts: new Date().toISOString(), amount: x.unreal, cum: cum + x.unreal, closed: cum, open: x.open.length });
         pts.forEach((p) => { p.v = p.cum; });
         base = pts.map(() => 0);
     } else if (view === 'balance') {
@@ -6904,8 +7055,18 @@ function renderDemoTotals() {
           + box('Realised P&L', (a.realized > 0 ? '+' : '') + rs(a.realized), `after ${rs(a.charges)} charges · ${a.closed} trade(s)`, tone(a.realized))
           + box('Return', a.twr_pct == null ? '—' : (a.twr_pct > 0 ? '+' : '') + a.twr_pct + '%',
                 `time-weighted: money added or withdrawn does not move it · ${rs(a.deposits - a.withdrawals)} in now`, tone(a.twr_pct || 0));
+    // Worked out here from the positions the pill leaves. Today is what today made or lost, as in the chart: a
+    // position carried in from an earlier day counts only its move since.
+    const rows = tfFilter('dmmodes', [...(d.open || []), ...(d.closed || []), ...(d.skipped || [])]);
+    const less = (p) => (tfCur('dmmodes') === 'when:today' ? p.carried || 0 : 0), sum = (xs, f) => xs.reduce((t, p) => t + f(p), 0);
+    const byMode = (m) => {
+        const of = (s) => rows.filter((p) => p.mode === m && p.status === s), c = of('closed'), o = of('open');
+        return { closed: c.length, wins: c.filter((p) => (p.net || 0) > 0).length, net: sum(c, (p) => (p.net || 0) - less(p)),
+                 charges: sum(c, (p) => p.charges || 0), open: o.length, unreal: sum(o, (p) => (p.unreal || 0) - less(p)),
+                 skipped: of('skipped').length };
+    };
     $('dm-modes').innerHTML = ['swing', 'intraday', 'options'].map((m) => {
-        const x = d.by_mode[m] || {}, on = d.settings[m];
+        const x = byMode(m), on = d.settings[m];
         return `<tr class="clickable dmc-pick" data-dmcm="${m}" aria-selected="${dmcState().mode === m}" title="Chart ${MODE_NAME[m]} alone (click again for all)">
             <td><b>${MODE_NAME[m]}</b>${on ? '' : ' <span class="muted">· off</span>'}</td>
             <td class="r num">${x.closed || 0}<span class="muted"> · ${x.closed ? Math.round(100 * x.wins / x.closed) + '%' : '—'}</span></td>
@@ -6919,7 +7080,8 @@ function renderDemo() {
     const d = demoData; if (!d) return;
     const a = d.account, started = !!d.since;
     $('demo-badge').textContent = a.open ? `${a.open}` : '';
-    $('dm-meta').textContent = started ? `Since ${dmWhen(d.since)} · risk ${d.settings.risk_pct}% a trade · up to ${d.settings.max_alloc_pct}% in one position`
+    $('dm-meta').textContent = started ? `Since ${dmWhen(d.since)} · ${d.settings.sizing === 'lots' ? `${d.settings.lots} lot${d.settings.lots === 1 ? '' : 's'} a trade`
+            : `risk ${d.settings.risk_pct}% a trade · up to ${d.settings.max_alloc_pct}% in one position`}`
         + ` · ${d.settings.max_open ? 'at most ' + d.settings.max_open + ' open' : 'no limit open'} · ${d.settings.max_per_day ? d.settings.max_per_day + ' a day' : 'no daily limit'}`
         : 'Add demo money to start: every trade the app takes from then on is mirrored here';
     renderDemoTotals();
@@ -7007,29 +7169,63 @@ function demoFundsModal(kind) {
 
 function demoSettingsModal() {
     const st = (demoData || {}).settings || {};
-    const num = (k, label, sub, step, min, max) => `<label class="ind-row"><span><b>${label}</b><small>${sub}</small></span>
-        <input type="number" data-dms="${k}" value="${st[k]}" step="${step}" min="${min}" max="${max}"></label>`;
-    const sw = (k, label, sub) => `<label class="ind-row"><span><b>${label}</b><small>${sub}</small></span>
-        <input type="checkbox" data-dms="${k}"${st[k] ? ' checked' : ''}></label>`;
-    openModal('Demo funds settings', 'How each trade is sized and costed', `<div class="ind-form" id="dms-form">
-        <h3 class="label">Sizing</h3>
-        ${num('risk_pct', 'Risk a trade', '% of the balance lost if the stop is hit', 0.1, 0.1, 10)}
-        ${num('max_alloc_pct', 'Most in one position', '% of the balance: value, margin or premium', 1, 1, 100)}
-        ${num('intraday_leverage', 'Intraday leverage', 'MIS: margin = value ÷ this', 0.5, 1, 5)}
-        ${num('futures_margin_pct', 'Futures margin', '% of contract value (approx. SPAN + exposure)', 1, 5, 50)}
-        <h3 class="label">Limits</h3>
-        ${num('max_open', 'Most open at once', 'positions, all modes together (0 = no limit)', 1, 0, 200)}
-        ${num('max_per_day', 'Most new trades a day', 'entries, all modes together (0 = no limit)', 1, 0, 500)}
-        <p class="hint">When a limit is reached the account stops taking trades (they are listed under Skipped, with the reason) until a position closes or the next day starts.</p>
-        <h3 class="label">Trades taken</h3>
-        ${sw('swing', 'Swing', 'delivery shares; shorts as stock futures')}${sw('intraday', 'Intraday', 'intraday shares, long or short')}
-        ${sw('options', 'Options', 'option ideas, whole lots')}
-        <h3 class="label">Costs</h3>${sw('charges', 'Charges', "brokerage, STT, exchange, IPFT, SEBI, stamp, GST, DP, futures rolls")}
-        <p class="hint">Changes apply to trades taken from now on; positions already open keep their size.</p>
-        <div class="ind-actions"><button class="btn btn-primary" type="button" id="dms-save">Save</button></div></div>`);
+    // Laid out as Live trading settings: a field is its label, a box with the unit inside it, and what it means under it.
+    const fld = (k, label, step, unit, help, when) => `<label class="trs-f"${when ? ` data-when="${when}"` : ''}>
+        <span class="trs-l">${label}</span>
+        <span class="trs-box"><input type="number" step="${step}" min="0" name="${k}" value="${st[k]}" inputmode="decimal">${unit ? `<i>${unit}</i>` : ''}</span>
+        ${help ? `<small>${help}</small>` : ''}</label>`;
+    const sw = (k, label, help) => `<div class="trs-f"><span class="trs-l">${label}</span>
+        <span class="trs-sw"><button class="switch" type="button" role="switch" data-sw="${k}" aria-checked="${!!st[k]}" aria-label="${label}"></button>
+            <span>${help}</span></span></div>`;
+    const group = (title, sub, body) => `<section class="trs-g"><header><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</header><div class="trs-grid">${body}</div></section>`;
+    openModal('Demo funds settings', 'How each trade is sized and costed, and the limits that stop new ones', `<div id="dms-form" class="trs">
+        ${group('Sizing', 'What each trade is worth', `
+            <div class="trs-f"><span class="trs-l">Size each trade</span>
+                <div class="seg trs-seg" role="group" aria-label="Size each trade">
+                    <button type="button" data-sz="risk" aria-pressed="${st.sizing !== 'lots'}">By risk</button>
+                    <button type="button" data-sz="lots" aria-pressed="${st.sizing === 'lots'}">Fixed lots</button></div>
+                <small id="dms-sz-help"></small></div>
+            <label class="trs-f" data-when="lots"><span class="trs-l">Lots a trade</span>
+                <span class="trs-step"><button type="button" data-step="-1" aria-label="One lot fewer">−</button>
+                    <input type="number" step="1" min="1" max="100" name="lots" value="${st.lots || 1}" inputmode="numeric">
+                    <button type="button" data-step="1" aria-label="One lot more">+</button></span>
+                <small>Options and stock futures in exchange lots; shares one at a time</small></label>
+            ${fld('risk_pct', 'Risk a trade', 0.1, '% of balance', 'Lost if the stop is hit', 'risk')}
+            ${fld('max_alloc_pct', 'Most in one position', 1, '% of balance', 'Value, margin or premium it may tie up', 'risk')}`)}
+        ${group('Margins', 'What a position ties up', `
+            ${fld('intraday_leverage', 'Intraday leverage', 0.5, '×', 'MIS: margin = value ÷ this')}
+            ${fld('futures_margin_pct', 'Futures margin', 1, '% of value', 'Approx. SPAN + exposure')}`)}
+        ${group('Limits', 'Reaching one stops new trades', `
+            ${fld('max_open', 'Positions open at once', 1, '', 'All modes together · 0 = no limit')}
+            ${fld('max_per_day', 'New entries a day', 1, '', 'All modes together · 0 = no limit')}`)}
+        ${group('Trades taken', 'Which modes the account mirrors', `
+            ${sw('swing', 'Swing', 'Delivery shares; shorts as stock futures')}
+            ${sw('intraday', 'Intraday', 'Intraday shares, long or short')}
+            ${sw('options', 'Options', 'Option ideas, whole lots')}
+            ${sw('charges', 'Charges', 'Brokerage, STT, exchange, stamp, GST, DP, rolls')}`)}
+        <div class="trs-bar"><span class="muted">A trade a limit stops is listed under Skipped, with why. Changes apply to trades taken from now on.</span>
+            <button class="btn" type="button" id="dms-cancel">Cancel</button>
+            <button class="btn btn-primary" type="button" id="dms-save">Save</button></div></div>`, true);
+    const F = $('dms-form');
+    let sizing = st.sizing === 'lots' ? 'lots' : 'risk';
+    const showSizing = () => {
+        F.querySelectorAll('[data-sz]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sz === sizing)));
+        F.querySelectorAll('[data-when]').forEach((r) => { r.hidden = r.dataset.when !== sizing; });
+        $('dms-sz-help').textContent = sizing === 'lots' ? 'The same number of lots every trade, whatever the stop; skipped when the money is not free'
+            : 'Each trade risks a share of the balance';
+    };
+    showSizing();
+    F.addEventListener('click', (e) => {
+        const z = e.target.closest('[data-sz]'), st1 = e.target.closest('[data-step]'), s1 = e.target.closest('[data-sw]');
+        if (z) { sizing = z.dataset.sz; showSizing(); }
+        else if (st1) { const i = F.querySelector('[name="lots"]'); i.value = Math.min(100, Math.max(1, (+i.value || 1) + +st1.dataset.step)); }
+        else if (s1) s1.setAttribute('aria-checked', String(s1.getAttribute('aria-checked') !== 'true'));
+    });
+    $('dms-cancel').addEventListener('click', closeModal);
     $('dms-save').addEventListener('click', async () => {
-        const body = {};
-        $('dms-form').querySelectorAll('[data-dms]').forEach((el) => { body[el.dataset.dms] = el.type === 'checkbox' ? el.checked : +el.value; });
+        const body = { sizing };
+        F.querySelectorAll('input[name]').forEach((i) => { body[i.name] = +i.value; });
+        F.querySelectorAll('[data-sw]').forEach((b) => { body[b.dataset.sw] = b.getAttribute('aria-checked') === 'true'; });
         if (await demoPost('/api/demo/settings', body, 'Demo settings saved')) closeModal();
     });
 }
@@ -7200,9 +7396,12 @@ function renderIntraday() {
     $('intra-sub').textContent = st.intraday !== '1' ? 'Off' : s.scanning ? '15m scan running…'
         : s.next_scan ? 'Next scan ' + tm(s.next_scan) : I.phase.label;
 
-    const open = I.zones.filter((z) => ['watching', 'tapped'].includes(z.status)).length;
-    const live = I.zones.filter((z) => z.status === 'triggered').length;
-    $('intra-badge').textContent = live ? `${live} live` : open ? `${open}` : '';
+    // The tab's count, as Swing's: open paper trades when there are any (not those the demo account skipped), else
+    // the zones being watched.
+    const watched = I.zones.filter((z) => ['watching', 'tapped'].includes(z.status)).length;
+    const trades = I.zones.filter((z) => z.status === 'triggered' && !z.skipped).length;
+    $('intra-badge').textContent = trades ? `${trades} open` : watched ? `${watched}` : '';
+    $('intra-badge').parentElement.title = `${trades} open paper trade(s) · ${watched} zone(s) watched`;
     $('i-minrr').textContent = $('i-minrr2').textContent = r.min_rr;
     $('i-cut').textContent = r.no_entry_after; $('i-sq').textContent = r.square_off;
 
@@ -7215,8 +7414,8 @@ function renderIntraday() {
             : s.next_check ? `5m check ${tm(s.next_check)}${s.next_scan ? ' · 15m scan ' + tm(s.next_scan) : ''}` : esc(I.phase.label)) +
         stat('Data', md.live ? 'Dhan · real-time' : 'yfinance · delayed',
             md.live ? 'Candles within seconds of the close' : 'Too slow for 5m entries — connect Dhan', md.live ? '' : 'warn') +
-        stat('Today', td.trades ? `${td.wins}/${td.trades} · ${(td.r >= 0 ? '+' : '') + td.r}R` : (live ? live + ' open' : 'No trades'),
-            `${open} zone(s) watching · ${live} open trade(s)`, td.trades ? (td.r >= 0 ? 'good' : 'bad') : '') +
+        stat('Today', td.trades ? `${td.wins}/${td.trades} · ${(td.r >= 0 ? '+' : '') + td.r}R` : (trades ? trades + ' open' : 'No trades'),
+            `${watched} zone(s) watching · ${trades} open trade(s)`, td.trades ? (td.r >= 0 ? 'good' : 'bad') : '') +
         stat('Journal', all.trades ? `${(all.r >= 0 ? '+' : '') + all.r}R` : '—',
             all.trades ? `${all.trades} closed · ${Math.round(100 * all.wins / all.trades)}% winners` : 'Fills in as alerts play out',
             all.trades ? (all.r >= 0 ? 'good' : 'bad') : '');
@@ -7231,8 +7430,8 @@ function renderIntraday() {
         const res = t.r != null ? t.r : t.r_open;
         return `<tr data-intra-sym="${esc(z.symbol)}" data-click${t.entry && ['triggered', 'won', 'lost', 'closed'].includes(z.status) ? ` data-ref="intraday:${z.id}"` : ''}>
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}<span class="sub">${esc(z.name || '')}</span></td>
-            <td><span class="chip" data-s="${esc(z.status)}">${esc(z.status === 'triggered' ? 'open trade' : z.status)}</span>${
-                z.status === 'triggered' && t.entry ? sqBtn('paper', `intraday:${z.id}`, z.symbol) : ''}</td>
+            <td>${tradeChip(z.status, z.status === 'triggered' ? 'open trade' : z.status, z.skipped)}${
+                z.status === 'triggered' && t.entry && !z.skipped ? sqBtn('paper', `intraday:${z.id}`, z.symbol) : ''}</td>
             <td class="r num">${px(z.zone_low)} – ${px(z.zone_high)}</td>
             <td class="r num">${px(z.target)}<span class="kind">${esc(m.target_label || '')}</span></td>
             <td class="r num">${t.entry ? px(t.entry) + ' / ' + px(t.stop) : '—'}</td>
@@ -7272,8 +7471,8 @@ function renderIntraday() {
         return `<tr data-intra-sym="${esc(z.symbol)}" data-click data-ref="intraday:${z.id}"><td class="num">${hhmm(t.choch_time)}</td>
             <td><span class="sym">${esc(z.symbol)}</span>${sideTag(z.side)}</td><td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td>
             <td class="r num">${px(t.target)}</td>
-            <td><span class="chip" data-s="${esc(z.status)}">${esc({ triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status)}</span>${
-                t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${z.status === 'triggered' ? sqBtn('paper', `intraday:${z.id}`, z.symbol) : ''}</td>
+            <td>${tradeChip(z.status, { triggered: 'open', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status, z.skipped)}${
+                t.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${z.status === 'triggered' && !z.skipped ? sqBtn('paper', `intraday:${z.id}`, z.symbol) : ''}</td>
             <td class="r num">${t.exit != null ? px(t.exit) + ' <span class="muted">' + tm(t.exit_time) + '</span>' : z.status === 'triggered' ? sparkCell(`intraday:${z.id}`) : '—'}</td>
             <td class="r num">${rfmt(t.r != null ? t.r : t.r_open)}</td></tr>`;
     }).join('') : `<tr><td colspan="8"><div class="empty"><b>No intraday alerts yet</b>Each entry alert is followed on 5m candles
@@ -7281,7 +7480,7 @@ function renderIntraday() {
 }
 
 /* The intraday stock panel: 15m and 5m candles with today's levels. */
-let itf = store.get('nw.itf', '5m');
+let itf = TF_MIN[store.get('nw.itf', '5m')] ? store.get('nw.itf', '5m') : '5m';
 async function openIntraday(symbol, whatIf) {
     const token = ++drawerToken;
     $('dw-title').textContent = symbol;
@@ -7293,7 +7492,7 @@ async function openIntraday(symbol, whatIf) {
         const d = await api('/api/intraday/chart/' + encodeURIComponent(symbol) +
                             (whatIf ? '?rules=' + encodeURIComponent(JSON.stringify(whatIf)) : ''));
         if (token !== drawerToken) return;
-        current = { symbol: d.symbol, intra: d, minRR: d.rules.min_rr, whatIf: !!whatIf };
+        current = { symbol: d.symbol, intra: d, minRR: d.rules.min_rr, whatIf: !!whatIf, frames: {} };
         renderIntraDrawer();
     } catch (e) {
         if (token === drawerToken) $('dw-sub').textContent = 'Could not load: ' + e.message;
@@ -7307,8 +7506,7 @@ function renderIntraDrawer() {
     $('dw-sub').textContent = [d.name, z ? 'zone ' + (z.status === 'triggered' ? 'open trade' : z.status) : 'no zone today',
         a.passed ? '15m setup now' : (a.failed_at ? '15m now: ' + a.reason : ''),
         current.whatIf ? 'what-if rules' : ''].filter(Boolean).join(' · ');
-    const tfBtns = [['5m', '5m'], ['15m', '15m']].map(([k, l]) =>
-        `<button type="button" data-itf="${k}" aria-pressed="${itf === k}">${l}</button>`).join('');
+    const tfBtns = tfButtons('itf', itf);
     // The zone keeps the plan it was set with; the live 15m picture may have moved on since.
     const m = (z && z.meta) || {};
     const plan = Object.assign({}, a.plan || {}, z ? { stop: m.stop != null ? m.stop : (a.plan || {}).stop,
@@ -7356,12 +7554,21 @@ function renderIntraDrawer() {
 
 function drawIntra() {
     const d = current.intra, a = d.analysis, z = d.zone, t = z && z.trigger, lv = a.levels || {};
-    const five = itf === '5m' && d.m5.length;
-    const bars = five ? d.m5 : d.m15;
+    const daily = itf === 'D';
+    document.querySelectorAll('#dw-body [data-ovl], #fc-tools [data-ovl]').forEach((b) => { b.hidden = daily && ['vwap', 'orb'].includes(b.dataset.ovl); });
+    let bars, ind;
+    if (itf === '5m' || itf === '15m') {
+        // The setup's own 5m and 15m candles; the other timeframes are fetched for the panel.
+        const five = itf === '5m' && d.m5.length;
+        bars = five ? d.m5 : d.m15; ind = (d.ind || {})[five ? 'm5' : 'm15'];
+    } else {
+        const want = itf, m = (current.frames || {})[want];
+        if (!m) { panelFrame(want, () => { if (current && current.intra && itf === want) drawIntra(); }); return; }
+        bars = m.bars; ind = m.ind;
+    }
     if (!bars.length) { $('chart-wrap').innerHTML = '<div class="empty">No candles yet today.</div>'; return; }
-    const spec = { bars, label: (b) => b.d, axis: (b) => b.d.slice(6), boxes: [], lines: [], marks: [], seps: [], extra: [],
-                   ind: (d.ind || {})[five ? 'm5' : 'm15'] };
-    bars.forEach((b, k) => { if (k && b.day !== bars[k - 1].day) spec.seps.push({ k, label: b.d.slice(0, 5) }); });
+    const spec = { bars, label: (b) => b.d, axis: (b) => daily ? b.d.slice(2) : b.d.slice(6), boxes: [], lines: [], marks: [], seps: [], extra: [], ind };
+    if (!daily) bars.forEach((b, k) => { if (k && b.day !== bars[k - 1].day) spec.seps.push({ k, label: b.d.slice(0, 5) }); });
     const last = bars[bars.length - 1].c, near = (v) => v != null && Math.abs(v - last) / last < 0.04;
     const zl = z ? z.zone_low : a.zone && a.zone.low, zh = z ? z.zone_high : a.zone && a.zone.high;
     if (zl != null) {
@@ -7513,8 +7720,9 @@ function renderOptions() {
              !md.live && d.settings.options === '1' ? 'warn' : '') +
         stat('Nifty', nifty.spot ? kfmt(nifty.spot) : '—', nifty.spot ? `PCR ${nifty.pcr != null ? nifty.pcr.toFixed(2) : '—'} · max pain ${kfmt(nifty.max_pain)} · ${esc(nifty.bias_label || '')}` : 'No chain yet',
              nifty.bias_label === 'bullish' ? 'good' : nifty.bias_label === 'bearish' ? 'bad' : '') +
-        stat('Today', td.trades ? `${td.wins}/${td.trades} · ${(td.r >= 0 ? '+' : '') + td.r}R` : (d.stats.open ? d.stats.open + ' open' : 'No ideas'),
-             d.stats.open ? `${d.stats.open} open · ${(d.stats.open_r >= 0 ? '+' : '') + d.stats.open_r}R running` : 'Ideas from ' + r.start,
+        stat('Today', td.trades ? `${td.wins}/${td.trades} · ${(td.r >= 0 ? '+' : '') + td.r}R` : (d.stats.open || d.stats.skipped ? d.stats.open + ' open' : 'No ideas'),
+             d.stats.open ? `${d.stats.open} open · ${(d.stats.open_r >= 0 ? '+' : '') + d.stats.open_r}R running${d.stats.skipped ? ` · ${d.stats.skipped} skipped` : ''}`
+             : d.stats.skipped ? `${d.stats.skipped} skipped by the demo account` : 'Ideas from ' + r.start,
              td.trades ? (td.r >= 0 ? 'good' : 'bad') : '') +
         stat('Journal', all.trades ? `${(all.r >= 0 ? '+' : '') + all.r}R` : '—',
              all.trades ? `${all.trades} closed · ${Math.round(100 * all.wins / all.trades)}% winners` : 'Fills in as ideas play out',
@@ -7563,8 +7771,19 @@ function renderOptions() {
         <td>${buHtml(u.side, u.buildup)}</td><td class="r num">${px(u.ltp)}</td><td class="muted">${esc(u.why)}</td></tr>`).join('')
         : `<tr><td colspan="8"><div class="empty"><b>Nothing unusual</b>Strikes whose OI or volume jumps against yesterday show up here.</div></td></tr>`;
 
+    // skipped: the ideas the demo account did not take, out of the journal and in their own table
+    const SK = d.journal.filter((i) => i.skipped);
+    if (!SK.length) paged('oskipped', []);
+    $('o-skipped').innerHTML = SK.length ? paged('oskipped', SK).map((i) => `<tr data-oc-sym="${esc(i.symbol)}" data-click title="${esc(i.reason || '')}">
+            <td class="num">${hhmm(i.created_at)}</td>
+            <td class="dm-inst"><span class="sym">${esc(i.symbol)} ${kfmt(i.strike)} ${esc(i.side)}</span>${sideTag(i.direction)}<span class="sub">${expLabel(i.expiry)} expiry</span></td>
+            <td><span class="chip" data-s="${esc(i.status)}">${esc(i.status === 'open' ? 'running' : i.note || i.status)}</span></td>
+            <td class="r num">${rfmt(i.r != null ? i.r : i.r_open)}</td>
+            <td class="note dm-why">${esc(i.skipped)}</td></tr>`).join('')
+        : '<tr><td colspan="5"><div class="empty">Nothing skipped.</div></td></tr>';
+
     // journal
-    const J = d.journal;
+    const J = d.journal.filter((i) => !i.skipped);
     if (!J.length) paged('ojournal', []);
     $('o-journal').innerHTML = J.length ? paged('ojournal', J).map((i) => {
         const rr = i.r != null ? i.r : i.r_open;
@@ -7573,12 +7792,13 @@ function renderOptions() {
             <td class="num">${hhmm(i.created_at)}</td>
             <td><span class="sym">${esc(i.symbol)} ${kfmt(i.strike)} ${esc(i.side)}</span>${sideTag(i.direction)}<span class="sub">${expLabel(i.expiry)} expiry${i.lot ? ' · lot ' + i.lot : ''}</span></td>
             <td class="r num">${px(i.entry)}</td><td class="r num">${px(i.stop)}</td><td class="r num">${px(i.target)}</td>
-            <td><span class="chip" data-s="${esc(i.status)}">${esc(i.status === 'open' ? 'open' : i.note || i.status)}</span>${
-                i.status === 'open' ? sqBtn('paper', `options:${i.id}`, `${i.symbol} ${kfmt(i.strike)} ${i.side}`) : ''}</td>
+            <td>${tradeChip(i.status, i.status === 'open' ? 'open' : i.note || i.status, i.skipped)}${
+                i.status === 'open' && !i.skipped ? sqBtn('paper', `options:${i.id}`, `${i.symbol} ${kfmt(i.strike)} ${i.side}`) : ''}</td>
             <td class="r num">${i.exit != null ? px(i.exit) + ' <span class="muted">' + tm(i.exit_time) + '</span>' : i.last != null ? (i.status === 'open' ? sparkCell(`options:${i.id}`) : '') + '<span class="muted">now ' + (i.lp ? `<span data-lp="${esc(i.lp)}" data-v="${i.last}">${px(i.last)}</span>` : px(i.last)) + '</span>' : '—'}</td>
             <td class="r num">${i.lp ? lpR(i.lp, i, 'long', rfmt(rr)) : rfmt(rr)}</td>
             <td class="r num">${i.lp && i.lot ? `<span data-lp="${esc(i.lp)}" data-lk="pnl" data-entry="${i.entry}" data-qty="${i.lot}">${rupeePnl(pnl)}</span>` : pnl == null ? '—' : rupeePnl(pnl)}</td></tr>`;
-    }).join('') : `<tr><td colspan="9"><div class="empty"><b>No ideas yet</b>Between ${r.start} and ${r.no_entry_after}, when near-the-money
+    }).join('') : SK.length ? `<tr><td colspan="9"><div class="empty"><b>No ideas taken</b>Every idea so far was skipped by the demo account: they are in Skipped, above.</div></td></tr>`
+        : `<tr><td colspan="9"><div class="empty"><b>No ideas yet</b>Between ${r.start} and ${r.no_entry_after}, when near-the-money
         writing leans clearly one way (bias ±${r.min_bias}), the underlying agrees over 30 minutes and the PCR has not turned against it,
         an at-the-money option buy is suggested here and followed to its target (+${r.target_pct}%), stop (−${r.stop_pct}%) or the ${r.square_off} square-off.</div></td></tr>`;
 }
@@ -8792,8 +9012,8 @@ async function refresh() {
         if (!WS.up && 'mood' in S) applyMood(S.mood);
         render();
     } catch (e) {
-        $('market-text').textContent = 'Server unreachable';
-        $('market-time').textContent = $('market-src').textContent = '';
+        $('market-text').textContent = '';
+        $('market-pill').title = 'Server unreachable'; $('market-pill').setAttribute('aria-label', 'Server unreachable');
         $('market-pill').dataset.tone = 'bad'; $('market-pill').dataset.pulse = '0';
     }
     clearTimeout(pollTimer);

@@ -98,6 +98,15 @@ class Trade(unittest.TestCase):
         self.assertEqual(len(c['bars']), 52)                     # the session before the entry, and the entry's
         self.assertEqual(c['bars'][c['entry_k']]['d'], '10-08 10:00')
         self.assertEqual(c['bars'][c['exit_k']]['d'], '10-08 14:00')
+        self.assertEqual(c['tfs'], [1, 5, 15, 60, 1440])        # a two-day trade: every timeframe
+        self.assertEqual(len(c['ind']['bb_mid']), 52)             # the indicators line up with the candles
+        with mock.patch.object(app.dhan, 'available', return_value=True), \
+             mock.patch.object(app.dhan, 'security_id', return_value='123'), \
+             mock.patch.object(app.dhan, 'chart_candles', return_value=f) as cc, \
+             mock.patch.object(app.data, 'now_ist', return_value=datetime.fromisoformat('2026-10-08T16:00:00+05:30')):
+            self.assertEqual(self.client.get(f'/api/trade/swing:{zid}/candles?tf=5').get_json()['tf'], 5)
+            self.assertEqual(cc.call_args[0][3], 5)
+            self.assertEqual(self.client.get(f'/api/trade/swing:{zid}/candles?tf=7').get_json()['tf'], 15)   # not offered
         with mock.patch.object(app.dhan, 'available', return_value=False):
             app.TRADE_CANDLES.clear()
             self.assertIn('needs Dhan', self.client.get(f'/api/trade/swing:{zid}/candles').get_json()['note'])

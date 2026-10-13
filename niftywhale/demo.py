@@ -30,6 +30,8 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 DEFAULTS: Dict[str, Any] = {
+    'sizing': 'risk',             # 'risk': risk_pct of the account a trade; 'lots': `lots` lots a trade, whatever the stop
+    'lots': 1,                    # fixed lots: options and stock futures in their exchange lots, shares one at a time
     'risk_pct': 1.0,              # of the account, risked between entry and stop on each trade
     'max_alloc_pct': 25.0,        # most of the account one position may tie up (value, margin or premium)
     'intraday_leverage': 5.0,     # MIS: margin = value / this
@@ -40,21 +42,25 @@ DEFAULTS: Dict[str, Any] = {
     # together, and new entries a day. Once one is reached, further trades are skipped.
     'max_open': 20, 'max_per_day': 20,
 }
-LIMITS = {'risk_pct': (0.1, 10.0), 'max_alloc_pct': (1.0, 100.0), 'intraday_leverage': (1.0, 5.0),
+LIMITS = {'lots': (1, 100), 'risk_pct': (0.1, 10.0), 'max_alloc_pct': (1.0, 100.0), 'intraday_leverage': (1.0, 5.0),
           'futures_margin_pct': (5.0, 50.0), 'max_open': (0, 200), 'max_per_day': (0, 500)}
-COUNTS = ('max_open', 'max_per_day')       # whole numbers
+COUNTS = ('max_open', 'max_per_day', 'lots')       # whole numbers
+CHOICES = {'sizing': ('risk', 'lots')}
 
 PRODUCTS = {'CNC': 'Delivery', 'MIS': 'Intraday', 'FUT': 'Futures', 'OPT': 'Option'}
 
 
 def settings_from(saved: Any) -> Dict[str, Any]:
-    """Saved demo settings made safe: numbers clamped to LIMITS, switches as booleans."""
+    """Saved demo settings made safe: the sizing from CHOICES, numbers clamped to LIMITS, switches as booleans."""
     saved = saved if isinstance(saved, dict) else {}
     out = dict(DEFAULTS)
     for k, default in DEFAULTS.items():
         if k not in saved:
             continue
         v = saved[k]
+        if k in CHOICES:
+            out[k] = v if v in CHOICES[k] else out[k]
+            continue
         if isinstance(default, bool):
             out[k] = v in (True, 1, '1', 'true', 'on')
             continue

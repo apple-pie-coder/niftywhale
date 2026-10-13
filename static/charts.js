@@ -1,7 +1,6 @@
 /* The Charts tab: as many live candle charts as you like, laid out to fill the screen.
  *
- * Shared by NiftyWhale and MacroWhale (the same file in both). The app gives it a root element
- * and its API under /api/charts:
+ * The app gives it a root element and its API under /api/charts:
  *   GET  config                       instruments, timeframes, the saved layout, the feed
  *   GET  candles?symbol=&tf=          [[t, o, h, l, c, v]] (t: seconds, already in IST) + levels
  *   GET  live?symbols=a,b&since=      ticks [[epoch, price]] since `since`, for every symbol

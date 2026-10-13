@@ -1162,6 +1162,12 @@ def live_idea(i: dict) -> dict:
     return i
 
 
+def demo_skips() -> dict:
+    """The trades the demo account skipped, ref ('options:<id>', 'swing:<zone id>') -> why. They stay in their
+    journals, marked skipped, and are left out of the open counts the tabs show."""
+    return {p['ref']: p['note'] or 'skipped' for p in store.demo_positions('skipped', limit=2000)}
+
+
 def underlying_key(sym: str) -> str:
     """The feed symbol of an option underlying: 'IDX:<id>' for an index, else the stock."""
     return f'IDX:{options.INDICES[sym][0]}' if options.is_index(sym) else sym
@@ -1183,7 +1189,7 @@ def live_symbol_ok(s: str) -> bool:
 # What a row in any trade table opens: the trade itself rather than the stock's analysis. Its
 # levels and result, why it triggered, the demo position and its charges, the alerts and notices
 # it raised, the context and news at entry, and (separately, it costs Dhan calls) its candles.
-TRADE_CANDLES: dict = {}             # ref -> (time, answer)
+TRADE_CANDLES: dict = {}             # ref (or ref|tf) -> (time, answer)
 OPTION_WORD = {'target': 'Target hit', 'stop': 'Stopped out', 'squared off': 'Squared off'}
 
 
@@ -1263,11 +1269,20 @@ def _candle_rows(f, daily: bool) -> list:
     return out
 
 
-def trade_candles(ref: str) -> dict:
+# The trade chart's timeframes, in minutes, each offered while the trade spans at most so many days (a 1m chart of
+# a month-long swing would be thousands of candles). Dhan keeps intraday candles 90 days back, so an older trade
+# has daily ones only.
+TRADE_TFS = {1: 3, 5: 20, 15: 60, 60: 10_000, 1440: 10_000}
+TRADE_LEAD = {1: 0, 5: 0, 15: 4, 60: 10, 1440: 40}     # days shown before the entry
+
+
+def trade_candles(ref: str, want: int = None) -> dict:
     """The trade's window on its own instrument: the option contract's premium for an idea (its
-    underlying if the contract is not found), the stock otherwise. Intraday and options: 5m from
-    the entry's session; swing: 15m, or 60m / daily for a long trade. Bars carry `entry_k` / `exit_k`."""
-    hit = TRADE_CANDLES.get(ref)
+    underlying if the contract is not found), the stock otherwise. By default intraday and options: 5m from
+    the entry's session; swing: 15m, or 60m / daily for a long trade; `want` another of TRADE_TFS that fits
+    (`tfs` lists them). Bars carry `entry_k` / `exit_k`; `ind` the indicators the drawer charts draw."""
+    key = ref if want is None else f'{ref}|{want}'
+    hit = TRADE_CANDLES.get(key)
     if hit and time.time() - hit[0] < hit[1]['ttl']:
         return hit[1]
     d = trade_detail(ref)
@@ -1278,13 +1293,17 @@ def trade_candles(ref: str) -> dict:
     start, end = _when(d['entry_time']), _when(d.get('exit_time')) or data.now_ist()
     now = data.now_ist()
     span = (end.date() - start.date()).days
-    if d['mode'] in ('intraday', 'options'):
+    age = (now.date() - start.date()).days
+    tfs = [m for m, most in TRADE_TFS.items() if span <= most and (m == 1440 or age + 4 <= 89)]
+    if want in tfs:
+        minutes = want
+    elif d['mode'] in ('intraday', 'options'):
         minutes = 5
     else:
         minutes = 15 if span <= 6 else 60 if span <= 30 else 1440
-    back = (now.date() - start.date()).days + (4 if minutes < 1440 else 30)
-    if minutes < 1440 and back > 89:
-        minutes, back = 1440, back + 30
+    if minutes not in tfs:
+        minutes = 1440
+    back = age + (4 if minutes < 1440 else TRADE_LEAD[1440] + 35)       # and the Bollinger warm-up before
     what, label = None, d['symbol']
     if d['mode'] == 'options':
         o = d['option']
@@ -1305,9 +1324,10 @@ def trade_candles(ref: str) -> dict:
     except Exception as e:
         return {'bars': [], 'note': f'Candles failed: {dhan._redact(e)[:120]}', 'ttl': 30}
     daily = minutes == 1440
+    whole, ind = f, {}
     if len(f):
-        # From the session before the entry (the entry's own session for 5m) to the exit's session end.
-        first_day = start.date() if minutes == 5 else (start - timedelta(days=4 if minutes == 15 else 10)).date()
+        # From the session before the entry (the entry's own session for 1m and 5m) to the exit's session end.
+        first_day = (start - timedelta(days=TRADE_LEAD[minutes])).date()
         f = f[[(ts.date() if hasattr(ts, 'date') else ts) >= first_day for ts in f.index]]
         if minutes == 15:
             days = sorted({ts.date() for ts in f.index})
@@ -1316,6 +1336,9 @@ def trade_candles(ref: str) -> dict:
         if d['status'] != 'open':
             last_day = end.date()
             f = f[[(ts.date() if hasattr(ts, 'date') else ts) <= last_day for ts in f.index]]
+        if len(f):
+            # Over everything fetched up to the last candle shown, so the bands are warmed up.
+            ind = chart_indicators(whole[whole.index <= f.index[-1]], len(f), None if daily else minutes)
     bars = _candle_rows(f, daily) if len(f) else []
 
     def k_of(when):
@@ -1331,10 +1354,11 @@ def trade_candles(ref: str) -> dict:
         return None
     if bars and d['status'] == 'open' and not daily:
         bars[-1]['live'] = _when(bars[-1]['t']) + timedelta(minutes=minutes) > now
-    out = {'bars': bars, 'tf': minutes, 'label': label, 'entry_k': k_of(d['entry_time']), 'exit_k': k_of(d.get('exit_time')),
+    out = {'bars': bars, 'tf': minutes, 'tfs': tfs, 'ind': ind, 'label': label,
+           'entry_k': k_of(d['entry_time']), 'exit_k': k_of(d.get('exit_time')),
            'lp': d['lp'] if d['mode'] != 'options' or label.endswith('premium') else '',
            'ttl': 20 if d['status'] == 'open' else 3600}
-    TRADE_CANDLES[ref] = (time.time(), out)
+    TRADE_CANDLES[key] = (time.time(), out)
     if len(TRADE_CANDLES) > 200:
         for k in sorted(TRADE_CANDLES, key=lambda k: TRADE_CANDLES[k][0])[:50]:
             TRADE_CANDLES.pop(k, None)
@@ -1381,7 +1405,8 @@ def api_spark():
 
 @app.route('/api/trade/<path:ref>/candles')
 def api_trade_candles(ref):
-    out = trade_candles(ref)
+    want = request.args.get('tf', type=int)
+    out = trade_candles(ref, want if want in TRADE_TFS else None)
     if out.get('error'):
         return jsonify(out), 404
     return jsonify(safe(out))
@@ -1826,6 +1851,8 @@ def demo_sync() -> dict:
                 sz = {'skip': f"{acct['open']} positions already open: the most at once is {st['max_open']}"}
             elif st['max_per_day'] and today >= st['max_per_day']:
                 sz = {'skip': f"{today} trades already taken that day: the day's limit is {st['max_per_day']}"}
+            elif st['sizing'] == 'lots':
+                sz = execution.fixed_size(t, st['lots'], lot, acct['free'], st)     # the same lots every trade
             else:
                 sz = demo.size(t, acct['balance'], acct['free'], st, lot)
             base = {'ref': t['ref'], 'mode': t['mode'], 'symbol': t['symbol'], 'side': pos_side, 'direction': t.get('side'),
@@ -2861,11 +2888,14 @@ def intraday_loop() -> None:
         time.sleep(5)
 
 
-def intraday_state() -> dict:
+def intraday_state(skips: dict = None) -> dict:
+    skips = demo_skips() if skips is None else skips
     session = data.now_ist().date().isoformat()
     scan = store.latest_scan(mode='intraday')
     zones = [live_zone(z) for z in store.intraday_zones(session=session)]
     journal = [live_zone(z) for z in store.intraday_zones(store.INTRADAY_TRADES, limit=500)]   # the table pages
+    for z in zones + journal:
+        z['skipped'] = skips.get(f"intraday:{z['id']}")
     closed = [z for z in journal if z['status'] in ('won', 'lost', 'closed') and z['trigger']]
     today = [z for z in closed if z['created_at'].startswith(session)]
 
@@ -3219,6 +3249,10 @@ def options_state() -> dict:
                  why=OPT_WHY.get(sym), lp=underlying_key(sym))
         rows.append(r)
     journal = [live_idea(i) for i in store.ideas(limit=500)]
+    skips = demo_skips()
+    for i in journal:
+        i['skipped'] = skips.get(f"options:{i['id']}")
+    taken = [i for i in journal if i['status'] == 'open' and not i['skipped']]
     closed = [i for i in journal if i['status'] in ('won', 'lost', 'closed')]
     today_closed = [i for i in closed if i['session'] == today]
 
@@ -3247,8 +3281,8 @@ def options_state() -> dict:
         'unusual': unusual_feed[:12],
         'journal': journal,
         'stats': {'today': stats(today_closed), 'all': stats(closed),
-                  'open': sum(i['status'] == 'open' for i in journal),
-                  'open_r': round(sum(i['r_open'] or 0 for i in journal if i['status'] == 'open'), 2)},
+                  'open': len(taken), 'skipped': sum(i['status'] == 'open' and bool(i['skipped']) for i in journal),
+                  'open_r': round(sum(i['r_open'] or 0 for i in taken), 2)},
     }
 
 
@@ -3523,6 +3557,7 @@ def login_page():
 @app.route('/api/state')
 def api_state():
     scan = store.latest_scan()
+    skips = demo_skips()
     try:
         u = universe.load()
         uni = {'built_at': u.get('built_at'), 'failed': u.get('failed', []),
@@ -3548,29 +3583,32 @@ def api_state():
         'scan': scan,
         'candidates': store.candidates(scan['id']) if scan else [],
         # Tables page in the browser, so send their history rather than the newest few.
-        'zones': store.recent_zones(300),
+        'zones': [{**z, 'skipped': skips.get(f"{z.get('mode') or 'swing'}:{z['id']}")} for z in store.recent_zones(300)],
         'alerts': store.alerts(300),
         'signals': store.signals(300),
         'market_data': dhan.status(),
         'patterns': patterns.PATTERNS,
-        'swing_trades': swing_trades_state(),
-        'intraday': intraday_state(),
-        'options': {'open': len(store.ideas(status='open')), 'state': {k: v for k, v in STATE['options'].items()
+        'swing_trades': swing_trades_state(skips),
+        'intraday': intraday_state(skips),
+        'options': {'open': sum(f"options:{i['id']}" not in skips for i in store.ideas(status='open')), 'state': {k: v for k, v in STATE['options'].items()
                                                                        if not k.startswith('_')}},
     }))
 
 
-def swing_trades_state() -> dict:
+def swing_trades_state(skips: dict = None) -> dict:
     """The swing paper-trade journal and its totals, for the dashboard."""
+    skips = demo_skips() if skips is None else skips
     # Newest entry first: a zone set early can trigger late, so not in zone order.
     journal = sorted((live_zone(z) for z in store.swing_trades(limit=500)), key=lambda z: z['trigger'].get('choch_time') or '',
                      reverse=True)
+    for z in journal:
+        z['skipped'] = skips.get(f"swing:{z['id']}")
+    taken = [z for z in journal if z['status'] == 'triggered' and not z['skipped']]
     closed = [z for z in journal if z['status'] in ('won', 'lost', 'closed')]
     rs = [z['trigger'].get('r') or 0 for z in closed]
     return {'journal': journal,
-            'stats': {'open': sum(z['status'] == 'triggered' for z in journal),
-                      'open_r': round(sum(z['trigger'].get('r_open') or 0
-                                          for z in journal if z['status'] == 'triggered'), 2),
+            'stats': {'open': len(taken),
+                      'open_r': round(sum(z['trigger'].get('r_open') or 0 for z in taken), 2),
                       'trades': len(rs), 'wins': sum(1 for x in rs if x > 0), 'r': round(sum(rs), 2)}}
 
 
@@ -3641,6 +3679,8 @@ def api_settings():
             return jsonify({'error': 'indicators must be an object'}), 400
         # Stored as given back by settings_from: only known keys, every value clamped to its range.
         body = {**body, 'indicators': indicators.settings_from(body['indicators'])}
+        TRADE_CANDLES.clear()                    # the charts' indicators were worked out with the old ones
+        PANEL_CANDLES.clear()
     return jsonify(store.set_settings(body))
 
 
@@ -3802,6 +3842,7 @@ def api_board():
     frames = data.intraday_cached(tickers)
     live = data.live_quotes(tickers)               # {} unless Dhan is connected
     cards = []
+    skips = demo_skips()
     for z in picked:
         frame = frames.get(z['symbol'] + '.NS')
         if frame is None or frame.empty:
@@ -3836,7 +3877,8 @@ def api_board():
             sign = -1 if t.get('side') == 'short' else 1
             risk = (t['entry'] - t['stop']) * sign
             trade = {'entry': t['entry'], 'stop': t['stop'], 'target': t['target'],
-                     'r': (last - t['entry']) * sign / risk if risk > 0 else None}
+                     'r': (last - t['entry']) * sign / risk if risk > 0 else None,
+                     'skipped': skips.get(f"swing:{z['id']}")}
         done = patterns.completed(df, now)
         pats = [p for p in patterns.detect(done, zone={'low': lo, 'high': hi}, side=z.get('side') or 'long')
                 if pd_date(p['time']) == day]
@@ -3908,8 +3950,35 @@ def api_news():
     }))
 
 
+def demo_day(positions: list) -> dict:
+    """Each demo position's P&L carried in from earlier days, worked out at the first look of the day and kept, as
+    exec_day's: a position's `carried`, which today's P&L leaves out. Shares and stock futures are marked at the
+    share's previous close (Dhan's quote), so a first look in the middle of the session still leaves all of today's
+    move in; an option (squared off the same day, so rarely carried), or without a quote, at its last mark."""
+    today = data.now_ist().date().isoformat()
+    try:
+        day = json.loads(store.get_kv('demo_day') or '{}')
+    except ValueError:
+        day = {}
+    if day.get('day') != today:
+        carried = [p for p in positions if p['status'] == 'open' and (p.get('entry_time') or '')[:10] < today]
+        quotes = data.live_quotes(sorted({p['symbol'] + '.NS' for p in carried if p['mode'] != 'options'}))
+        base = {}
+        for p in carried:
+            prev = (quotes.get(p['symbol'] + '.NS') or {}).get('prev_close') if p['mode'] != 'options' else None
+            at = demo.mark(p, prev) if prev else None
+            base[str(p['id'])] = round(at if at is not None else p.get('unreal') or 0, 2)
+        day = {'day': today, 'base': base}
+        store.set_kv('demo_day', json.dumps(day))
+    return day
+
+
 def _demo_view() -> dict:
-    positions = live_demo(store.demo_positions())
+    rows = store.demo_positions()
+    base = demo_day(rows)['base']
+    positions = live_demo(rows)
+    for p in positions:
+        p['carried'] = base.get(str(p['id']), 0)
     acct = demo_account(positions=positions)
     by_mode = {}
     for m in DEMO_MODES:
@@ -3923,6 +3992,7 @@ def _demo_view() -> dict:
     events = [{'ts': x['ts'], 'amount': x['amount'] if x['kind'] == 'deposit' else -x['amount'], 'kind': x['kind'],
                'label': x.get('note') or ''} for x in store.demo_ledger()]
     events += [{'ts': p['exit_time'], 'amount': p['net'] or 0, 'kind': 'trade', 'label': p['instrument'], 'mode': p['mode'],
+                'carried': p['carried'],
                 'symbol': p['symbol'], 'outcome': p.get('note') or '', 'charges': round(p['charges'] or 0, 2)}
                for p in positions if p['status'] == 'closed']
     curve, run = [], 0.0
@@ -4987,6 +5057,42 @@ def api_charts_layout():
     layout = _chart_layout((request.get_json(silent=True) or {}).get('layout'))
     store.set_json('charts:layout', layout)
     return jsonify({'ok': True, 'layout': layout})
+
+
+# The side panels' charts at a timeframe their own data does not have: minutes -> (the Charts tab's timeframe in
+# seconds, sessions shown; daily: candles shown). Indicators are worked out over everything fetched, then cut.
+PANEL_TFS = {1: (60, 2), 5: (300, 3), 15: (900, 3), 60: (3600, 15), 1440: (86400, 260)}
+PANEL_CANDLES: dict = {}            # (symbol, minutes) -> (time, answer)
+
+
+@app.route('/api/candles/<symbol>')
+def api_panel_candles(symbol):
+    """A stock's or an index's (IDX:<id>) candles at 1, 5, 15 or 60 minutes or daily (`tf`, minutes), in the side
+    panels' shape ({bars, ind, tf, source}): from Dhan in real time when it is connected, else yfinance."""
+    sym = symbol.upper()
+    tf = request.args.get('tf', type=int)
+    if tf not in PANEL_TFS or not (SYMBOL_RE.match(sym) or re.match(r'^IDX:\d+$', sym)):
+        return jsonify({'error': 'unknown instrument or timeframe'}), 400
+    hit = PANEL_CANDLES.get((sym, tf))
+    if hit and time.time() - hit[0] < (10 if tf < 1440 else 60):
+        return jsonify(safe(hit[1]))
+    secs, keep = PANEL_TFS[tf]
+    daily = tf == 1440
+    f, src = charts.frame(sym, secs)
+    if f is None:
+        return jsonify({'bars': [], 'ind': {}, 'tf': tf, 'source': 'none', 'note': f'No {tf}m candles for {sym}' if not daily else f'No daily candles for {sym}'})
+    if daily:
+        shown = f.tail(keep)
+    else:
+        days = sorted({ts.date() for ts in f.index})[-keep:]
+        shown = f[[ts.date() in days for ts in f.index]]
+    out = {'bars': _candle_rows(shown, daily), 'ind': chart_indicators(f, len(shown), None if daily else tf),
+           'tf': tf, 'source': src}
+    PANEL_CANDLES[(sym, tf)] = (time.time(), out)
+    if len(PANEL_CANDLES) > 300:
+        for k in sorted(PANEL_CANDLES, key=lambda k: PANEL_CANDLES[k][0])[:100]:
+            PANEL_CANDLES.pop(k, None)
+    return jsonify(safe(out))
 
 
 @app.route('/api/charts/candles')
