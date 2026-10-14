@@ -192,6 +192,17 @@
     :root[data-style="classic"] .sidebar { border-radius: 0; box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2); }
 }
 
+/* Desktop: the sidebar's sticky bar is clear over the card at rest, so the card's sheen runs unbroken behind
+   "Controls"; once settings scroll under it, it frosts as the sheet's does. */
+@media (min-width: 961px) and (min-height: 760px) {
+    :root:not([data-style="classic"]) .sb-bar { background: transparent; transition: background-color .15s; }
+    :root:not([data-style="classic"]) .sidebar[data-scrolled="1"] .sb-bar {
+        background: color-mix(in srgb, var(--surface) 72%, transparent);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        backdrop-filter: blur(20px) saturate(180%);
+    }
+}
+
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :root .topbar, :root .ticker, :root .card, :root #doc, :root section[data-for], :root .table-wrap, :root .smf-card,
     :root .box, :root .fullchart, :root .modal, :root .ask, :root .drawer, :root .nb-panel, :root .ch-pal, :root .tm-menu,

@@ -107,7 +107,7 @@
             box-shadow: var(--shadow); }
     /* Sidebar: four sections, each a small header (label + one text action)
        over rows of one shape: title (+ one-line sub) on the left, control on the right. */
-    .sidebar { padding: 4px 18px; display: flex; flex-direction: column; }
+    .sidebar { padding: 0 18px 4px; display: flex; flex-direction: column; }
     .sb { display: flex; flex-direction: column; gap: 4px; padding: 7px 0; }
     .sb + .sb { border-top: 1px solid var(--line); }
     .sb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -143,13 +143,13 @@
     details.rules { margin-top: -4px; }
     details.rules summary { font-size: 12px; color: var(--ink-3); font-weight: 600; }
     details.rules[open] summary { margin-bottom: 4px; }
-    /* The sidebar's own bar: its name, and a button to fold it away. */
-    .sb-bar { display: flex; align-items: center; gap: 6px; padding: 8px 0 0; }
-    .sb-bar .label { margin: 0; }
+    /* The sidebar's own bar: its name, and a button to fold it away, over a hairline. */
+    .sb-bar { display: flex; align-items: center; gap: 6px; padding: 10px 0 8px; border-bottom: 1px solid var(--line); }
     .sb-bar .label { margin: 0; flex: 1; }
+    /* Its buttons are bare icons, as the folded rail's: a tint on hover rather than a box. */
     .sb-iconbtn { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border-radius: var(--r-sm);
-                  border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
-    .sb-iconbtn:hover { color: var(--accent); border-color: var(--accent); }
+                  border: 0; background: transparent; color: var(--ink-2); cursor: pointer; }
+    .sb-iconbtn:hover { color: var(--accent); background: var(--accent-soft); }
     .sb-rail { display: none; }
     .sb-scrim { display: none; }
     @media (min-width: 961px) {
@@ -6591,8 +6591,13 @@ document.addEventListener('click', (e) => { if (NB.open && !e.target.closest('#n
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && NB.open) { nbToggle(false); $('nb-btn').focus(); } });
 setInterval(() => { if (NB.open) nbRender(); }, 60000);      // "5 min ago" keeps up
 
-// More settings below the sidebar's fold (a short window): a fade along its foot (data-more).
-function sbMore() { const s = $('sidebar'); s.dataset.more = s.scrollTop + s.clientHeight < s.scrollHeight - 4 ? '1' : '0'; }
+// More settings below the sidebar's fold (a short window): a fade along its foot (data-more); scrolled, a backing
+// behind its bar (data-scrolled).
+function sbMore() {
+    const s = $('sidebar');
+    s.dataset.more = s.scrollTop + s.clientHeight < s.scrollHeight - 4 ? '1' : '0';
+    s.dataset.scrolled = s.scrollTop > 0 ? '1' : '0';          // the glass bar backs itself only over scrolled settings
+}
 $('sidebar').addEventListener('scroll', sbMore, { passive: true });
 window.addEventListener('resize', sbMore);
 new ResizeObserver(sbMore).observe($('sidebar'));
