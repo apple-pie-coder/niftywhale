@@ -149,6 +149,19 @@ class Autopilot(unittest.TestCase):
         self.assertEqual(autopilot.shadow_decision([], [], 20, self.pol, 'intraday')[0], 'wait')      # too few trades yet
         self.assertEqual(autopilot.shadow_decision([], [], 60, self.pol, 'intraday')[0], 'promote')   # never worse
 
+    def test_shadow_counts_only_the_trades_that_differ(self):
+        day = lambda d, r: trade(f'2026-01-{d:02d}', r)
+        shared = [day(d, 1) for d in range(1, 21)]
+        # 20 trades both take and 3 the current rules add: 3 differ, under swing's 4.
+        self.assertEqual(autopilot.differing(shared, shared + [day(d, -1) for d in (22, 23, 24)]), 3)
+        verdict, why = autopilot.shadow_decision(shared, shared + [day(d, 2) for d in (22, 23, 24)], 25, self.pol, 'swing')
+        self.assertEqual(verdict, 'wait')
+        self.assertIn('3 of them differ (need 4)', why)
+        # The same entry with another result (an options exit) is one differing trade, not two.
+        self.assertEqual(autopilot.differing([day(1, 2)], [day(1, -1)]), 1)
+        # Open trades are not evidence yet.
+        self.assertEqual(autopilot.differing([{**day(1, 0), 'status': 'open'}], []), 0)
+
     def test_rollback_and_pause(self):
         lose = [trade('2026-01-01', -1)] * 5
         self.assertIsNotNone(autopilot.rollback_due(lose, lose, [trade('2026-01-01', 1)] * 2, self.pol, 'swing'))

@@ -30,6 +30,7 @@ undone from the dashboard.
 Pure decision logic here; the lab (niftywhale/lab.py) runs it and stores state.
 """
 import math
+from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -186,7 +187,7 @@ def tune(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], current: 
     return best, best_score
 
 
-HOLDOUT_MIN_TRADES = 10        # fewer in the holdout (either rule set) and it cannot judge: the check passes, said so
+HOLDOUT_MIN_TRADES = 10        # fewer in the holdout (both rule sets) and it cannot judge: the check passes, said so
 
 
 def folds(first: date, last: date, months: int) -> List[Tuple[date, date]]:
@@ -234,6 +235,7 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
                      'tuned': perf.summary(a), 'current': perf.summary(b)})
     st, sc = perf.summary(oos_tuned), perf.summary(oos_current)
     gain = (st.get('avg_r') or 0) - (sc.get('avg_r') or 0)
+    dd_bar = round(1.25 * (sc.get('max_drawdown') or 0) - 2, 2)     # drawdowns are negative: a quarter deeper, plus 2R
     # Every test with its value and its bar, passed or not (reasons below are the ones that failed).
     checks = [
         {'key': 'folds', 'label': 'Folds to test on', 'value': len(rows), 'need': 1, 'ok': bool(rows)},
@@ -243,8 +245,8 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
          'ok': bool(st.get('trades')) and gain >= pol['min_gain_r']},
         {'key': 'total', 'label': 'Total R against the current rules', 'value': st.get('total_r'), 'need': sc.get('total_r'),
          'ok': bool(st.get('trades')) and (st.get('total_r') or 0) > (sc.get('total_r') or 0)},
-        {'key': 'drawdown', 'label': 'Drawdown no deeper', 'value': st.get('max_drawdown'), 'need': sc.get('max_drawdown'),
-         'ok': not st.get('trades') or not ((st.get('max_drawdown') or 0) < 1.25 * (sc.get('max_drawdown') or 0) - 2)},
+        {'key': 'drawdown', 'label': 'Drawdown not much deeper', 'value': st.get('max_drawdown'), 'need': dd_bar,
+         'ok': not st.get('trades') or (st.get('max_drawdown') or 0) >= dd_bar},
     ]
     reasons = []
     if not rows:
@@ -254,9 +256,10 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
     if st.get('trades') and gain < pol['min_gain_r']:
         reasons.append(f'tuning added {gain:+.3f}R per trade out of sample (need +{pol["min_gain_r"]})')
     if st.get('trades') and (st.get('total_r') or 0) <= (sc.get('total_r') or 0):
-        reasons.append(f"total {st.get('total_r')}R out of sample, not more than the current rules' {sc.get('total_r')}R")
-    if st.get('trades') and (st.get('max_drawdown') or 0) < 1.25 * (sc.get('max_drawdown') or 0) - 2:
-        reasons.append('deeper drawdown than the current rules')
+        reasons.append(f"total {st.get('total_r')}R out of sample, not more than the current rules' {sc.get('total_r') or 0}R")
+    if st.get('trades') and (st.get('max_drawdown') or 0) < dd_bar:
+        reasons.append(f"drawdown {st.get('max_drawdown')}R out of sample, past {dd_bar}R (the current rules' "
+                       f"{sc.get('max_drawdown') or 0}R)")
     proposal = None
     if not reasons:
         if on_step:
@@ -270,31 +273,47 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
         start = hold_from.isoformat()
         later = lambda ts: [t for t in ts if t['entry_time'][:10] >= start]
         ph, ch = perf.summary(later(evaluate(proposal))), perf.summary(later(evaluate(current)))
-        enough = min(ph.get('trades', 0), ch.get('trades', 0)) >= HOLDOUT_MIN_TRADES
+        # Judged when either rule set trades enough: a proposal that filters out nearly every holdout trade
+        # gives up their R, and that is evidence too, not a pass.
+        enough = max(ph.get('trades', 0), ch.get('trades', 0)) >= HOLDOUT_MIN_TRADES
         ok = not enough or (ph.get('total_r') or 0) >= (ch.get('total_r') or 0)
         holdout = {'from': start, 'months': hold, 'proposal': ph, 'current': ch, 'ok': ok, 'judged': enough}
-        checks.append({'key': 'holdout', 'label': f'Last {hold} months, never tuned on', 'value': ph.get('total_r'),
+        checks.append({'key': 'holdout', 'label': f'Holdout from {start}, never tuned on', 'value': ph.get('total_r'),
                        'need': ch.get('total_r') if enough else f'{HOLDOUT_MIN_TRADES}+ trades to judge', 'ok': ok})
         if not ok:
-            reasons.append(f"on the last {hold} months, which tuning never saw, {ph.get('total_r')}R against the "
-                           f"current rules' {ch.get('total_r')}R")
+            reasons.append(f"from {start} on, which tuning never saw, {ph.get('total_r') or 0}R against the "
+                           f"current rules' {ch.get('total_r') or 0}R")
             proposal = None
     return {'folds': rows, 'oos_tuned': st, 'oos_current': sc, 'gain_r': round(gain, 3),
             'proposal': proposal, 'reasons': reasons, 'checks': checks, 'holdout': holdout}
 
 
 # ---------------------------------------------------------------- shadow, rollback, pause
+def differing(challenger: List[Dict[str, Any]], champion: List[Dict[str, Any]]) -> int:
+    """Closed trades the two rule sets disagree on: taken by one only, or the same entry with another result
+    (an options exit). Both filter the same setups, so a trade both take adds the same R to each side and
+    says nothing about which is better; only these decide the comparison."""
+    key = lambda t: (t.get('symbol'), t.get('side'), t.get('entry_time'))
+    ca, cb = (Counter((key(t), round(float(t['r']), 4)) for t in perf.closed(x)) for x in (challenger, champion))
+    only_a, only_b = ca - cb, cb - ca
+    ka, kb = (Counter(k for (k, _) in c.elements()) for c in (only_a, only_b))
+    changed = sum(min(n, kb[k]) for k, n in ka.items())          # one trade with two results counts once
+    return sum(only_a.values()) + sum(only_b.values()) - changed
+
+
 def shadow_decision(challenger: List[Dict[str, Any]], champion: List[Dict[str, Any]], days: int,
                     pol: Dict[str, Any], mode: str) -> Tuple[str, str]:
-    """('promote' | 'drop' | 'wait', why) for a challenger that has run `days` sessions."""
+    """('promote' | 'drop' | 'wait', why) for a challenger that has run `days` sessions. The evidence is the
+    trades the two disagree on (differing), not every trade either took."""
     a, b = perf.summary(challenger), perf.summary(champion)
     na, nb = a.get('trades', 0), b.get('trades', 0)
     ta, tb = a.get('total_r', 0) or 0, b.get('total_r', 0) or 0
     need = pol['shadow_min_trades'][mode]
-    if na + nb >= need and ta < tb - 3:
+    nd = differing(challenger, champion)
+    if nd >= need and ta < tb - 3:
         return 'drop', f'{ta:+.1f}R in shadow against {tb:+.1f}R for the current rules'
-    if days < pol['shadow_days'] or (na + nb < need and days < pol['shadow_max_days']):
-        return 'wait', f'{days}/{pol["shadow_days"]} sessions · {na} trades vs {nb}'
+    if days < pol['shadow_days'] or (nd < need and days < pol['shadow_max_days']):
+        return 'wait', f'{days}/{pol["shadow_days"]} sessions · {na} trades vs {nb}, {nd} of them differ (need {need})'
     if ta >= tb - 0.5:
         return 'promote', f'{ta:+.1f}R in {days} shadow sessions against {tb:+.1f}R for the current rules'
     return 'drop', f'{ta:+.1f}R in shadow against {tb:+.1f}R for the current rules'

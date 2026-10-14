@@ -466,7 +466,8 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
            f"It now runs in shadow for {pol['shadow_days']} sessions before anything changes.")
     proposal = {**current, **wf['proposal']} if wf['proposal'] else None
     keep = ('trades', 'wins', 'win_rate', 'avg_r', 'total_r', 'max_drawdown', 'profit_factor')
-    return {'proposal': bool(wf['proposal']), 'reasons': wf['reasons'], 'gain_r': wf['gain_r'],
+    # `shadow`: whether it started its shadow run (not if a proposal or a change appeared while tuning).
+    return {'proposal': bool(wf['proposal']), 'shadow': bool(taken), 'reasons': wf['reasons'], 'gain_r': wf['gain_r'],
             # What the job's detail shows, laid out (the job keeps it with its step).
             'span': [str(first), str(lastday)], 'folds': len(wf['folds']), 'checks': wf.get('checks', []),
             'oos_tuned': {k: wf['oos_tuned'].get(k) for k in keep}, 'oos_current': {k: wf['oos_current'].get(k) for k in keep},
@@ -974,7 +975,8 @@ def run_job(job: Dict[str, Any]) -> str:
                     msgs.append(f"{mode}: {r['skipped']}")
                     progress.skip('tune_' + mode, r['skipped'])
                 else:
-                    say(f'{mode}: ' + ('proposal in shadow' if r.get('proposal') else '; '.join(r.get('reasons') or [])))
+                    say(f'{mode}: ' + (('proposal in shadow' if r.get('shadow') else 'proposal not started: one appeared meanwhile')
+                                       if r.get('proposal') else '; '.join(r.get('reasons') or [])))
                     progress.result('tune_' + mode, r)
         elif kind == 'backfill':
             nse_history(progress, say)

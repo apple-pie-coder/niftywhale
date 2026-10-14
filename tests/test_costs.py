@@ -108,6 +108,23 @@ class Holdout(unittest.TestCase):
         # Without the holdout the same history is proposed (the tuning cannot tell).
         self.assertIsNotNone(self.run_wf(market(holdout_turns=True), 0)['proposal'])
 
+    def test_a_proposal_that_skips_the_holdout_is_judged(self):
+        # The proposal keeps 3 losing trades from October on; the current rules make 20 small winners there.
+        base = market(holdout_turns=False)
+        mk = lambda d, r: {'symbol': 'X', 'side': 'long', 'entry_time': f'2025-{d}T10:00:00+05:30',
+                           'exit_time': f'2025-{d}T11:00:00+05:30', 'status': 'won', 'r': r, 'f': {'rr': 9}}
+
+        def evaluate(thr):
+            before = [t for t in base(thr) if t['entry_time'][:10] < '2025-10-01']
+            if thr['min_rr'] <= 1.5:
+                return before + [mk(f'10-{d:02d}', 0.3) for d in range(1, 21)]
+            return before + [mk(f'11-{d:02d}', -1.0) for d in range(1, 4)]
+        wf = self.run_wf(evaluate, 3)
+        self.assertIsNone(wf['proposal'])
+        self.assertTrue(wf['holdout']['judged'])
+        hold = next(c for c in wf['checks'] if c['key'] == 'holdout')
+        self.assertEqual((hold['ok'], hold['label']), (False, 'Holdout from 2025-10-01, never tuned on'))
+
     def test_policy_range(self):
         self.assertEqual(autopilot.policy({'holdout_months': 99})['holdout_months'], 12)
         self.assertEqual(autopilot.policy({})['holdout_months'], 3)

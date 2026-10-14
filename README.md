@@ -1807,6 +1807,9 @@ what may change it:
      12, 10, 8, 6), so a first change takes a gate at most two rungs in.
 2. **Shadow.**
    - The proposal is replayed nightly on new data next to the current rules for 20 sessions (up to 60 if trades are scarce).
+   - Only the trades the two disagree on count as evidence: those one takes and the other skips, or the same entry with
+     another result (options exits). A trade both take adds the same R to each, so it can't tell them apart. It needs
+     swing 4, intraday 15, options 10 of these (`shadow_min_trades`) before it can be dropped early or promoted before 60 sessions.
    - It's promoted if it does at least as well, and dropped if it's clearly worse.
 3. **Promote.** With the autopilot **On — promote by itself**, the new thresholds are saved and the next scan uses them. With **On — wait for my approval**, it asks on Telegram and shows **Apply now** on the tab.
 4. **Rollback.** The previous rules come back when both of these hold:
@@ -1859,9 +1862,11 @@ Saturday at 09:00, Telegram gets one message per mode:
 
 **Holdout** (`holdout_months`, 3 by default, 0-12): the last months of history are left out of every tuning fold and of the
 final tuning. A proposal is then checked once on them: if it made less in total there than the current rules, it is not
-proposed ("on the last 3 months, which tuning never saw, ..."). The tuner tries hundreds of rule sets, and the best of them is
-partly luck; months it never saw are the check that luck cannot pass. With fewer than 10 trades there the check cannot judge,
-and passes. Options have weeks of history, not years: no holdout there yet.
+proposed ("from 2026-08-01 on, which tuning never saw, ..."). The holdout starts on the first of a month, so with
+3 months it is the two months before the current one and as much of this one as there is. The tuner tries hundreds of rule
+sets, and the best of them is partly luck; months it never saw are the check that luck cannot pass. When neither rule set
+made 10 trades there the check cannot judge, and passes; a proposal that skips nearly every trade there is judged on what
+it gave up. Options have weeks of history, not years: no holdout there yet.
 
 Every policy value is kept inside a range, so a saved value can never switch a safeguard off or stall the lab: most
 steps per change 1-6, tuner search 1-12 steps either side, shadow run 5-120 sessions, days between changes 1-90, out-of-sample

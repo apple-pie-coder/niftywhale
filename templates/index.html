@@ -8771,7 +8771,10 @@ function noteLines(n) {
 // One mode's tuning, readable: the verdict, the tuned rules against the current ones out of sample, each
 // check with its bar, and what would change.
 function tuneCard(r) {
-    const verdict = r.proposal
+    // r.shadow is missing on tunings recorded before it was: those proposals did start.
+    const verdict = r.proposal && r.shadow === false
+        ? { tone: 'muted', head: 'Better rules found: not started', sub: 'A proposal or a rule change appeared while tuning ran; it is left as it is.' }
+        : r.proposal
         ? { tone: 'good', head: 'Better rules found: now running in shadow', sub: 'They trade on paper beside the current rules before anything changes.' }
         : { tone: 'muted', head: 'Kept the current rules', sub: 'Tuning did not beat them on trades it had not seen.' };
     const t = r.oos_tuned || {}, c = r.oos_current || {};
@@ -8790,7 +8793,8 @@ function tuneCard(r) {
         ${row('Worst drawdown', t.max_drawdown, c.max_drawdown, dd, (a, b) => a > b)}</tbody></table>`;
     const show = (ch) => ch.key === 'gain' ? sgnR(ch.value, 3) + ` <span class="muted">(need ${sgnR(ch.need, 2)})</span>`
         : ch.key === 'total' ? `${sgnR(ch.value, 1)} <span class="muted">vs ${sgnR(ch.need, 1)}</span>`
-        : ch.key === 'drawdown' ? `${dd(ch.value)} <span class="muted">vs ${dd(ch.need)}</span>`
+        : ch.key === 'drawdown' ? `${dd(ch.value)} <span class="muted">(limit ${dd(ch.need)})</span>`
+        : ch.key === 'holdout' ? `${sgnR(ch.value, 1)} <span class="muted">${typeof ch.need === 'number' ? 'vs ' + sgnR(ch.need, 1) : esc(ch.need == null ? 'vs —' : ch.need)}</span>`
         : `${n(ch.value)} <span class="muted">(need ${n(ch.need)})</span>`;
     const checks = (r.checks || []).length ? `<ul class="tc-checks">${r.checks.map((ch) => `<li data-ok="${ch.ok ? 1 : 0}">
         <span class="tc-mark" aria-label="${ch.ok ? 'passed' : 'failed'}">${ch.ok ? IC.check : '×'}</span><span>${esc(ch.label)}</span><span class="tc-v">${show(ch)}</span></li>`).join('')}</ul>`
