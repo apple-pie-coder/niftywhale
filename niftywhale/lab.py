@@ -61,6 +61,11 @@ def specs(mode: str) -> Dict[str, Dict[str, Any]]:
     out = {k: {'step': options.TUNABLE[k][3], 'min': options.TUNABLE[k][1], 'max': options.TUNABLE[k][2]}
            for k in options.LEARN_FILTERS}
     out.update({k: {'values': list(v), 'step': 5, 'min': min(v), 'max': max(v)} for k, v in options.EXIT_GRID.items()})
+    out.update({k: {'values': list(v), 'step': options.TUNABLE[k][3], 'min': min(v), 'max': max(v)}
+                for k, v in options.MARKET_GRID.items()})
+    for k, off in options.OFF.items():      # the value at which a rule does nothing, as the swing gates have
+        if k in out:
+            out[k]['off'] = off
     return out
 
 
@@ -248,7 +253,8 @@ class Bench:
     def run(self, thr: Dict[str, float]) -> List[Dict[str, Any]]:
         if self.mode == 'options':
             # Outcomes exist only for the exit grid: a hand-set 27 % stop is read as the nearest, 25 %.
-            thr = {**thr, **{k: min(v, key=lambda g: abs(g - thr[k])) for k, v in options.EXIT_GRID.items()}}
+            thr = {**thr, **{k: min(v, key=lambda g: abs(g - thr.get(k, options.TUNABLE[k][0])))
+                             for k, v in options.EXIT_GRID.items()}}
         fp = tuple(sorted((k, round(v, 6)) for k, v in thr.items()))
         if fp not in self.cache:
             if self.mode == 'options':
@@ -366,7 +372,7 @@ def apply_thresholds(mode: str, thr: Dict[str, float], why: str, by: str = 'auto
         saved = {}
     sp = specs(mode)
     base = base or current_thresholds(mode)
-    cast = lambda k, v: int(v) if k in ('min_avg_volume', 'max_per_day', 'min_zone_age') else v
+    cast = lambda k, v: int(v) if k in ('min_avg_volume', 'max_per_day', 'min_zone_age', 'one_direction') else v
     # A value already in force is no change: applied twice (your approve racing the lab's own
     # promotion), the second would record it as its own 'before', and Undo would put back nothing.
     changed = {k: [saved.get(k), cast(k, v)] for k, v in thr.items()
@@ -411,7 +417,8 @@ def revert_change(mode: str, lc: Dict[str, Any]) -> Dict[str, Any]:
 
 def describe(thr: Dict[str, float], base: Dict[str, float]) -> str:
     def show(k, v):                     # a context gate at its 'off' value reads as off
-        return 'off' if k in smc.GATES and v == smc.TUNABLE[k]['off'] else f'{v:g}'
+        off = smc.TUNABLE[k]['off'] if k in smc.GATES else options.OFF.get(k)
+        return 'off' if off is not None and v == off else f'{v:g}'
     parts = [f'{k} {show(k, base[k])} → {show(k, v)}' for k, v in thr.items()
              if base.get(k) is not None and abs(v - base[k]) > 1e-9]
     return ', '.join(parts) or 'no change'
@@ -638,30 +645,49 @@ def _from_minutes(c: Dict[str, Any]) -> bool:
     return any((o or {}).get('source') == '1m' for o in (c.get('outcomes') or {}).values())
 
 
+def candidate_market(progress: Callable[[str], None]) -> int:
+    """The market's move at each candidate's time (options.market_move, kept as mkt_move), for candidates recorded
+    before the app measured it, from the session's Nifty snapshots: the market gate can then be backtested over
+    them. One that cannot be measured keeps None (no gate), as live."""
+    todo = [c for c in store.option_candidates() if 'mkt_move' not in (c.get('f') or {})]
+    spots: Dict[str, List] = {}
+    for c in todo:
+        if c['session'] not in spots:
+            spots[c['session']] = store.day_spots(options.MARKET, c['session'])
+        store.set_candidate_features(c['id'], {**c['f'], 'mkt_move': options.market_move(spots[c['session']],
+                                                                                         datetime.fromisoformat(c['ts']))})
+    if todo:
+        progress(f'options: market move for {len(todo)} earlier candidates')
+    return len(todo)
+
+
 def candidate_outcomes(progress: Callable[[str], None]) -> int:
-    """For each finished session's candidates, what every stop / target pair would have done: on the option's own
+    """For each finished session's candidates, what every stop / target / trail would have done: on the option's own
     1-minute candles from Dhan (options.bars_outcome), so a touch between two chain snapshots counts; on the
     snapshots taken every few minutes (options.path_outcome) when Dhan has no candles. An outcome from the
     snapshots is tried on candles again for MINUTE_RETRY_DAYS (Dhan down that evening, or recorded before the
-    candles were used). Each outcome says which it came from (`source`)."""
+    candles were used). Each outcome says which it came from (`source`). A candidate missing an exit the grid has
+    since gained (the trails) is worked out again, on candles while Dhan still has them."""
     today = data.now_ist().date().isoformat()
     after_close = not busy_market() and data.now_ist().time() >= dtime(15, 35)
     retry_from = (data.now_ist().date() - timedelta(days=MINUTE_RETRY_DAYS)).isoformat()
+    grid = options.exit_grid()
+    keys = [options.exit_key(*g) for g in grid]
+    missing = lambda c: bool(c.get('outcomes')) and any(k not in c['outcomes'] for k in keys)     # noqa: E731
     pending = [c for c in store.option_candidates() if (c['session'] < today or after_close)
-               and (not c.get('outcomes') or (not _from_minutes(c) and c['session'] >= retry_from))]
+               and (not c.get('outcomes') or (not _from_minutes(c) and c['session'] >= retry_from) or missing(c))]
     done, minutes = 0, 0
     snaps: Dict = {}
     cache: Dict = {}
     for c in pending:
         bars = _minute_bars(c, cache)
-        grid = [(sp, tp) for sp in options.EXIT_GRID['stop_pct'] for tp in options.EXIT_GRID['target_pct']]
         if bars:
-            outs = {f'{sp:g}/{tp:g}': options.bars_outcome(bars, c['entry'], sp, tp, c['direction'], c.get('level'))
-                    for sp, tp in grid}
+            outs = {options.exit_key(sp, tp, tr): options.bars_outcome(bars, c['entry'], sp, tp, c['direction'], c.get('level'),
+                                                                     trail_pct=tr) for sp, tp, tr in grid}
             minutes += 1
         else:
-            if c.get('outcomes'):
-                continue                    # already from the snapshots: nothing new to learn without candles
+            if c.get('outcomes') and (_from_minutes(c) or not missing(c)):
+                continue                    # nothing new to learn without candles (and candles are not mixed with snapshots)
             key = (c['symbol'], c['expiry'], c['session'])
             if key not in snaps:
                 snaps[key] = store.snapshots_for(*key)
@@ -676,8 +702,8 @@ def candidate_outcomes(progress: Callable[[str], None]) -> int:
             if not path:                    # no later read of this chain: nothing to learn from it
                 store.set_candidate_outcomes(c['id'], {})
                 continue
-            outs = {f'{sp:g}/{tp:g}': {**options.path_outcome(path, c['entry'], sp, tp, c['direction'], c.get('level')),
-                                       'source': 'snapshots'} for sp, tp in grid}
+            outs = {options.exit_key(sp, tp, tr): {**options.path_outcome(path, c['entry'], sp, tp, c['direction'], c.get('level'),
+                                                                         trail_pct=tr), 'source': 'snapshots'} for sp, tp, tr in grid}
         store.set_candidate_outcomes(c['id'], outs)
         done += 1
     if done:
@@ -958,6 +984,7 @@ def run_job(job: Dict[str, Any]) -> str:
                     for n in shadow_and_guards(mode, bench):
                         say(f'{mode}: {n}')
             progress('options: candidate outcomes')
+            candidate_market(progress)
             candidate_outcomes(progress)
             bench = Bench('options')
             if bench.ready():

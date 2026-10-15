@@ -149,6 +149,11 @@ def plan(trade: Dict[str, Any], sz: Dict[str, Any], inst: Dict[str, Any], st: Di
     """
     if not inst.get('security_id'):
         return {'skip': 'no Dhan security ID for this instrument'}
+    if trade['mode'] == 'options' and trade.get('trail_pct'):
+        # A super order's target leg sells at the target; the idea trails on from there. Real money trades what
+        # the evidence was made on, or nothing.
+        return {'skip': 'its trailing exit is followed on paper only (a super order sells at the target): '
+                        'turn the trail off in the options rules to trade options live'}
     seg, product = PRODUCT[sz['product']]
     seg = inst.get('segment') or seg
     short = trade['mode'] != 'options' and trade.get('side') == 'short'

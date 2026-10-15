@@ -72,6 +72,14 @@ class Plans(unittest.TestCase):
         self.assertIn('skip', execution.plan({**TRADE, 'target': 126.6}, {'product': 'CNC', 'qty': 1}, {'security_id': '5'}, ST, 'C1'))
         self.assertIn('skip', execution.plan(TRADE, {'product': 'CNC', 'qty': 1}, {}, ST, 'C1'))
 
+    def test_an_option_with_a_trail_stays_on_paper(self):
+        # A super order sells at the target; the idea trails on from there: live trading does not trade it.
+        opt = {**TRADE, 'mode': 'options', 'trail_pct': 20}
+        p = execution.plan(opt, {'product': 'OPT', 'qty': 65}, {'security_id': '7', 'segment': 'NSE_FNO'}, ST, 'C1')
+        self.assertIn('trailing exit', p['skip'])
+        self.assertNotIn('skip', execution.plan({**opt, 'trail_pct': 0}, {'product': 'OPT', 'qty': 65},
+                                                {'security_id': '7', 'segment': 'NSE_FNO'}, ST, 'C1'))
+
     def test_protection_holds_target_then_stop(self):
         p = {'qty': 10, 'segment': 'NSE_EQ', 'security_id': '5', 'target': 151.0, 'stop': 122.65, 'correlation_id': 'nw-swing7'}
         b = execution.protect_body(p, 'C1')

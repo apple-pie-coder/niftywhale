@@ -11,7 +11,7 @@ import logging
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from niftywhale import hub
 
@@ -246,6 +246,11 @@ def init() -> None:
             c.execute('ALTER TABLE notices ADD COLUMN cleared INTEGER DEFAULT 0')
         if 'features' not in {r[1] for r in c.execute('PRAGMA table_info(oc_ideas)')}:
             c.execute('ALTER TABLE oc_ideas ADD COLUMN features TEXT')
+        # Option ideas with a trail: its % (the rule when the idea was made), and once the target is reached the best
+        # premium since and the trailing stop under it (options.trail_stop).
+        for col in ('trail_pct', 'peak', 'trail'):
+            if col not in {r[1] for r in c.execute('PRAGMA table_info(oc_ideas)')}:
+                c.execute(f'ALTER TABLE oc_ideas ADD COLUMN {col} REAL')
         # Lab jobs: each step's start, end and counts (lab.JobLog), for the job detail view.
         if 'steps' not in {r[1] for r in c.execute('PRAGMA table_info(lab_jobs)')}:
             c.execute('ALTER TABLE lab_jobs ADD COLUMN steps TEXT')
@@ -917,6 +922,15 @@ def first_snapshot(symbol: str, expiry: str, session: str) -> Optional[Dict[str,
     return _snap(row) if row else None
 
 
+def day_spots(symbol: str, session: str) -> List[Tuple[str, float]]:
+    """The underlying's spot at every read of the session, any expiry, oldest first: [(iso time, spot)]
+    (options.market_move)."""
+    with connect() as c:
+        rows = c.execute('SELECT ts, spot FROM oc_snapshots WHERE session = ? AND symbol = ? AND spot IS NOT NULL '
+                         'ORDER BY ts', (session, symbol)).fetchall()
+    return [(r['ts'], r['spot']) for r in rows]
+
+
 def snapshot_series(symbol: str, expiry: str, session: str) -> List[Dict[str, Any]]:
     """The session's summaries for one expiry, oldest first (no chains)."""
     with connect() as c:
@@ -969,7 +983,7 @@ def prune_options(today: str) -> None:
 
 def add_idea(i: Dict[str, Any]) -> int:
     cols = ('symbol', 'expiry', 'strike', 'side', 'direction', 'created_at', 'session', 'status', 'entry', 'stop',
-            'target', 'spot', 'level', 'lot', 'last', 'r_open', 'reason')
+            'target', 'spot', 'level', 'lot', 'last', 'r_open', 'reason', 'trail_pct')
     with connect() as c:
         return c.execute(f'INSERT INTO oc_ideas ({", ".join(cols)}) VALUES ({", ".join("?" * len(cols))})',
                          [i.get(k) for k in cols]).lastrowid
@@ -987,6 +1001,14 @@ def update_idea(idea_id: int, only_if: str = None, **fields) -> int:
         args.append(only_if)
     with connect() as c:
         return c.execute(q, args).rowcount
+
+
+def start_trail(idea_id: int, peak: float, trail: float) -> int:
+    """An open idea's trail starts (its premium reached the target): claimed once, so the pass and the feed
+    can never both announce it."""
+    with connect() as c:
+        return c.execute("UPDATE oc_ideas SET peak = ?, trail = ? WHERE id = ? AND status = 'open' AND trail IS NULL",
+                         (peak, trail, idea_id)).rowcount
 
 
 def idea(idea_id: int) -> Optional[Dict[str, Any]]:
@@ -1040,6 +1062,11 @@ def count_candidates() -> int:
 def set_candidate_outcomes(cid: int, outcomes: Dict[str, Any]) -> None:
     with connect() as c:
         c.execute('UPDATE oc_candidates SET outcomes = ? WHERE id = ?', (json.dumps(outcomes), cid))
+
+
+def set_candidate_features(cid: int, f: Dict[str, Any]) -> None:
+    with connect() as c:
+        c.execute('UPDATE oc_candidates SET features = ? WHERE id = ?', (json.dumps(f), cid))
 
 
 def snapshots_for(symbol: str, expiry: str, session: str) -> List[Dict[str, Any]]:
@@ -1780,6 +1807,8 @@ def live_trades(mode: str) -> List[Dict[str, Any]]:
                         'exit': i['exit'], 'exit_time': i['exit_time'], 'r': i['r'] if i['status'] != 'open' else None,
                         'r_open': i['r_open'] if i['status'] == 'open' else None, 'f': f,
                         'ref': f"options:{i['id']}", 'last': i.get('last'), 'strike': i.get('strike'), 'opt_side': i.get('side'),
-                        'expiry': i.get('expiry'), 'lot': i.get('lot'), 'manual': i.get('note') == MANUAL_NOTE})
+                        'expiry': i.get('expiry'), 'lot': i.get('lot'), 'manual': i.get('note') == MANUAL_NOTE,
+                        'note': i.get('note'), 'trail_pct': i.get('trail_pct') or 0.0, 'trail': i.get('trail'),
+                        'peak': i.get('peak')})
     out.sort(key=lambda t: t['entry_time'] or '')
     return out

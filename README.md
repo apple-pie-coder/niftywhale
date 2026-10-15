@@ -285,7 +285,7 @@ on a flipped chart is the exact mirror of the long on the original.
   same day, so a short held for days needs futures or options. A bearish non-F&O stock stops at
   the structure step with "shorting overnight needs F&O". Intraday shorts (MIS) work for any
   stock.
-- **Switches:** **Short setups** in the sidebar's Scan section (swing) and Intraday section. Both
+- **Switches:** **Short setups** in Settings, under Swing scan and under Intraday. Both
   are on by default. Turn one off for long-only.
 - **Everywhere it shows:** a **Long** / **Short** tag (an up or down triangle) next to the symbol in every table,
   card and panel; *below* / *above* in "To zone"; *Sell* in the trade planner; **SHORT** in
@@ -330,8 +330,8 @@ Alerts from before paper trading started (6 Oct 2026) stay as they were: trigger
   Click it for the details (session hours, the token's expiry, when the ticker last read prices) and
   **Connect / Reconnect / Disconnect Dhan** (hidden with automatic login). On a phone it shortens
   to the dot and "Market open/closed".
-- **Left sidebar:** everything you control, in six sections: Scan, Watcher, Intraday, Options,
-  Telegram and Rules (4.2). On a computer it folds to a slim rail of section icons (the **‹** at its top, or **Controls**);
+- **Left sidebar:** the swing scan, what runs by itself and what it is doing now, and **Settings**, where every setting
+  is, explained (4.2). On a computer it folds to a slim rail of section icons (the **‹** at its top, or **Controls**);
   a rail icon opens it again at that section, and the choice is remembered. On a tablet or phone it is a panel that slides in
   from the left over the page (**Controls**), closed by its **×**, a tap outside it, or **Esc**.
 - **Mode switch** (top of the main column): **Swing**, **Intraday**, **Options**, **News**, **Smart money**, **Demo funds** or **Performance**.
@@ -367,7 +367,7 @@ Three choices, each kept per device and followed by every open tab, the Guide, t
   for trading. A dark-only palette keeps the page dark whatever the mode says.
 
 The top bar's theme button opens mode and style, with **Theme manager…** for the palettes (a preview card each); the
-sidebar's App section has the same, and the command palette has *Theme: ...*, *Style: ...*, *Palette: ...* and *Theme
+Settings has the same under Appearance, and the command palette has *Theme: ...*, *Style: ...*, *Palette: ...* and *Theme
 manager*. The market's mood tint (4.13) shows in every style and palette. On a phone the browser's own bars take the
 palette's colour.
 
@@ -379,39 +379,40 @@ motion) and fires a `themechange` event, which the charts and the mood tint redr
 (the colours of results in charts) is checked to stay apart under colour blindness; GitHub's is its own colour-blind
 blue / orange.
 
-### 4.2 Sidebar
+### 4.2 Sidebar and Settings
 
-Six sections. Each has a small header, sometimes with one text action on the right, and rows
-with the switch on the right.
+The sidebar is for running things and seeing what runs. Every setting is in **Settings**, one place, with what each does.
 
-| Section | Control | What it does |
+**Sidebar**, three parts:
+
+| Part | Control | What it does |
 |---|---|---|
-| **Scan** | **Universe** dropdown | Which list the scan screens, with its size. Also used by scheduled scans. See *Universes* below. |
-| | **Refresh** (next to "NSE lists from …") | Re-downloads every list from NSE (about 15 s). Do this after index rebalances (March and September) or F&O changes. A list that fails to download keeps its previous members. |
+| **Swing scan** | **Universe** dropdown | Which list the scan screens, with its size. Also used by scheduled scans. See *Universes* below. |
+| | **Refresh lists** | Re-downloads every list from NSE (about 15 s). Do this after index rebalances (March and September) or F&O changes. A list that fails to download keeps its previous members. |
 | | **Run scan / Stop scan** | Starts a scan now, with a progress bar while candles download. Stopping keeps whatever was analysed. |
-| | **Auto-scan** + time | Runs the scan every weekday at this IST time. 16:15 lets the closing candle settle. If it fails (no data from yfinance, say), it is tried again every 15 minutes, up to four times. The time can only be edited while the switch is on. |
-| | **Short setups** | Also finds shorts in bearish F&O stocks (3.6). On by default. |
-| **Watcher** | **15m zone watch** | Turns the market-hours watcher on or off. Its subtitle shows when the next check is due. |
-| | **News desk** | Turns the news desk on or off (4.14): NSE filings and media headlines for the stocks you follow, every 15 minutes in the session. |
-| | **Check now** (header) | Runs one watcher pass immediately, at any time. Outside market hours it reads the last two sessions. |
-| **Intraday** | **Universe** dropdown | The intraday universe, set separately from the swing one. Nifty 50 by default; F&O gives more zones. |
-| | **Intraday mode** | Turns the intraday scans and checks on or off. Its subtitle shows the session phase or the next scan. |
-| | **Short setups** | Also finds intraday shorts (any stock). On by default. |
-| | **Intraday defaults / Tune…** | Whether the intraday rules are changed from the defaults, and the intraday tuner (5.8). |
-| | **Scan now** (header) | A 15m scan now. Outside 09:30–14:30 it is a preview that sets no zones. |
-| **Options** | **Option chain scanner** | Reads the option chains (5 indices every 3 minutes, the options stocks in rotation) during market hours (6). Needs Dhan. |
-| | **Idea alerts** | Telegram for each option-buying idea and its result. |
-| | **Level alerts** | Telegram when an index's OI support or resistance moves and holds for two reads. Off by default. |
-| | **Stocks / Edit…** | Which F&O stocks have their chains read (6). |
-| | **Idea defaults / Tune…** | Whether the idea rules are changed from the defaults, and their tuner. |
-| | **Refresh now** (header) | Fetches every chain at once (about a minute). |
-| **Telegram** | **Entry alerts** | Entry alerts (swing and intraday), plus the evening summary after scheduled scans. |
-| | **Pattern alerts** | 15-minute candlestick patterns that form inside a zone (4.9). Off by default. |
-| | **Filing alerts** | A message when a new NSE filing (not housekeeping) lands for a stock with an open trade or a tapped zone (4.14). On by default. |
-| | **Send test** (header) | Sends a test message. Until credentials are set (section 9), the section shows "Not set up yet · how to" instead, and both switches are disabled. |
-| **Rules** | Summary line | *Protocol defaults*, or *Custom · N changed from the protocol* (in amber) once you've saved tuner changes. |
-| | **Show all** | Expands the full list of thresholds, with changed values highlighted, and a link to section 11. |
-| | **Tune…** (header) | Opens the rule tuner (4.7). |
+| **Running** | One row each: **Auto-scan**, **Zone watcher**, **Intraday**, **Options**, **News desk**, **Telegram alerts** | A dot for its state (green on, grey off, pulsing blue busy, amber needs setting up) and a line on what it does now: the next check, the next scan, the last pass, which alerts go out. Click a row to open its settings. |
+| | **Check**, **Scan now**, **Refresh**, **Test** | Run that one now: a watcher pass (outside market hours it reads the last two sessions), a 15m intraday scan (outside 09:30–14:30 a preview that sets no zones), every option chain (about a minute), a Telegram test message. |
+| **Settings** | **Settings** button | Opens Settings. Below it: **Legend**, **Guide**, **Account**, **Sign out**. |
+
+**Settings** opens over the page: sections on the left (a strip along the top on a phone), the section on the right, each
+starting with what it controls. **Find a setting** narrows the sections to those mentioning what you type. **Esc** or **×**
+closes it. Every other settings button in the app (a tab's **Settings**, the chart's **Indicators**, **Account**) opens
+Settings at its section, and so does the command palette.
+
+| Section | Settings |
+|---|---|
+| **Swing scan** | **Auto-scan** and its time (every weekday, IST; 16:15 lets the closing candle settle; a failed run is tried again every 15 minutes, up to four times), **Short setups** (bearish F&O stocks, 3.6; on by default), **Zone watcher** (on or off), and its **Rules**: the summary (*Protocol defaults*, or how many you changed, in amber) and the rule tuner itself, in the section (4.7). |
+| **Intraday** | **Intraday mode**, its **Stocks** (Nifty 50 by default), **Short setups** (any stock; on by default), and its **Rules**: the rule tuner itself, in the section (5.8). |
+| **Options** | **Option chain scanner** (needs Dhan), **Stocks** (6), and the **idea rules** as controls (6.5). |
+| **News desk** | The desk on or off (4.14). |
+| **Alerts** | Telegram: **Entry alerts** (swing and intraday, and the evening summary), **Pattern alerts** (4.9; off by default), **Filing alerts** (4.14; on by default), **Option idea alerts**, **Option level alerts** (off by default). Until the bot is set up (section 9), a line says so with a link to set it up, and the switches are disabled. |
+| **Demo funds**, **Live trading**, **Lab**, **Autopilot**, **Charts**, **Index ticker** | Those forms (4.16, 8, 7, 4.6), with the same fields as before. |
+| **Connections & data** | The Telegram bot, the Dhan login, the price data source, the session times (time pickers) and logging (section 10). |
+| **Account & security** | Password, authenticator, passkeys, devices, API tokens. |
+| **Appearance** | Light, System or Dark; Glass or Classic; the theme manager. |
+
+A count is set with **−** and **+** (you can still type it), an on/off setting with a switch, a time with a time picker, and
+a choice from a few values with chips. Prices and rupee amounts stay typed boxes.
 
 **Universes.** The dropdown is grouped:
 
@@ -572,29 +573,30 @@ delivery read with its bulk and block deals (4.15).
 
 ### 4.7 Rule tuner
 
-Opened with **Tune…** in the sidebar's Rules section. It answers "what if I relaxed or tightened a rule?"
-without committing to anything. Intraday mode has its own tuner, opened from **Tune…** in the
-sidebar's Intraday section (5.8); it works the same way.
+In Settings → Swing scan, under **Rules** (the command palette's *Swing rules* and the **try the rule tuner** link on an
+empty setups table open it there). It answers "what if I relaxed or tightened a rule?" without committing to anything.
+Intraday mode has its own tuner, in Settings → Intraday under **Rules** (5.8); it works the same way.
 
-- **Left side:** one slider per threshold, each with the doc step it controls. A **●** marks
-  values that differ from the rules currently in force.
-- **Right side, live:**
-  - a status line: setup count, stocks screened, universe;
+- **Cards:** one per threshold, grouped (Screen, Structure, Entry, Market context, Trigger and flows); the chips above
+  them show one group, with how many you changed in each. A threshold is a slider with a tick at its saved value; a
+  context gate (market run, breadth, weekly alignment, OI and the like) is a row of chips, Off first. A changed card turns amber and
+  has a **Back to …** button.
+- **Beside the cards** (under them on a narrow screen):
+  - the setup count against the last scan, and a status line: stocks screened, universe, candles' date;
   - a bar per funnel step;
-  - **setups under these rules**, with **+ added** / ~~removed~~ chips compared with your last
-    scan.
+  - **setups under these rules**, with **+ added** / ~~removed~~ chips compared with your last scan.
 - **Click a setup** to open its chart analysed under the what-if rules. The panel's subtitle
   says "what-if rules".
 
-A re-screen takes about a second. It uses the candles already downloaded and never changes the
-saved scan.
+Until you change a rule, that side shows the last scan. A change re-screens the candles already downloaded (a few
+seconds for Nifty 500 on the Pi) and never changes the saved scan.
 
 | Button | Effect |
 |---|---|
 | **Save as my rules** | Makes these the rules for every future scan and watcher check. |
 | **Save & rescan** | Saves, then runs a scan straight away. |
-| **Back to saved** | Resets the sliders to the rules currently in force. |
-| **Protocol defaults** | Resets the sliders to the doc's values (the `.env` / built-in defaults). |
+| **Back to saved** | Resets every card to the rules currently in force. |
+| **Protocol defaults** | Resets every card to the doc's values (the `.env` / built-in defaults). Nothing is saved until you press a Save. |
 
 Saved values are stored in the database and sit on top of any `SMC_*` values in `.env` (10.3).
 Saving the protocol defaults clears the overrides.
@@ -688,7 +690,7 @@ with R:R ≥ 1:3. A hammer or engulfing candle (or, for a short, a shooting star
 engulfing) inside the zone just before the CHoCH makes a
 setup stronger; a pattern outside the zone means little.
 
-**Pattern alerts** (sidebar switch, **off** by default): sends a Telegram message for each new
+**Pattern alerts** (Settings → Alerts, **off** by default): sends a Telegram message for each new
 15-minute pattern that forms *inside a zone*. It needs Telegram alerts on. Patterns outside the
 zone are only logged, never sent.
 
@@ -757,7 +759,7 @@ order placement doesn't apply.
    - If Dhan refuses a token before it expires (revoked, say because a new one was generated
      elsewhere), it logs in again straight away rather than waiting for the expiry.
 
-**What the sidebar shows:**
+**What the market status (top bar) shows:**
 - **yfinance · delayed:** Dhan isn't connected.
 - **Dhan · real-time:** connected, with the token's expiry.
 - **Dhan: …:** connected but not usable, with the reason (subscription inactive, token expired).
@@ -1017,12 +1019,12 @@ entry: how many items, how many filings, how many read positive and negative, an
 **News in the 24 h before entry** and **News tone vs the trade** (good news on a long or bad news on a short is *with the trade*;
 average tone within ±0.15 is *neutral news*). Both cover live trades only: the backtester has no news history.
 
-**Telegram filing alerts** (sidebar → Telegram → **Filing alerts**, on by default): a message when a new NSE filing lands for a
+**Telegram filing alerts** (Settings → Alerts → **Filing alerts**, on by default): a message when a new NSE filing lands for a
 stock with an **open paper trade** or a **tapped zone**, published in the last 3 hours, and not housekeeping. The message
 says how FinBERT reads it. For example, a board
 meeting to approve results while a swing trade is open. Media headlines are never sent: there are too many.
 
-Turn the whole desk off under sidebar → Watcher → **News desk**.
+Turn the whole desk off under Settings → **News desk**.
 
 ### 4.15 Smart money
 
@@ -1206,7 +1208,8 @@ mode (swing, intraday, options) has its own level:
   - swing long: the shares, `CNC`;
   - swing short: the near-month stock future, `MARGIN`, its prices moved by the future's basis over the share (off until **Shorts** is on);
   - intraday: the shares, `INTRADAY`;
-  - options: the option bought, `MARGIN`.
+  - options: the option bought, `MARGIN`. Not while the options rules trail after the target: a super order sells at
+    its target, so live trading would trade a different exit from the paper record. Such a trade is skipped, with why.
 - Sized one of two ways (Trading → Settings → **Size each trade**):
   - **By risk** (the default), as the demo account sizes (4.16): `risk_pct` of the capital between entry and stop
     (0.25 % by default), at most `max_alloc_pct` of it in one position.
@@ -1280,7 +1283,7 @@ expires a swing zone, or the reverse. Choose which one you're looking at with th
 
 1. **Connect Dhan** (4.10). Intraday needs real-time candles: yfinance's delay of a few minutes
    is most of a 5-minute candle. Without Dhan the mode still runs, and its *Data* card warns you.
-2. In the sidebar's **Intraday** section, pick a universe (Nifty 50 by default) and make sure
+2. In Settings → **Intraday**, pick the stocks (Nifty 50 by default) and make sure
    **Intraday mode** is on (it is by default).
 3. That's all. From 09:30 the scans and checks run by themselves. Open the **Intraday** tab to
    follow them.
@@ -1427,7 +1430,7 @@ minute for F&O with Dhan.
 
 ### 5.8 Intraday settings
 
-**Intraday tuner.** **Tune…** in the sidebar's Intraday section opens a rule tuner like the swing
+**Intraday tuner.** Settings → Intraday, under **Rules**, holds a rule tuner like the swing
 one (4.7), with nine sliders:
 
 - daily volume and daily ATR;
@@ -1508,7 +1511,7 @@ It needs **Dhan** (section 4.10): option chains come only from Dhan's API. Witho
 | | |
 |---|---|
 | Indices | NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and SENSEX: every pass |
-| Stocks | 30 liquid F&O stocks by default (edit the list in the sidebar, up to 60). Ten are read each pass, so each is seen about every 9 minutes; a stock with an open idea is read on every pass |
+| Stocks | 30 liquid F&O stocks by default (edit the list in Settings → Options, up to 60). Ten are read each pass, so each is seen about every 9 minutes; a stock with an open idea is read on every pass |
 | Passes | Every 3 minutes from 09:15 to 15:40 (the F&O segment trades on after the cash market's 15:30), plus one at 15:42 that reads every chain (the day's closing numbers) |
 | Expiries | The nearest expiry. On an expiry day also the next one, because ideas never use an option that expires today |
 | Strikes kept | Within 8 % of spot for indices, 15 % for stocks (at most 60) |
@@ -1547,31 +1550,55 @@ An idea is an **at-the-money option buy** on the nearest expiry that isn't today
 
 | Check | Long (buy the call) | Short (buy the put) |
 |---|---|---|
-| Time | 09:45–14:30 | 09:45–14:30 |
+| Time | 09:45 to the last entry hour (14:30) | 09:45 to the last entry hour (14:30) |
 | OI bias since the open | ≥ +0.35 (put writing) | ≤ −0.35 (call writing) |
 | Underlying over the last 30 min | up ≥ 0.15 % | down ≥ 0.15 % |
 | PCR since the open | not falling | not rising |
 | ATM IV percentile | ≤ 80 (once known) | ≤ 80 (once known) |
 | Option's bid-ask spread | ≤ 3 % of its price | ≤ 3 % of its price |
 | Per underlying | one open idea, at most 2 a day | one open idea, at most 2 a day |
+| Nifty since its open (when the band is on) | not down past the band | not up past the band |
+| Same underlying today (when one direction is on) | not traded bearish | not traded bullish |
+
+Three rules guard against fighting the market, and all three start off:
+
+- **Nifty band:** once Nifty is further from its open than the band (say 0.3 %), only trades on the side it moved to
+  are taken. Inside the band the market counts as flat and both sides pass, so 0.1 % of noise is not read as a trend.
+  Nifty's open is its first read of the day, and it must come by 09:30 and the latest within 15 minutes, or the band
+  does not apply. 2 % is off.
+- **Last entry hour:** no new idea after it (13.5 = 13:30). 14.5 keeps the 14:30 window.
+- **One direction a day:** an underlying traded one way today is not traded the other.
+
+Every candidate keeps Nifty's move at its time, so the backtests and the autopilot can judge these rules like any other
+threshold (candidates from before Nifty's move was recorded have it filled in from the day's Nifty reads).
 
 - **Entry** is the option's ask, the price you would pay.
 - **Stop** is 25 % below the entry premium and **target** 50 % above it (1:2).
+- **Trail after the target** (off by default): instead of selling at the target, the idea runs on. Reaching the target
+  starts a stop that trails the given % under the best premium since, and never sits below halfway from the entry to
+  the target. With the defaults and a 20 % trail: bought at ₹100, the target ₹150 starts the trail at ₹125 (the floor);
+  a run to ₹200 lifts it to ₹160. The floor keeps +1R, what selling half at the target and holding the rest with its stop
+  at the entry would keep if the premium turned straight back; holding the whole idea keeps all of any run beyond.
+  Telegram says once when the trail starts, and the journal shows the trailing stop in place of the stop.
 - The idea is also closed early if the underlying crosses the OI level it leaned on: support for a call, resistance for a put.
 - Everything is squared off by 15:15.
 
-All thresholds are tunable from **Options → Tune…** in the sidebar.
+All thresholds are set in **Settings → Options**, as sliders, chips and switches.
 
 Ideas are followed on every pass with the chain's own prices, and between passes on the live feed (every few seconds),
 so a premium that touches the stop or the target and comes back within the 3 minutes still counts:
 
-- **Target:** fills at the target.
-- **Stop:** fills at the price seen, which can be worse than the stop, as a real stop-market order would be.
+- **Target:** fills at the target (with a trail, starts it).
+- **Stop** and **trailing stop:** fill at the price seen, which can be worse than the stop, as a real stop-market order would be.
+  The trailing stop rises with each new best premium seen, on the passes and the feed.
 - **Level break and square-off:** exit at the price seen, on the passes (they need the spot and the clock).
 
 Backtests of options replay each candidate on its option's own **1-minute candles** from Dhan, fetched after the session
 (with the underlying's minute closes for the level), so a touch between two passes counts there too: the target at the
-target, the stop at the stop or at the minute's open below it, a minute reaching both counted as stopped. When Dhan has no
+target, the stop at the stop or at the minute's open below it, a minute reaching both counted as stopped. A trail rises with
+each minute's high; a minute that sets a new high is judged on its close (its low may have come first), a later one goes
+out at the trailing stop, or at its open when it opened below. The learning works out every stop and target with no
+trail and with a 10, 20 and 30 % trail, so the autopilot and Tune… can compare them. When Dhan has no
 candles (not connected that evening, a session more than 90 days back), the outcome comes from the passes' prices and is
 tried on candles again for 7 days. The Performance view says how many candidates were replayed on minute candles.
 
@@ -1602,7 +1629,7 @@ The **chain panel** (click any row) shows:
 
 ### 6.5 Options settings
 
-Sidebar, **Options** section:
+**Settings → Options**, and its alerts under **Settings → Alerts**:
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -1610,7 +1637,7 @@ Sidebar, **Options** section:
 | Idea alerts | on | Telegram for each idea and its result (needs Telegram, section 9) |
 | Level alerts | off | Telegram when an index's OI support or resistance moves, and holds for two reads |
 | Stocks | 30 | Which F&O stocks to read besides the indices |
-| Tune… | | Minimum OI bias, 30-minute move, IV percentile cap, spread, stop %, target %, ideas per day |
+| Idea rules | | Minimum OI bias, 30-minute move, IV percentile cap, spread, stop %, target %, trail after the target (off, 10, 20, 30 %), ideas per day, Nifty band, last entry hour, one direction a day |
 
 Storage:
 
@@ -1789,7 +1816,7 @@ what may change it:
 |---|---|
 | Swing | Min volume, min ATR %, discount ≤, provisional R:R, final R:R, and the three context gates: max Nifty 20-day run, min zone age, max R:R (§11) |
 | Intraday | The same five |
-| Options | Min OI bias, min 30-minute move, max IV percentile, max spread %, stop %, target % |
+| Options | Min OI bias, min 30-minute move, max IV percentile, max spread %, stop %, target %, trail after the target, Nifty band, last entry hour, one direction a day |
 
 **How a change happens:**
 
@@ -1975,7 +2002,7 @@ Rejected triggers are never sent. The **Entry alerts** switch controls both mode
 | `NIFTYWHALE_PROXIES` | (none) | The proxy whose `X-Forwarded-*` headers are believed (container names or addresses, comma-separated); from anywhere else they are dropped. `pi-observatory` in `docker-compose.yml`. Unset: every client is believed. |
 | `NIFTYWHALE_KEY_FILE` | `/run/secrets/niftywhale_key` | The key the secrets in the database are encrypted with (10.4, Secrets at rest). |
 
-Most of these can also be set in the app (sidebar → **App → Settings…**): a value saved there wins over `.env`.
+Most of these can also be set in the app (**Settings → Connections & data**): a value saved there wins over `.env`.
 
 These are set by `docker-compose.yml` and rarely need changing: `PORT=5058` (published on the Pi's loopback only, 10.4),
 `DB_PATH=/data/niftywhale.db`, `UNIVERSE_PATH=/data/universe.json`, `TZ=Asia/Kolkata`, `NIFTYWHALE_ORIGINS`.
@@ -1984,11 +2011,11 @@ These are set by `docker-compose.yml` and rarely need changing: `PORT=5058` (pub
 
 | Group | Settings | Changed from |
 |---|---|---|
-| Swing | `universe`, `auto_scan`, `scan_time`, `watcher`, `shorts`, `rules` | sidebar: Scan, Watcher, Rules (tuner) |
-| Intraday | `intraday`, `intraday_universe`, `intraday_shorts`, `intraday_rules` | sidebar: Intraday |
-| Options | `options`, `options_stocks`, `options_alerts`, `options_level_alerts`, `options_rules` | sidebar: Options |
-| Telegram | `telegram`, `pattern_alerts`, `news_alerts`, `weekly_report` | sidebar: Telegram; Performance (weekly report) |
-| News | `news` | sidebar: Watcher |
+| Swing | `universe`, `auto_scan`, `scan_time`, `watcher`, `shorts`, `rules` | sidebar (universe); Settings → Swing scan |
+| Intraday | `intraday`, `intraday_universe`, `intraday_shorts`, `intraday_rules` | Settings → Intraday |
+| Options | `options`, `options_stocks`, `options_alerts`, `options_level_alerts`, `options_rules` | Settings → Options, Alerts |
+| Telegram | `telegram`, `pattern_alerts`, `news_alerts`, `weekly_report` | Settings → Alerts; Settings → Lab (weekly report) |
+| News | `news` | Settings → News desk |
 | Charts | `indicators` (settings and colours) | the chart's **Indicators** button (4.11) |
 | Demo funds | `demo` (sizing, limits, modes, charges), `demo_since` | the Demo funds tab (4.16) |
 | Lab and autopilot | `autopilot_policy`, `paused_swing`, `paused_intraday`, `paused_options`, `lab_swing_universe`, `lab_intraday_universe`, `lab_years_swing`, `lab_years_intraday` | Performance (7.6) |
@@ -2024,7 +2051,7 @@ ID, Touch ID or a security key, which is two factors in itself and cannot be phi
 right in the username field. "Keep me signed in" keeps the device signed in for 30 days of use; otherwise a session ends
 after 12 hours idle.
 
-**Account & security** (sidebar → App): change the password (every other device is signed out), move the authenticator to a
+**Account & security** (Settings → Account & security, or **Account** in the sidebar): change the password (every other device is signed out), move the authenticator to a
 new phone, make new recovery codes, add or remove passkeys, see and sign out signed-in devices, create and revoke API tokens,
 and the sign-in history. Changes that matter ask for the password again when the sign-in is more than 10 minutes old.
 
@@ -2961,16 +2988,20 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
 {
   "rule_overrides": {},
   "rules": {
+    "last_entry_hour": 14.5,
+    "market_band_pct": 2.0,
     "max_iv_pct": 80.0,
     "max_per_day": 2,
     "max_spread_pct": 3.0,
     "min_bias": 0.35,
     "min_move_pct": 0.15,
     "no_entry_after": "14:30",
+    "one_direction": 0,
     "square_off": "15:15",
     "start": "09:45",
     "stop_pct": 25.0,
-    "target_pct": 50.0
+    "target_pct": 50.0,
+    "trail_pct": 0.0
   }
 }
 ```

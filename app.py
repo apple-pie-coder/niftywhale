@@ -1824,7 +1824,7 @@ def demo_sync() -> dict:
             fields = dict(status='closed', exit=float(t['exit']), exit_time=t.get('exit_time') or t['entry_time'],
                           gross=res['gross'], charges=res['charges'], net=res['net'], charges_detail=res['charges_detail'],
                           last=float(t['exit']), unreal=None,
-                          note=store.MANUAL_NOTE if t.get('manual') else DEMO_OUTCOME.get(t['status'], ''))
+                          note=store.MANUAL_NOTE if t.get('manual') else exit_note(t, ''))
             store.update_demo_position(p['id'], **fields)
             p.update(fields)
             got['closed'] += 1
@@ -1896,6 +1896,11 @@ def demo_sync() -> dict:
 
 
 DEMO_OUTCOME = {'won': 'target hit', 'lost': 'stop hit', 'closed': 'squared off'}
+
+
+def exit_note(t: dict, default: str) -> str:
+    """How a trade closed, for the demo and shadow rows: its status's word, or the trailing stop's."""
+    return 'trailing stop' if t.get('note') == 'trailing stop' else DEMO_OUTCOME.get(t['status'], default)
 DEMO_MODE_NAMES = {'swing': 'Swing', 'intraday': 'Intraday', 'options': 'Options'}
 
 
@@ -2297,7 +2302,7 @@ def exec_settle_shadow(r: dict, t: dict, st: dict) -> None:
     res = demo.settle(pos, float(t['exit']), True, t.get('exit_time') or r['entry_time'])
     store.update_exec_order(r['id'], only_if='shadow', status='shadow_closed', exit=float(t['exit']),
                             exit_time=t.get('exit_time'), gross=res['gross'], charges=res['charges'], net=res['net'],
-                            fill=float(t['entry']), note=DEMO_OUTCOME.get(t['status'], t['status']))
+                            fill=float(t['entry']), note=exit_note(t, t['status']))
 
 
 def exec_reconcile(st: dict) -> dict:
@@ -2939,6 +2944,10 @@ def saved_opt_overrides() -> dict:
         return {}
 
 
+# Rules set from a few choices: the market band, and the trail (the learning has outcomes for these trails only).
+OPT_CHOICES = {**options.MARKET_GRID, 'trail_pct': options.EXIT_GRID['trail_pct']}
+
+
 def orules() -> dict:
     return options.rules_from(saved_opt_overrides())
 
@@ -2981,16 +2990,28 @@ def idea_message(i: dict) -> str:
             f"{'Bullish' if i['direction'] == 'long' else 'Bearish'}: {h(i['reason'])}.\n\n"
             f"<b>Buy</b> ≈ {_inr(i['entry'])}\n"
             f"<b>Stop</b> {_inr(i['stop'])}  ({orules()['stop_pct']:g}% of premium)\n"
-            f"<b>Target</b> {_inr(i['target'])}  (R:R 1:{rr_:.1f})\n"
+            + (f"<b>Target</b> {_inr(i['target'])}  (R:R 1:{rr_:.1f})\n" if not i.get('trail_pct') else
+               f"<b>Then trail</b> from {_inr(i['target'])}: stop {i['trail_pct']:g}% under the best price, never below "
+               f"{_inr(options.trail_floor(i['entry'], i['target']))}\n")
             + (f"Lot {lot} · risk {_inr(risk * lot)} per lot\n" if lot else '')
             + (f"Exit early if {h(i['symbol'])} trades {level_word} {i['level']:g} ({level_kind}). " if i.get('level') else '')
             + f"Square off by {options.TIMES['square_off']}.\n"
             "Paper trade — no order was placed. Not investment advice.")
 
 
+IDEA_EXIT_WORD = {'target': 'Target hit', 'stop': 'Stopped out', 'squared off': 'Squared off', 'trailing stop': 'Trailing stop hit'}
+
+
+def idea_trail_message(i: dict) -> str:
+    """The premium reached the target of an idea with a trail: it runs on."""
+    return (f"📈 <b>Option idea · {h(i['symbol'])} {i['strike']:g} {i['side']} · target reached, now trailing</b>\n"
+            f"Premium {_inr(i['peak'])}. Stop now {_inr(i['trail'])} ({i['trail_pct']:g}% under the best price, never below "
+            f"{_inr(options.trail_floor(i['entry'], i['target']))}); it moves up as the premium does.\nPaper trade.")
+
+
 def idea_result_message(i: dict) -> str:
     icon = {'won': '✅', 'lost': '❌'}.get(i['status'], '⏹')
-    what = {'target': 'Target hit', 'stop': 'Stopped out', 'squared off': 'Squared off'}.get(i['note'], i['note'].capitalize())
+    what = IDEA_EXIT_WORD.get(i['note'], i['note'].capitalize())
     lot = i.get('lot')
     pnl = (i['exit'] - i['entry']) * lot if lot else None
     return (f"{icon} <b>Option idea · {h(i['symbol'])} {i['strike']:g} {i['side']} · {h(what)}</b>\n"
@@ -3001,21 +3022,26 @@ def idea_result_message(i: dict) -> str:
 def _follow_idea(i: dict, chain: dict, now: datetime, tg: bool, final: bool = False) -> bool:
     """Move one open idea along; True if it closed. The status change is claimed before
     any message goes out, so a closed idea is announced exactly once."""
+    trailing = i.get('trail') is not None
     res = options.follow(i, chain, now, orules()['square_off'], final=final)
+    if not trailing and i.get('trail') is not None and store.start_trail(i['id'], i['peak'], i['trail']):
+        if tg and not paused('options'):
+            notify.send(idea_trail_message(i))
+        logger.info(f"Option idea {i['symbol']} {i['strike']:g} {i['side']}: target reached at {i['peak']}, trailing from {i['trail']}")
     if res is None:
-        store.update_idea(i['id'], only_if='open', last=i.get('last'), r_open=i.get('r_open'))
+        store.update_idea(i['id'], only_if='open', last=i.get('last'), r_open=i.get('r_open'),
+                          **({'peak': i['peak'], 'trail': i['trail']} if i.get('trail') is not None else {}))
         return False
     claimed = store.update_idea(i['id'], only_if='open', status=res['status'], exit=res['exit'],
                                 exit_time=now.isoformat(timespec='seconds'), r=res['r'], note=res['note'],
-                                last=i.get('last'), r_open=i.get('r_open'))
+                                last=i.get('last'), r_open=i.get('r_open'),
+                                **({'peak': i['peak'], 'trail': i['trail']} if i.get('trail') is not None else {}))
     if claimed:
         i.update(res)
         if tg and not paused('options'):
             notify.send(idea_result_message(i))
         notice_result('options', f"options:{i['id']}", i['symbol'], {**i, 'opt_side': i['side']}, res['status'], res['exit'],
-                      res['r'], now.isoformat(timespec='seconds'),
-                      {'target': 'Target hit', 'stop': 'Stopped out', 'squared off': 'Squared off'}.get(res['note'],
-                                                                                                  str(res['note']).capitalize()))
+                      res['r'], now.isoformat(timespec='seconds'), IDEA_EXIT_WORD.get(res['note'], str(res['note']).capitalize()))
         logger.info(f"Option idea {i['symbol']} {i['strike']:g} {i['side']}: {res['note']} at {res['exit']} ({res['r']:+}R)")
     return bool(claimed)
 
@@ -3023,9 +3049,10 @@ def _follow_idea(i: dict, chain: dict, now: datetime, tg: bool, final: bool = Fa
 def options_feed_exits(now: datetime) -> int:
     """Open option ideas' stops and targets on the live feed, every few seconds (marks_loop), between the chain
     passes (every OPT_CYCLE_MIN minutes), which alone miss a premium that touches either and comes back in
-    between. Only a fresh feed price, and only those two exits: the OI level and the square-off stay with the
-    chain passes, which have the spot and the clock. Closed through _follow_idea, so a close is claimed once
-    however the pass and this race."""
+    between. Only a fresh feed price, and only those exits: the OI level and the square-off stay with the
+    chain passes, which have the spot and the clock. An idea with a trail starts it at the target, then its
+    trailing stop is watched, and raised at each new best premium. Closed through _follow_idea, so a close
+    is claimed once however the pass and this race."""
     if store.settings().get('options') != '1' or not session.fo_open(now):
         return 0
     closed, tg = 0, None
@@ -3034,7 +3061,10 @@ def options_feed_exits(now: datetime) -> int:
         if not hit or i.get('target') is None or i.get('stop') is None:
             continue
         px = float(hit[0])
-        if not (px >= i['target'] or px <= i['stop']):
+        if i.get('trail') is not None:
+            if not (px <= i['trail'] or px > (i.get('peak') or 0)):
+                continue
+        elif not (px >= i['target'] or px <= i['stop']):
             continue
         tg = _opt_alerts_on() if tg is None else tg
         chain = {'strikes': [{'k': i['strike'], i['side'].lower(): {'ltp': px}}], 'spot': None}
@@ -3112,13 +3142,16 @@ def fetch_options(sym: str, now: datetime = None, allow_ideas: bool = True) -> d
         series = store.snapshot_series(sym, trade, today)
         past = [{'ts': s['ts'], **s['summary'], 'spot': s['spot']} for s in series[:-1]]
         open_now = bool(store.ideas(status='open', symbol=sym))
-        taken = len(store.ideas(session=today, symbol=sym))
-        i, why = options.idea(sym, chain, summary, past, orules(), now, taken, open_now)
+        today_ideas = store.ideas(session=today, symbol=sym)
+        # The market's day so far (Nifty is read first in every pass), for the market gate and the candidate.
+        market = options.market_move(store.day_spots(options.MARKET, today), now)
+        i, why = options.idea(sym, chain, summary, past, orules(), now, len(today_ideas), open_now,
+                              market=market, traded={x['direction'] for x in today_ideas})
         OPT_WHY[sym] = why
         # Every look that came near an idea is kept for the autopilot (options.candidate).
         cand = None
         try:
-            cand = options.candidate(sym, chain, summary, past, now, orules())
+            cand = options.candidate(sym, chain, summary, past, now, orules(), market=market)
             if cand and not open_now:
                 store.add_candidate(cand, trade, today, now.isoformat(timespec='seconds'), taken=bool(i))
         except Exception as e:
@@ -3273,7 +3306,9 @@ def options_state() -> dict:
         'settings': {k: v for k, v in store.settings().items() if k.startswith('options')},
         'stocks': stocks, 'default_stocks': list(options.DEFAULT_STOCKS),
         'rules': orules(), 'rule_overrides': saved_opt_overrides(),
-        'tunable': {k: {'default': d, 'min': lo, 'max': hi, 'step': step, 'label': label}
+        # `off`: the value that turns a rule off; `values`: a rule set from a few choices (the page shows them as chips).
+        'tunable': {k: {'default': d, 'min': lo, 'max': hi, 'step': step, 'label': label, 'off': options.OFF.get(k),
+                        'values': list(OPT_CHOICES[k]) if k in OPT_CHOICES else None}
                     for k, (d, lo, hi, step, label) in options.TUNABLE.items()},
         'tunable_order': list(options.TUNABLE),
         'market_data': dhan.status(),
@@ -4878,7 +4913,7 @@ def api_autopilot_policy():
         saved['limits'] = {m: {p: v for p, v in ps.items() if p in lab.specs(m)}
                            for m, ps in autopilot.clean_limits(limits).items()}
     store.set_settings({'autopilot_policy': saved})
-    store.log_autopilot('all', 'policy', current, saved, 'changed on the Performance tab', 'you')
+    store.log_autopilot('all', 'policy', current, saved, 'changed in Settings', 'you')
     return jsonify({'policy': lab.policy()})
 
 

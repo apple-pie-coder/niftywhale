@@ -253,6 +253,73 @@ class Ideas(unittest.TestCase):
         self.assertIn('PCR', why)
 
 
+class MarketGate(unittest.TestCase):
+    """The market's day (Nifty since its open), the last entry hour and one direction a day."""
+    DAY = '2026-10-14T'
+
+    def spots(self, *pairs):
+        return [(self.DAY + t + ':00+05:30', s) for t, s in pairs]
+
+    def at(self, hhmm):
+        h, m = map(int, hhmm.split(':'))
+        return datetime(2026, 10, 14, h, m, tzinfo=IST)
+
+    def test_market_move_from_the_open(self):
+        sp = self.spots(('09:10', 99.0), ('09:15', 100.0), ('10:00', 100.5), ('13:15', 99.4))
+        self.assertEqual(options.market_move(sp, self.at('10:01')), 0.5)        # pre-open read left out
+        self.assertEqual(options.market_move(sp, self.at('13:20')), -0.6)
+        self.assertEqual(options.market_move(list(reversed(sp)), self.at('13:20')), -0.6)   # any order
+
+    def test_market_move_unknown_when_it_cannot_be_trusted(self):
+        late = self.spots(('11:00', 100.0), ('11:30', 101.0))                    # the app started late
+        self.assertIsNone(options.market_move(late, self.at('11:31')))
+        stale = self.spots(('09:15', 100.0), ('10:00', 100.5))                  # the index stopped coming
+        self.assertIsNone(options.market_move(stale, self.at('10:30')))
+        self.assertIsNone(options.market_move([], self.at('10:30')))
+        self.assertIsNone(options.market_move(self.spots(('09:15', 0.0)), self.at('09:20')))
+
+    def test_market_gate_band(self):
+        self.assertIsNone(options.market_gate('long', 0.1, 0.3))                # flat: both sides pass
+        self.assertIsNone(options.market_gate('short', 0.1, 0.3))
+        self.assertIsNone(options.market_gate('short', -0.4, 0.3))              # with the market
+        self.assertIn('against', options.market_gate('long', -0.4, 0.3))
+        self.assertIn('against', options.market_gate('short', 0.3, 0.3))
+        self.assertIsNone(options.market_gate('long', -1.5, 2.0))               # off
+        self.assertIsNone(options.market_gate('long', None, 0.3))               # unknown
+
+    def test_flip_gate(self):
+        self.assertIsNone(options.flip_gate('long', {'short'}, False))
+        self.assertIsNone(options.flip_gate('long', {'long'}, True))
+        self.assertIsNone(options.flip_gate('long', set(), True))
+        self.assertIn('one direction', options.flip_gate('long', {'short'}, True))
+
+    def test_rules_default_off_and_cutoff_clock(self):
+        r = options.rules_from({})
+        self.assertEqual((r['market_band_pct'], r['one_direction'], r['no_entry_after']), (2.0, 0, '14:30'))
+        r = options.rules_from({'last_entry_hour': 13.5, 'one_direction': 1, 'market_band_pct': 0.3})
+        self.assertEqual((r['no_entry_after'], r['one_direction'], r['market_band_pct']), ('13:30', 1, 0.3))
+        self.assertEqual(options.rules_from({'last_entry_hour': 16})['no_entry_after'], '14:30')   # clamped
+
+    def test_idea_skips_against_the_market_and_flips(self):
+        c, s = bullish()
+        hist = [{'ts': (NOW - timedelta(minutes=30)).isoformat(), 'spot': 100.0}]
+        on = options.rules_from({'market_band_pct': 0.3, 'one_direction': 1})
+        i, why = options.idea('NIFTY', c, s, hist, on, NOW, 0, False, market=-0.5)
+        self.assertIsNone(i)
+        self.assertIn('against', why)
+        i, why = options.idea('NIFTY', c, s, hist, on, NOW, 1, False, market=0.1, traded={'short'})
+        self.assertIsNone(i)
+        self.assertIn('one direction', why)
+        i, why = options.idea('NIFTY', c, s, hist, on, NOW, 1, False, market=0.5, traded={'long'})
+        self.assertEqual(why, '')
+        self.assertIn('NIFTY +0.50% on the day', i['reason'])
+        # Off (the defaults): the same idea goes through, as before the rules existed.
+        i, why = options.idea('NIFTY', c, s, hist, options.rules_from({}), NOW, 1, False, market=-0.5, traded={'short'})
+        self.assertEqual(why, '')
+        i, why = options.idea('NIFTY', c, s, hist, options.rules_from({'last_entry_hour': 10.75}), NOW, 0, False)
+        self.assertIn('outside the entry window', why)
+
+
 class Follow(unittest.TestCase):
     def setUp(self):
         self.i = {'strike': 100, 'side': 'CE', 'direction': 'long', 'entry': 4.0, 'stop': 3.0, 'target': 6.0, 'level': 90}
@@ -289,6 +356,42 @@ class Follow(unittest.TestCase):
         self.assertEqual((out['exit'], out['status']), (4.2, 'closed'))
 
 
+class Trail(unittest.TestCase):
+    """With a trail the target does not sell: it starts a stop under the best premium, never below halfway."""
+    def setUp(self):
+        self.i = {'strike': 100, 'side': 'CE', 'direction': 'long', 'entry': 4.0, 'stop': 3.0, 'target': 6.0, 'level': 90,
+                  'trail_pct': 20}
+
+    at = Follow.at
+
+    def test_the_target_starts_the_trail_and_it_follows_the_best_premium(self):
+        self.assertIsNone(options.follow(self.i, self.at(6.4), NOW))
+        self.assertEqual((self.i['peak'], self.i['trail']), (6.4, 5.12))
+        self.assertIsNone(options.follow(self.i, self.at(8.0), NOW))
+        self.assertEqual(self.i['trail'], 6.4)
+        self.assertIsNone(options.follow(self.i, self.at(7.0), NOW))       # below the best: the stop stays
+        self.assertEqual(self.i['trail'], 6.4)
+        self.assertEqual(options.follow(self.i, self.at(6.3), NOW),
+                         {'status': 'won', 'exit': 6.3, 'r': 2.3, 'note': 'trailing stop'})
+
+    def test_never_below_halfway_to_the_target(self):
+        self.assertIsNone(options.follow(self.i, self.at(6.1), NOW))
+        self.assertEqual(self.i['trail'], 5.0)
+        self.assertEqual(options.trail_floor(4.0, 6.0), 5.0)
+        self.assertEqual(options.follow(self.i, self.at(4.9), NOW)['r'], 0.9)
+
+    def test_off_sells_at_the_target(self):
+        self.i['trail_pct'] = 0
+        self.assertEqual(options.follow(self.i, self.at(6.4), NOW)['note'], 'target')
+
+    def test_the_trail_is_a_rule_with_its_off(self):
+        self.assertEqual(options.rules_from({})['trail_pct'], 0.0)
+        self.assertEqual(options.rules_from({'trail_pct': 20})['trail_pct'], 20.0)
+        self.assertEqual(options.OFF['trail_pct'], 0.0)
+        self.assertEqual((options.exit_key(25, 50), options.exit_key(25, 50, 20)), ('25/50', '25/50/20'))
+        self.assertEqual(len(options.exit_grid()), 5 * 5 * 4)
+
+
 def _reset_options():
     with store.connect() as c:
         for t in ('oc_snapshots', 'oc_daily', 'oc_ideas'):
@@ -316,6 +419,9 @@ class EndToEnd(unittest.TestCase):
             mock.patch.object(app.notify, 'configured', lambda: True),
             mock.patch.object(app.notify, 'send', lambda msg: self.sent.append(msg) or True),
             mock.patch.dict(app.OPT_WINDOW, {'index': 25.0, 'stock': 25.0}),
+            # The clock on the test's session: options_state shows the last 7 days from now, which the
+            # real clock had left behind a week after NOW.
+            mock.patch.object(app.data, 'now_ist', lambda: NOW.replace(hour=12)),
         ]
         for p in patches:
             p.start()
@@ -368,6 +474,25 @@ class EndToEnd(unittest.TestCase):
         view = app.options_chain_view('NIFTY')
         self.assertEqual(len(view['series']['ts']), 6)
         self.assertEqual(view['chain'][1]['pe']['doi_intraday'], 600)       # vs the 09:20 open
+
+    def test_a_trail_runs_on_from_the_target(self):
+        i = {'symbol': 'NIFTY', 'expiry': '2026-10-13', 'strike': 100, 'side': 'CE', 'direction': 'long',
+             'created_at': NOW.isoformat(), 'session': '2026-10-07', 'status': 'open', 'entry': 4.0,
+             'stop': 3.0, 'target': 6.0, 'level': 90, 'lot': 65, 'last': 4.4, 'trail_pct': 20}
+        iid = store.add_idea(i)
+        at = lambda ltp: chain(100.5, {**BASE, 100: ({'oi': 1000, 'ltp': ltp}, {'oi': 1200})})     # noqa: E731
+        self.assertFalse(app._follow_idea(store.idea(iid), at(6.4), NOW, True))
+        self.assertFalse(app._follow_idea(store.idea(iid), at(8.0), NOW + timedelta(minutes=3), True))
+        row = store.idea(iid)
+        self.assertEqual((row['status'], row['peak'], row['trail']), ('open', 8.0, 6.4))
+        self.assertEqual(len(self.sent), 1)                                  # the trail is announced once
+        self.assertIn('now trailing', self.sent[0])
+        self.assertTrue(app._follow_idea(row, at(6.2), NOW + timedelta(minutes=6), True))
+        row = store.idea(iid)
+        self.assertEqual((row['status'], row['exit'], row['r'], row['note']), ('won', 6.2, 2.2, 'trailing stop'))
+        self.assertIn('Trailing stop hit', self.sent[1])
+        t = next(t for t in store.live_trades('options') if t['ref'] == f'options:{iid}')
+        self.assertEqual((t['trail_pct'], app.exit_note(t, '')), (20.0, 'trailing stop'))
 
     def test_settle_after_close(self):
         store.add_idea({'symbol': 'NIFTY', 'expiry': '2026-10-13', 'strike': 100, 'side': 'CE', 'direction': 'long',

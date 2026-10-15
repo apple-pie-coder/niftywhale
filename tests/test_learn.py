@@ -380,6 +380,32 @@ class OptionsLearning(unittest.TestCase):
         o = options.bars_outcome([('2026-10-07T15:14:00+05:30', 4.2, 4.4, 4.1, 4.3, 100)], 4.0, 25, 50, 'long', 98)
         self.assertEqual((o['status'], o['exit']), ('closed', 4.3))
 
+    def test_bars_outcome_with_a_trail(self):
+        # Bought at 4.0, stop 3.0, target 6.0, trail 20 %: 11:01 reaches 6.5 (the trail starts at 5.2), 11:02 makes 8.0
+        # (the stop goes to 6.4) and 11:03 dips to 6.0: out at the trailing stop, 6.4, not at the target.
+        bars = [('2026-10-07T11:01:00+05:30', 4.0, 6.5, 3.9, 6.2, 100.6), ('2026-10-07T11:02:00+05:30', 6.2, 8.0, 6.0, 7.5, 101),
+                ('2026-10-07T11:03:00+05:30', 7.0, 7.2, 6.0, 6.1, 101)]
+        o = options.bars_outcome(bars, 4.0, 25, 50, 'long', 98, trail_pct=20)
+        self.assertEqual((o['status'], o['exit'], o['r'], o['exit_time'][11:16]), ('won', 6.4, 2.4, '11:03'))
+        self.assertEqual(options.bars_outcome(bars, 4.0, 25, 50, 'long', 98)['exit'], 6.0)          # no trail: the target
+        # A minute that opens under the trailing stop fills at its open.
+        gap = bars[:2] + [('2026-10-07T11:03:00+05:30', 6.2, 6.3, 6.0, 6.1, 101)]
+        self.assertEqual(options.bars_outcome(gap, 4.0, 25, 50, 'long', 98, trail_pct=20)['exit'], 6.2)
+        # The minute that reaches the target but closes under the trail's first stop: out at that stop.
+        o = options.bars_outcome([('2026-10-07T11:01:00+05:30', 4.0, 6.5, 3.9, 5.0, 100.6)], 4.0, 25, 50, 'long', 98, trail_pct=20)
+        self.assertEqual((o['exit'], o['r']), (5.2, 1.2))
+        # The snapshots trail the same way, at the prices seen.
+        path = [('2026-10-07T11:03:00', 6.5, 100.6), ('2026-10-07T11:06:00', 8.0, 101), ('2026-10-07T11:09:00', 6.3, 101)]
+        self.assertEqual(options.path_outcome(path, 4.0, 25, 50, 'long', 98, trail_pct=20)['exit'], 6.3)
+
+    def test_a_trail_reads_its_own_outcomes(self):
+        c = {'symbol': 'NIFTY', 'direction': 'long', 'ts': '2026-10-07T11:00:00+05:30', 'entry': 4.0,
+             'f': {'bias': 0.5, 'move_pct': 0.3, 'pcr_ok': True},
+             'outcomes': {'25/50': {'status': 'won', 'r': 2.0, 'exit_time': '2026-10-07T11:30:00+05:30'},
+                          '25/50/20': {'status': 'won', 'r': 3.4, 'exit_time': '2026-10-07T12:30:00+05:30'}}}
+        rs = lambda tr: [t['r'] for t in options.simulate_candidates([c], OptionsMarketRules.thr(self, trail_pct=tr))]      # noqa: E731
+        self.assertEqual((rs(0), rs(20), rs(10)), ([2.0], [3.4], []))
+
     def test_candidates_replayed_on_minute_candles(self):
         with store.connect() as c:
             c.execute('DELETE FROM oc_candidates')
@@ -424,6 +450,61 @@ class OptionsLearning(unittest.TestCase):
         out = options.simulate_candidates(cs, thr)
         self.assertEqual([t['entry_time'][11:16] for t in out], ['10:00', '12:30'])   # busy until 12:00; 2 a day
         self.assertEqual(len(options.simulate_candidates(cs, {**thr, 'min_bias': 0.15})), 3)
+
+
+class OptionsMarketRules(unittest.TestCase):
+    """The market band, last entry hour and one direction a day, in the backtest and the autopilot."""
+    R = options.rules_from({})
+
+    def thr(self, **kw):
+        return {**{k: float(v) for k, v in self.R.items() if k in options.LEARN_FILTERS}, 'stop_pct': 25.0,
+                'target_pct': 50.0, 'max_per_day': 2, 'market_band_pct': 2.0, **kw}
+
+    def cand(self, ts, direction='long', sym='NIFTY', mkt=None, r=1.0):
+        h, m = int(ts[11:13]), int(ts[14:16])
+        return {'symbol': sym, 'ts': ts, 'direction': direction, 'entry': 4.0,
+                'f': {'bias': 0.5, 'move_pct': 0.3, 'pcr_ok': True, 'iv_pct': None, 'spread_pct': 1.0,
+                      'entry_minute': h * 60 + m, 'mkt_move': mkt},
+                'outcomes': {'25/50': {'status': 'won' if r > 0 else 'lost', 'r': r, 'exit_time': ts[:11] + f'{h:02d}:{m + 5:02d}:00'}}}
+
+    def test_candidate_passes_the_band_and_the_hour(self):
+        self.assertTrue(options.candidate_passes(self.cand('2026-10-14T10:00:00', mkt=-0.5), self.thr()))     # off
+        self.assertFalse(options.candidate_passes(self.cand('2026-10-14T10:00:00', mkt=-0.5), self.thr(market_band_pct=0.3)))
+        self.assertTrue(options.candidate_passes(self.cand('2026-10-14T10:00:00', mkt=-0.1), self.thr(market_band_pct=0.3)))
+        self.assertTrue(options.candidate_passes(self.cand('2026-10-14T10:00:00', mkt=None), self.thr(market_band_pct=0.3)))
+        self.assertFalse(options.candidate_passes(self.cand('2026-10-14T13:00:00'), self.thr(last_entry_hour=13.0)))
+        self.assertTrue(options.candidate_passes(self.cand('2026-10-14T12:45:00'), self.thr(last_entry_hour=13.0)))
+
+    def test_one_direction_in_the_simulation(self):
+        cs = [self.cand('2026-10-14T10:00:00', 'long'), self.cand('2026-10-14T11:00:00', 'short')]
+        self.assertEqual(len(options.simulate_candidates(cs, self.thr())), 2)
+        out = options.simulate_candidates(cs, self.thr(one_direction=1))
+        self.assertEqual([t['side'] for t in out], ['long'])
+
+    def test_autopilot_searches_the_band_on_its_grid(self):
+        sp = lab.specs('options')
+        self.assertEqual(sp['market_band_pct']['values'], list(options.MARKET_GRID['market_band_pct']))
+        self.assertIn('last_entry_hour', sp)
+        self.assertIn('one_direction', sp)
+        self.assertEqual(lab.describe({'market_band_pct': 0.3, 'one_direction': 1}, {'market_band_pct': 2.0, 'one_direction': 0}),
+                         'market_band_pct off → 0.3, one_direction off → 1')
+
+    def test_earlier_candidates_get_the_market_move(self):
+        store.init()
+        with store.connect() as c:
+            c.execute('DELETE FROM oc_candidates')
+            c.execute('DELETE FROM oc_snapshots')
+        for t, spot in (('09:15', 100.0), ('10:00', 100.4)):
+            store.add_snapshot('NIFTY', '2026-10-20', f'2026-10-14T{t}:00+05:30', '2026-10-14', spot, {}, None)
+        cand = {'symbol': 'SBIN', 'direction': 'long', 'side': 'CE', 'strike': 950.0, 'entry': 14.0, 'level': None,
+                'f': {'bias': 0.5}}
+        cid = store.add_candidate(cand, '2026-10-27', '2026-10-14', '2026-10-14T10:01:00+05:30', False)
+        late = store.add_candidate(cand, '2026-10-27', '2026-10-14', '2026-10-14T11:00:00+05:30', False)
+        self.assertEqual(lab.candidate_market(lambda m: None), 2)
+        got = {c['id']: c['f'] for c in store.option_candidates()}
+        self.assertEqual(got[cid], {'bias': 0.5, 'mkt_move': 0.4})
+        self.assertIsNone(got[late]['mkt_move'])                  # Nifty's last read an hour old: unknown
+        self.assertEqual(lab.candidate_market(lambda m: None), 0)  # done once
 
 
 class LabAndApi(unittest.TestCase):

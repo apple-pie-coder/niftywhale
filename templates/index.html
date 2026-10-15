@@ -135,14 +135,100 @@
     #rules-summary[data-custom="1"], #i-rules-summary[data-custom="1"], #o-rules-summary[data-custom="1"] { color: var(--warn); }
     .sb-acts { display: inline-flex; align-items: baseline; gap: 5px; color: var(--ink-3); white-space: nowrap; }
     /* Rules: the summary and "Show all" share a line; opened, the list takes the width below. */
-    .sb[aria-labelledby="sb-rules"] { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 10px; }
-    .sb[aria-labelledby="sb-rules"] > .sb-head { flex-basis: 100%; }
-    .sb[aria-labelledby="sb-rules"] > #rules-summary { flex: 1 1 auto; min-width: 0; }
-    .sb[aria-labelledby="sb-rules"] > details.rules { margin-top: 0; }
-    .sb[aria-labelledby="sb-rules"] > details.rules[open] { flex-basis: 100%; }
-    details.rules { margin-top: -4px; }
-    details.rules summary { font-size: 12px; color: var(--ink-3); font-weight: 600; }
-    details.rules[open] summary { margin-bottom: 4px; }
+    /* Running: what runs by itself, a dot for its state and a line on what it does now; a row opens its settings. */
+    .sb-status { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+    .sb-status li { display: flex; align-items: center; gap: 4px; }
+    .st-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 6px 6px; margin: 0 -6px; border: 0; border-radius: var(--r-sm);
+              background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .st-row:hover, .st-row:focus-visible { background: var(--sunk); }
+    .st-main { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+    .st-main b { font-size: 13px; font-weight: 620; color: var(--ink); }
+    .st-main small { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .st-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+    .st-dot[data-state="on"] { background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+    .st-dot[data-state="busy"] { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: st-pulse 1.2s ease-in-out infinite; }
+    .st-dot[data-state="warn"] { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+    @keyframes st-pulse { 50% { opacity: 0.35; } }
+    @media (prefers-reduced-motion: reduce) { .st-dot[data-state="busy"] { animation: none; } }
+    .st-act { flex: none; font-size: 12px; }
+    .st-act[hidden] { display: none; }
+    .sb-end { gap: 8px; }
+    .sb-settings { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 9px; text-align: left; padding: 9px 12px; }
+    .sb-settings svg { grid-row: span 2; color: var(--accent); }
+    .sb-settings span { font-weight: 650; font-size: 13.5px; }
+    .sb-settings small { font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
+
+    /* Settings: a section list and the section, each with what it does. Over everything but a dialog it opens. */
+    /* Under the stock panel, so a stock opened from Settings (a tuner's what-if list) shows over it; over the panel when
+       Settings is opened from it (the chart's Indicators). */
+    .hub-scrim { position: fixed; inset: 0; z-index: 58; background: rgba(5, 12, 18, 0.45); }
+    body.hub-over .hub-scrim { z-index: 62; }
+    body.hub-over .hub { z-index: 63; }
+    .hub { position: fixed; z-index: 59; top: max(16px, 3vh); left: 50%; transform: translateX(-50%); width: min(1180px, calc(100% - 32px));
+           height: calc(100dvh - 2 * max(16px, 3vh)); display: flex; flex-direction: column; overflow: hidden;
+           background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+    .hub-scrim[hidden], .hub[hidden] { display: none; }
+    body.hub-on { overflow: hidden; }
+    .hub-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--line); }
+    .hub-head h2 { margin: 0; font-size: 17px; font-weight: 700; flex: none; }
+    .hub-q { flex: 1; max-width: 360px; margin-left: auto; font: inherit; font-size: 13.5px; padding: 7px 11px; color: var(--ink);
+             background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-pill); }
+    .hub-q:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }
+    .hub-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
+    .hub-nav { overflow-y: auto; padding: 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+    .hub-nav button { display: flex; flex-direction: column; gap: 1px; text-align: left; padding: 8px 10px; border: 0; border-radius: var(--r-md);
+                      background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
+    .hub-nav button b { font-size: 13.5px; font-weight: 620; }
+    .hub-nav button small { font-size: 11.5px; color: var(--ink-3); }
+    .hub-nav button:hover { background: var(--sunk); }
+    .hub-nav button[aria-current="page"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+    .hub-nav button[aria-current="page"] b { color: var(--accent); }
+    .hub-none { font-size: 12.5px; color: var(--ink-3); padding: 8px 10px; }
+    .hub-main { overflow-y: auto; padding: 20px 28px 28px; }
+    .hub-sec[hidden] { display: none; }
+    .hub-sec-head { margin-bottom: 8px; }
+    .hub-sec-head h3 { margin: 0 0 4px; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+    .hub-sec-head p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); max-width: 72ch; }
+    .set-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); }
+    .hub-sec-head + .set-row, .set-note + .set-row { border-top: 0; }
+    .set-txt b { font-size: 14px; font-weight: 650; color: var(--ink); }
+    .set-txt p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-3); max-width: 66ch; }
+    .set-ctl { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+    .set-ctl input[type="time"] { width: 110px; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+                                  border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
+    .set-ctl input[type="time"]:disabled { opacity: 0.5; }
+    .set-ctl .uni-select { width: 300px; max-width: 100%; }
+    .set-state { font-size: 12.5px; font-weight: 650; color: var(--ink-2); margin: 6px 0 0; }
+    .set-block { padding: 14px 0 0; border-top: 1px solid var(--line); }
+    .set-block .set-txt { margin-bottom: 12px; }
+    .set-note { margin: 10px 0 4px; font-size: 12.5px; }
+    .set-theme { margin-top: 12px; max-width: 520px; }
+    .hub-embed { margin-top: 14px; }
+    .hub-embed-sub { margin: 0 0 12px; font-size: 12.5px; color: var(--ink-3); }
+    .hub-loading { font-size: 13px; color: var(--ink-3); }
+    /* A form shown here keeps its bar in view at the foot of the section, not of a dialog. */
+    .hub .trs-bar { bottom: -28px; margin: 14px -28px -28px; padding: 12px 28px; }
+    .hub .ind-form, .hub .apps, .hub .ap, .hub .tks { max-width: 760px; }
+    .apps-f .trs-step { max-width: 200px; }
+    /* A rule tuner in Settings: its result panel under the cards when the section is narrow, its bar at the section's foot. */
+    @media (max-width: 1240px) { .hub .tz { grid-template-columns: minmax(0, 1fr); } .hub .tz-side { position: static; } }
+    .hub .tz-bar { bottom: -28px; margin: 16px -28px -28px; padding: 12px 28px; flex-wrap: wrap; }
+    @media (max-width: 760px) {
+        .hub { inset: 0; top: 0; left: 0; transform: none; width: 100%; height: 100dvh; border-radius: 0; border: 0;
+               padding-top: var(--sa-t); padding-bottom: var(--sa-b); }
+        .hub-head { padding: 10px 12px; flex-wrap: wrap; }
+        .hub-q { order: 3; flex-basis: 100%; max-width: none; margin: 0; }
+        .hub-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+        .hub-nav { flex-direction: row; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; scrollbar-width: none; }
+        .hub-nav button { flex: none; padding: 6px 12px; border-radius: var(--r-pill); }
+        .hub-nav button small { display: none; }
+        .hub-nav button[aria-current="page"] { box-shadow: inset 0 0 0 1px var(--accent); }
+        .hub-main { padding: 16px 16px 24px; }
+        .set-row { grid-template-columns: minmax(0, 1fr); }
+        .set-ctl { justify-content: flex-start; }
+        .hub .trs-bar { bottom: -24px; margin: 14px -16px -24px; padding: 10px 16px; }
+        .hub .tz-bar { bottom: -24px; margin: 14px -16px -24px; padding: 10px 16px; }
+    }
     /* The sidebar's own bar: its name, and a button to fold it away, over a hairline. */
     .sb-bar { display: flex; align-items: center; gap: 6px; padding: 10px 0 8px; border-bottom: 1px solid var(--line); }
     .sb-bar .label { margin: 0; flex: 1; }
@@ -236,10 +322,6 @@
     .sep { border-top: 1px solid var(--line); }
     input[type="time"] { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line-strong);
                          border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
-    details.rules summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-    .rules dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin-top: 10px; font-size: 12px; }
-    .rules dt { color: var(--ink-3); }
-    .rules dd { font-weight: 600; text-align: right; }
 
     /* ----------------------------------------------------------- panels */
     .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
@@ -581,6 +663,13 @@
     .trs-step button:hover { background: var(--accent-soft); color: var(--accent); }
     .trs-step input { border: 0 !important; text-align: center; font: inherit; font-size: 15px; font-weight: 650; padding: 7px 4px; min-width: 0;
                       background: var(--surface) !important; box-shadow: none !important; color: var(--ink); }
+    .trs-step input { -moz-appearance: textfield; appearance: textfield; }
+    .trs-step input::-webkit-inner-spin-button, .trs-step input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .trs-step button:disabled { opacity: 0.35; cursor: default; background: var(--sunk); color: var(--ink); }
+    .trs-step [data-nudge="-1"] { order: -1; }
+    .ind-row .trs-step, .ap .trs-step { width: 140px; justify-self: end; }
+    .ind-row .trs-step input, .ap .trs-step input { width: auto; padding: 6px 4px; font-size: 13.5px; }
+    .ind-row .switch { justify-self: end; }
     .trs-sw { display: flex; align-items: center; gap: 10px; min-height: 38px; font-size: 12.5px; color: var(--ink-2); }
     .trs-send[data-on="1"] { border-color: var(--warn); background: var(--warn-soft); }
     .trs-send-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--ink-2); }
@@ -1320,11 +1409,11 @@
     .chip[data-s="skipped"] { background: var(--sunk); color: var(--ink-3); }
     .stocks-edit { width: 100%; min-height: 140px; font: 13px/1.5 var(--mono); border: 1px solid var(--line-strong);
                    border-radius: var(--r-sm); padding: 10px; background: var(--surface); color: var(--ink); resize: vertical; }
-    .otune { display: grid; gap: 12px; }
-    .otune label { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; align-items: center; font-size: 13px; }
-    .otune input { padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface);
-                   color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; text-align: right; }
-    .otune input[data-changed="1"] { border-color: var(--warn); }
+    .otune .knob .trs-step { max-width: 160px; }
+    .otune .knob .switch { justify-self: start; }
+    .otune-bar { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    .otune-bar .muted { margin-right: auto; font-size: 12.5px; }
+    .otune-bar .muted b { color: var(--warn); }
 
     /* Index ticker: a strip under the top bar that scrolls left; hover pauses it. */
     .ticker[hidden], .guide-link[hidden] { display: none; }
@@ -1616,13 +1705,49 @@
     }
     .tc-chg { display: flex; flex-wrap: wrap; gap: 6px; }
     .tc-chg span { background: var(--sunk); border-radius: var(--r-pill); padding: 2px 10px; }
-    .pol-grid { display: grid; gap: 10px; }
-    .pol-grid label { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 10px; align-items: center; font-size: 13px; }
-    .pol-grid input, .pol-grid select { padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
-                                        background: var(--surface); color: var(--ink); font: inherit; }
-    .pol-lim { display: grid; grid-template-columns: minmax(0, 1fr) 90px 90px; gap: 8px; align-items: center; font-size: 12.5px; }
-    .pol-lim input { padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface);
-                     color: var(--ink); font: inherit; width: 100%; }
+    /* Autopilot settings: rows of a label with its help and a control, then per mode a two-ended slider a rule. */
+    .ap { display: grid; gap: 10px; }
+    .ap-h { margin: 14px 0 0; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+    .ap-h:first-child { margin-top: 0; }
+    .ap-note { margin: 0; font-size: 12.5px; color: var(--ink-3); }
+    .ap-level { max-width: 420px; }
+    .ap-modes { max-width: 360px; margin-top: 10px; }
+    .ap-rows { display: grid; gap: 10px; transition: opacity .15s; }
+    .ap-rows[data-dim="1"] { opacity: .45; }
+    .ap-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; }
+    .ap-lbl b { display: block; font-size: 13px; font-weight: 650; color: var(--ink); }
+    .ap-lbl small { display: block; font-size: 11.5px; color: var(--ink-3); line-height: 1.4; margin-top: 2px; }
+    .ap-ctl { display: inline-flex; align-items: center; gap: 8px; justify-self: end; }
+    .ap-unit { font-size: 12px; color: var(--ink-3); min-width: 54px; }
+    @media (max-width: 520px) { .ap-row { grid-template-columns: 1fr; } .ap-ctl { justify-self: start; } }
+    .lims { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+    .lim { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: 12px 12px 10px; display: grid; gap: 6px; }
+    .lim small { font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+    .lim-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .lim-name { font-size: 13px; font-weight: 650; color: var(--ink); line-height: 1.3; }
+    .lim-val { font-size: 14px; font-weight: 750; font-variant-numeric: tabular-nums; color: var(--accent); white-space: nowrap; }
+    .lim-val[data-full="1"] { color: var(--ink-3); font-weight: 600; }
+    .lim-now { font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: center; }
+    .lim-now[data-out="1"] { color: var(--warn); }
+    /* Two range inputs on one track: only their thumbs take the pointer. The fill and the tick sit where a thumb's
+       centre would (9px in from each end, the thumb being 18px). */
+    .lim-track { position: relative; height: 22px; --a: 0; --b: 1; }
+    .lim-track::before, .lim-track::after { content: ''; position: absolute; top: 9px; height: 4px; border-radius: 2px; }
+    .lim-track::before { left: 9px; right: 9px; background: var(--line); }
+    .lim-track::after { left: calc(9px + (100% - 18px) * var(--a)); right: calc(9px + (100% - 18px) * (1 - var(--b))); background: var(--accent); }
+    .lim-track input[type="range"] { position: absolute; inset: 0; width: 100%; height: 22px; margin: 0; background: none; pointer-events: none;
+                                     -webkit-appearance: none; appearance: none; z-index: 2; }
+    .lim-track input[type="range"]::-webkit-slider-runnable-track { background: none; height: 22px; }
+    .lim-track input[type="range"]::-moz-range-track { background: none; }
+    .lim-track input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 18px; height: 18px; margin-top: 2px;
+        border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); cursor: grab; }
+    .lim-track input[type="range"]::-moz-range-thumb { pointer-events: auto; width: 14px; height: 14px; border-radius: 50%;
+        background: var(--surface); border: 2px solid var(--accent); cursor: grab; }
+    .lim-track input[type="range"]:focus-visible { outline: none; }
+    .lim-track input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+    .lim-track input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+    .lim-mark { position: absolute; top: 3px; width: 2px; height: 16px; margin-left: -1px; border-radius: 1px; background: var(--ink-2);
+                left: calc(9px + (100% - 18px) * var(--n)); pointer-events: none; z-index: 1; }
 
     /* ------------------------------------------------- iPhone: every iOS browser is WebKit (Safari, Chrome,
        Firefox, Edge on iOS all draw with it). viewport-fit=cover gives the page the whole screen; these keep
@@ -1780,144 +1905,48 @@
         <nav class="sb-rail" aria-label="Controls sections">
             <button type="button" class="sb-rail-btn sb-expand" id="sb-expand" title="Expand the sidebar" aria-label="Expand the sidebar"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
             <span class="sb-rail-sep"></span>
-            <button type="button" class="sb-rail-btn" data-sb-go="sb-scan" title="Scan" aria-label="Scan"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4 14 14"/></svg></button>
-            <button type="button" class="sb-rail-btn" data-sb-go="sb-watch" title="Watcher" aria-label="Watcher"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg></button>
-            <button type="button" class="sb-rail-btn" data-sb-go="sb-intra" title="Intraday" aria-label="Intraday"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg></button>
-            <button type="button" class="sb-rail-btn" data-sb-go="sb-opt" title="Options" aria-label="Options"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2 2 5l6 3 6-3z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></svg></button>
-            <button type="button" class="sb-rail-btn" data-sb-go="sb-tg" title="Telegram" aria-label="Telegram"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 2 1.8 7.1l4.6 1.6L13 4 7.6 9.9v3.8l2.3-2.6 2.8 2.1z"/></svg></button>
-            <button type="button" class="sb-rail-btn" data-sb-go="sb-rules" title="Rules" aria-label="Rules"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h7M12.5 4h1M2.5 8h2M7.5 8h6M2.5 12h5M10.5 12h3"/><circle cx="11" cy="4" r="1.5"/><circle cx="6" cy="8" r="1.5"/><circle cx="9" cy="12" r="1.5"/></svg></button>
+            <button type="button" class="sb-rail-btn" data-sb-go="sb-scan" title="Swing scan" aria-label="Swing scan"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4 14 14"/></svg></button>
+            <button type="button" class="sb-rail-btn" data-sb-go="sb-run" title="Running" aria-label="Running"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg></button>
+            <button type="button" class="sb-rail-btn" data-settings="" title="Settings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M1.8 8h1.6M12.6 8h1.6M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></svg></button>
         </nav>
         <section class="sb" aria-labelledby="sb-scan">
-            <div class="sb-head"><h2 class="label" id="sb-scan">Scan</h2>
+            <div class="sb-head"><h2 class="label" id="sb-scan">Swing scan</h2>
                 <button class="btn-link" id="u-refresh" type="button" title="Fetch NSE's index lists again">Refresh lists<span id="u-built" hidden></span></button></div>
-            <select id="universe" class="uni-select" aria-label="Universe to scan"></select>
+            <select id="universe" class="uni-select" aria-label="Stocks to scan"></select>
             <button class="btn btn-primary" id="scan-btn" type="button" data-role="start"><svg class="ic" width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 3.2v9.6c0 .5.5.8.9.5l7.2-4.8a.6.6 0 000-1L5.4 2.7c-.4-.3-.9 0-.9.5z"/></svg> Run scan</button>
             <div class="progress" id="scan-progress" hidden><i id="scan-progress-bar"></i></div>
             <div class="sb-note" id="scan-msg"></div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="auto-label">Auto-scan</div>
-                    <div class="row-sub">Weekdays · IST</div></div>
-                <input type="time" id="scan-time" value="16:15" aria-label="Auto-scan time, IST" title="IST">
-                <button class="switch" id="sw-auto" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="auto-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="shorts-label">Short setups</div>
-                    <div class="row-sub" title="A cash short must be closed the same day, so swing shorts are F&amp;O only">F&amp;O stocks only</div></div>
-                <button class="switch" id="sw-shorts" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="shorts-label"></button>
-            </div>
         </section>
 
-        <section class="sb" aria-labelledby="sb-watch">
-            <div class="sb-head"><h2 class="label" id="sb-watch">Watcher</h2>
-                <button class="btn-link" id="check-btn" type="button" title="Check every open zone on 15m candles now">Check now</button></div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="watch-label">15m zone watch</div>
-                    <div class="row-sub" id="watch-sub">Market hours, every candle</div></div>
-                <button class="switch" id="sw-watch" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="watch-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="news-label">News desk</div>
-                    <div class="row-sub">NSE filings + media, every 15 min</div></div>
-                <button class="switch" id="sw-news" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="news-label"></button>
-            </div>
+        <!-- What runs by itself, and what each is doing now. A row opens its settings; on and off are set there. -->
+        <section class="sb" aria-labelledby="sb-run">
+            <div class="sb-head"><h2 class="label" id="sb-run">Running</h2></div>
+            <ul class="sb-status">
+                <li><button type="button" class="st-row" data-settings="swing" title="Auto-scan settings"><i class="st-dot" id="st-auto"></i>
+                    <span class="st-main"><b>Auto-scan</b><small id="auto-sub"></small></span></button></li>
+                <li><button type="button" class="st-row" data-settings="swing" title="Zone watcher settings"><i class="st-dot" id="st-watch"></i>
+                    <span class="st-main"><b>Zone watcher</b><small id="watch-sub"></small></span></button>
+                    <button class="btn-link st-act" id="check-btn" type="button" title="Check every open zone on 15m candles now">Check</button></li>
+                <li><button type="button" class="st-row" data-settings="intraday" title="Intraday settings"><i class="st-dot" id="st-intra"></i>
+                    <span class="st-main"><b>Intraday</b><small id="intra-sub"></small></span></button>
+                    <button class="btn-link st-act" id="i-scan-btn" type="button" title="Run the 15m scan now">Scan now</button></li>
+                <li><button type="button" class="st-row" data-settings="options" title="Options settings"><i class="st-dot" id="st-opt"></i>
+                    <span class="st-main"><b>Options</b><small id="opt-sub"></small></span></button>
+                    <button class="btn-link st-act" id="o-refresh-btn" type="button" title="Fetch every chain now">Refresh</button></li>
+                <li><button type="button" class="st-row" data-settings="news" title="News desk settings"><i class="st-dot" id="st-news"></i>
+                    <span class="st-main"><b>News desk</b><small id="news-sub"></small></span></button></li>
+                <li><button type="button" class="st-row" data-settings="alerts" title="Alert settings"><i class="st-dot" id="st-tg"></i>
+                    <span class="st-main"><b>Telegram alerts</b><small id="tg-sub"></small></span></button>
+                    <button class="btn-link st-act" id="tg-test" type="button" title="Send a test message">Test</button></li>
+            </ul>
         </section>
 
-        <section class="sb" aria-labelledby="sb-intra">
-            <div class="sb-head"><h2 class="label" id="sb-intra">Intraday</h2>
-                <span class="sb-acts"><button class="btn-link" id="i-tune-btn" type="button" title="Intraday rules: the tuner"><span id="i-rules-summary">Rules</span>…</button> ·
-                <button class="btn-link" id="i-scan-btn" type="button" title="Run the 15m scan now">Scan now</button></span></div>
-            <select id="i-universe" class="uni-select" aria-label="Intraday universe"></select>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="intra-label">Intraday mode</div>
-                    <div class="row-sub" id="intra-sub">15m zones · 5m entries</div></div>
-                <button class="switch" id="sw-intra" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="intra-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="ishorts-label">Short setups</div>
-                    <div class="row-sub">Any stock (MIS)</div></div>
-                <button class="switch" id="sw-ishorts" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="ishorts-label"></button>
-            </div>
-        </section>
-
-        <section class="sb" aria-labelledby="sb-opt">
-            <div class="sb-head"><h2 class="label" id="sb-opt">Options</h2>
-                <span class="sb-acts"><button class="btn-link" id="o-tune-btn" type="button" title="Idea rules: the tuner"><span id="o-rules-summary">Rules</span>…</button> ·
-                <button class="btn-link" id="o-refresh-btn" type="button" title="Fetch every chain now">Refresh now</button></span></div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="opt-label">Option chain scanner</div>
-                    <div class="row-sub" id="opt-sub">Indices + stocks, every 3 min</div></div>
-                <button class="switch" id="sw-opt" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="opt-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="optal-label">Idea alerts</div>
-                    <div class="row-sub">Telegram: ideas + results</div></div>
-                <button class="switch" id="sw-optal" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="optal-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="optlv-label">Level alerts</div>
-                    <div class="row-sub">Index OI support / resistance moves</div></div>
-                <button class="switch" id="sw-optlv" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="optlv-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="o-stocks-summary">Stocks</div></div>
-                <button class="btn-link" id="o-stocks-btn" type="button">Edit…</button>
-            </div>
-        </section>
-
-        <section class="sb" aria-labelledby="sb-tg">
-            <div class="sb-head"><h2 class="label" id="sb-tg">Telegram</h2>
-                <button class="btn-link" id="tg-test" type="button">Send test</button></div>
-            <div class="sb-note" id="tg-note" hidden>Not set up yet ·
-                <button class="btn-link" type="button" data-appset="telegram">Set up</button> ·
-                <a class="more" href="/docs#9-telegram-alerts">how to</a></div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="tg-label">Entry alerts</div>
-                    <div class="row-sub">+ evening summary</div></div>
-                <button class="switch" id="sw-tg" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="tg-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="pat-label">Pattern alerts</div>
-                    <div class="row-sub">15m patterns inside a zone</div></div>
-                <button class="switch" id="sw-pat" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="pat-label"></button>
-            </div>
-            <div class="row">
-                <div class="row-main"><div class="row-title" id="newsalert-label">Filing alerts</div>
-                    <div class="row-sub">NSE filing on an open trade or tapped zone</div></div>
-                <button class="switch" id="sw-newsalert" role="switch" aria-checked="false" type="button"
-                        aria-labelledby="newsalert-label"></button>
-            </div>
-        </section>
-
-        <section class="sb" aria-labelledby="sb-rules">
-            <div class="sb-head"><h2 class="label" id="sb-rules">Rules</h2>
-                <button class="btn-link" id="tuner-btn" type="button">Tune…</button></div>
-            <div class="row-title" id="rules-summary">Protocol defaults</div>
-            <details class="rules">
-                <summary>Show all</summary>
-                <dl id="rules"></dl>
-                <a class="more" href="/docs#11-the-rules-in-detail">What each rule means →</a>
-            </details>
-        </section>
-
-        <section class="sb" aria-labelledby="sb-app">
-            <div class="sb-head"><h2 class="label" id="sb-app">App</h2>
-                <button class="btn-link" type="button" data-appset="" title="Telegram bot, Dhan automatic login, data source, candle delays, logging">Settings…</button></div>
+        <section class="sb sb-end" aria-label="Settings and help">
+            <button class="btn sb-settings" type="button" data-settings=""><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M1.8 8h1.6M12.6 8h1.6M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></svg><span>Settings</span><small>every setting, explained</small></button>
             <div class="sb-links"><button class="btn-link" type="button" data-legend="">Legend</button> ·
                 <a class="more" href="/docs">Guide</a> ·
                 <button class="btn-link" type="button" data-account="" title="Account &amp; security: password, authenticator, passkeys, API tokens, sign-ins">Account</button> ·
                 <button class="btn-link" type="button" data-signout>Sign out</button></div>
-            <div class="sb-theme" id="sb-theme"></div>
         </section>
     </aside>
 
@@ -2319,7 +2348,7 @@
         <section>
             <div class="panel-head"><h2 class="panel-title">By mode</h2>
                 <span class="panel-meta">Closed after charges · open at the latest price · click a mode to chart it alone</span></div>
-            <div class="table-wrap"><table><thead><tr><th>Mode</th><th class="r">Closed · won</th><th class="r">Net P&amp;L</th><th class="r">Charges</th><th class="r">Open · P&amp;L</th><th class="r">Skipped</th></tr></thead>
+            <div class="table-wrap"><table><thead><tr><th>Mode</th><th class="r">Closed · won</th><th class="r" title="Margin or premium the closed and open trades put up, added over every trade">Money used</th><th class="r">Net P&amp;L</th><th class="r">Charges</th><th class="r">Open · P&amp;L</th><th class="r">Skipped</th></tr></thead>
                 <tbody id="dm-modes"></tbody></table></div>
             <div class="pager" id="pg-dmmodes" aria-label="Pages"></div>
         </section>
@@ -2497,6 +2526,100 @@
     </div>
     <div class="fc-body"><div class="chart-wrap" id="full-wrap"></div></div>
     <div class="fc-hint">Drag to move · drag the price scale or the time axis to stretch · wheel to zoom · double-click to fit · + − 0 · F close · M magnet · Esc close</div>
+</div>
+<!-- Settings: every setting in one place, each with what it does. Sections with their own forms (demo, live trading, lab,
+     autopilot, charts, connections, account) render those forms here (openModal into HUB.host). -->
+<div class="hub-scrim" id="hub-scrim" hidden></div>
+<div class="hub" id="hub" role="dialog" aria-modal="true" aria-labelledby="hub-title" hidden>
+    <header class="hub-head"><h2 id="hub-title">Settings</h2>
+        <input type="search" id="hub-q" class="hub-q" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off">
+        <button type="button" class="sb-iconbtn" id="hub-close" title="Close" aria-label="Close settings"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></header>
+    <div class="hub-body">
+        <nav class="hub-nav" id="hub-nav" aria-label="Settings sections"></nav>
+        <div class="hub-main" id="hub-main">
+        <section class="hub-sec" data-sec="swing" aria-labelledby="hs-swing" hidden>
+            <header class="hub-sec-head"><h3 id="hs-swing">Swing scan</h3><p>The swing scan reads daily candles for demand and supply zones worth trading. The zone watcher then follows each zone on 15-minute candles and alerts on an entry. The stocks scanned are chosen in the sidebar, above <b>Run scan</b>.</p></header>
+            <div class="set-row"><div class="set-txt"><b id="auto-label">Auto-scan</b><p>Runs the scan by itself every weekday at this time (IST). After 15:45 it reads the day&#39;s final candles.</p></div><div class="set-ctl"><input type="time" id="scan-time" value="16:15" aria-label="Auto-scan time, IST" title="IST"><button class="switch" id="sw-auto" role="switch" aria-checked="false" type="button" aria-labelledby="auto-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="shorts-label">Short setups</b><p>Supply zones as short trades. F&amp;O stocks only: a cash short must be closed the same day, so a swing short is a stock future.</p></div><div class="set-ctl"><button class="switch" id="sw-shorts" role="switch" aria-checked="false" type="button" aria-labelledby="shorts-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="watch-label">Zone watcher</b><p>During market hours, checks every open zone on each new 15-minute candle for a change of character (the entry). Off: zones are only checked when you press Check.</p></div><div class="set-ctl"><button class="switch" id="sw-watch" role="switch" aria-checked="false" type="button" aria-labelledby="watch-label"></button></div></div>
+            <div class="set-block"><div class="set-txt"><b>Rules</b> <span class="set-state" id="rules-summary">Protocol defaults</span>
+                <p>The thresholds a setup must pass, from the protocol's defaults or your own. Each change re-screens the candles
+                already downloaded beside the cards, so you see which stocks it adds or drops before you save. A card in amber is
+                changed and not saved yet. <a class="more" href="/docs#11-the-rules-in-detail">What each rule means</a></p></div>
+                <div class="hub-embed" id="hub-embed-swing"></div></div>
+        </section>
+        <section class="hub-sec" data-sec="intraday" aria-labelledby="hs-intraday" hidden>
+            <header class="hub-sec-head"><h3 id="hs-intraday">Intraday</h3><p>Intraday mode finds zones on 15-minute candles and enters on 5-minute ones, the same day. Everything open is squared off at the intraday square-off (Connections &amp; data, Market session).</p></header>
+            <div class="set-row"><div class="set-txt"><b id="intra-label">Intraday mode</b><p>Scans every 15 minutes in session and watches its zones on 5-minute candles.</p></div><div class="set-ctl"><button class="switch" id="sw-intra" role="switch" aria-checked="false" type="button" aria-labelledby="intra-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="iuni-label">Stocks</b><p>The list it scans. A longer list finds more setups and takes longer each pass.</p></div><div class="set-ctl"><select id="i-universe" class="uni-select" aria-labelledby="iuni-label"></select></div></div>
+            <div class="set-row"><div class="set-txt"><b id="ishorts-label">Short setups</b><p>Supply zones as short trades, on any stock (an intraday short, MIS).</p></div><div class="set-ctl"><button class="switch" id="sw-ishorts" role="switch" aria-checked="false" type="button" aria-labelledby="ishorts-label"></button></div></div>
+            <div class="set-block"><div class="set-txt"><b>Rules</b> <span class="set-state" id="i-rules-summary">The defaults</span>
+                <p>The thresholds an intraday setup must pass. Each change re-screens the candles of the last 15m scan beside the cards,
+                so you see which stocks it adds or drops before you save. A card in amber is changed and not saved yet.</p></div>
+                <div class="hub-embed" id="hub-embed-intraday"></div></div>
+        </section>
+        <section class="hub-sec" data-sec="options" aria-labelledby="hs-options" hidden>
+            <header class="hub-sec-head"><h3 id="hs-options">Options</h3><p>The option chain scanner reads open interest, PCR and IV on the indices and your stocks every 3 minutes (with Dhan), and turns a clear lean into an option-buying idea: the at-the-money call or put, with a stop and a target on the premium.</p></header>
+            <div class="set-row"><div class="set-txt"><b id="opt-label">Option chain scanner</b><p>Fetches the chains during market hours. Needs Dhan for real-time data.</p></div><div class="set-ctl"><button class="switch" id="sw-opt" role="switch" aria-checked="false" type="button" aria-labelledby="opt-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="ostk-label">Stocks</b><p><span id="o-stocks-summary">5 indices + 30 stocks</span>. The indices are always read.</p></div><div class="set-ctl"><button class="btn" id="o-stocks-btn" type="button">Edit stocks…</button></div></div>
+            <div class="set-block"><div class="set-txt"><b>Idea rules</b> <span class="set-state" id="o-rules-summary">Rules</span>
+                <p>What an idea needs, how it exits, and the guards against trading into the market. A card in amber is changed and
+                not saved yet.</p></div>
+                <div id="hub-optrules"></div></div>
+        </section>
+        <section class="hub-sec" data-sec="news" aria-labelledby="hs-news" hidden>
+            <header class="hub-sec-head"><h3 id="hs-news">News desk</h3><p>Reads NSE filings and media headlines for your stocks every 15 minutes, scores their tone, and shows them on the News tab and beside each stock.</p></header>
+            <div class="set-row"><div class="set-txt"><b id="news-label">News desk</b><p>Off: no news is fetched, and filing alerts stop.</p></div><div class="set-ctl"><button class="switch" id="sw-news" role="switch" aria-checked="false" type="button" aria-labelledby="news-label"></button></div></div>
+        </section>
+        <section class="hub-sec" data-sec="alerts" aria-labelledby="hs-alerts" hidden>
+            <header class="hub-sec-head"><h3 id="hs-alerts">Alerts</h3><p>Messages to Telegram as things happen. The bot and the chat they go to are set under Connections &amp; data.</p></header>
+            <div class="sb-note set-note" id="tg-note" hidden>Telegram is not set up yet ·
+                <button class="btn-link" type="button" data-appset="telegram">Set up the bot</button> ·
+                <a class="more" href="/docs#9-telegram-alerts">how to</a></div>
+            <div class="set-row"><div class="set-txt"><b id="tg-label">Entry alerts</b><p>Each swing and intraday entry and its result, and an evening summary. Off: nothing is sent.</p></div><div class="set-ctl"><button class="switch" id="sw-tg" role="switch" aria-checked="false" type="button" aria-labelledby="tg-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="pat-label">Pattern alerts</b><p>A 15-minute candle pattern (engulfing, hammer…) inside a zone being watched.</p></div><div class="set-ctl"><button class="switch" id="sw-pat" role="switch" aria-checked="false" type="button" aria-labelledby="pat-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="newsalert-label">Filing alerts</b><p>An NSE filing on a stock with an open trade or a tapped zone. Needs the news desk.</p></div><div class="set-ctl"><button class="switch" id="sw-newsalert" role="switch" aria-checked="false" type="button" aria-labelledby="newsalert-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="optal-label">Option idea alerts</b><p>Each option idea and its result.</p></div><div class="set-ctl"><button class="switch" id="sw-optal" role="switch" aria-checked="false" type="button" aria-labelledby="optal-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="optlv-label">Option level alerts</b><p>An index&#39;s OI support or resistance moving to another strike and holding.</p></div><div class="set-ctl"><button class="switch" id="sw-optlv" role="switch" aria-checked="false" type="button" aria-labelledby="optlv-label"></button></div></div>
+        </section>
+        <section class="hub-sec" data-sec="demo" aria-labelledby="hs-demo" hidden>
+            <header class="hub-sec-head"><h3 id="hs-demo">Demo funds</h3><p>The demo account takes every trade the app takes, with pretend money, real lot sizes and real charges. These settings size those trades and set the limits that skip one.</p></header>
+            <div class="hub-embed" id="hub-embed-demo"></div>
+        </section>
+        <section class="hub-sec" data-sec="trade" aria-labelledby="hs-trade" hidden>
+            <header class="hub-sec-head"><h3 id="hs-trade">Live trading</h3><p>Real orders at Dhan, for the modes you arm on the Trading tab. Sizing and limits here apply to every mode. Saving asks for a recent sign-in.</p></header>
+            <div class="hub-embed" id="hub-embed-trade"></div>
+        </section>
+        <section class="hub-sec" data-sec="lab" aria-labelledby="hs-lab" hidden>
+            <header class="hub-sec-head"><h3 id="hs-lab">Lab</h3><p>The lab replays history after the close: backtests for the Performance view, and the data the autopilot tunes on.</p></header>
+            <div class="hub-embed" id="hub-embed-lab"></div>
+        </section>
+        <section class="hub-sec" data-sec="autopilot" aria-labelledby="hs-autopilot" hidden>
+            <header class="hub-sec-head"><h3 id="hs-autopilot">Autopilot</h3><p>The autopilot proposes rule changes from walk-forward tests, runs each in shadow before it goes live, and rolls back or pauses a mode that loses. These are its safety limits.</p></header>
+            <div class="hub-embed" id="hub-embed-autopilot"></div>
+        </section>
+        <section class="hub-sec" data-sec="charts" aria-labelledby="hs-charts" hidden>
+            <header class="hub-sec-head"><h3 id="hs-charts">Charts</h3><p>The indicators drawn on every chart, on every device.</p></header>
+            <div class="hub-embed" id="hub-embed-charts"></div>
+        </section>
+        <section class="hub-sec" data-sec="ticker" aria-labelledby="hs-ticker" hidden>
+            <header class="hub-sec-head"><h3 id="hs-ticker">Index ticker</h3><p>The strip of indices under the top bar: which show, how fast it moves and what it shows for each. Kept in this browser.</p></header>
+            <div class="hub-embed" id="hub-embed-ticker"></div>
+        </section>
+        <section class="hub-sec" data-sec="app" aria-labelledby="hs-app" hidden>
+            <header class="hub-sec-head"><h3 id="hs-app">Connections &amp; data</h3><p>The Telegram bot, the Dhan login, where prices come from, the market&#39;s session times and logging. A value saved here replaces the one in .env.</p></header>
+            <div class="hub-embed" id="hub-embed-app"></div>
+        </section>
+        <section class="hub-sec" data-sec="account" aria-labelledby="hs-account" hidden>
+            <header class="hub-sec-head"><h3 id="hs-account">Account &amp; security</h3><p>Your password, authenticator, passkeys, signed-in devices and API tokens.</p></header>
+            <div class="hub-embed" id="hub-embed-account"></div>
+        </section>
+        <section class="hub-sec" data-sec="look" aria-labelledby="hs-look" hidden>
+            <header class="hub-sec-head"><h3 id="hs-look">Appearance</h3><p>Light or dark, glass or classic, and the colour palette. Kept on this device.</p></header>
+            <div class="sb-theme set-theme" id="sb-theme"></div>
+        </section>
+        </div>
+    </div>
 </div>
 <div class="mscrim" id="mscrim" hidden></div>
 <div class="cmdk-scrim" id="cmdk-scrim" hidden></div>
@@ -3127,6 +3250,8 @@ function render() {
         : w.running ? 'Checking now…'
         : w.next_run ? 'Next check ' + hhmm(w.next_run).split(', ').pop()
         : 'Runs during market hours';
+    $('st-watch').dataset.state = st.watcher !== '1' ? 'off' : w.running ? 'busy' : 'on';
+    sbStatus();
 
     renderRules();
     renderFunnel();
@@ -3342,14 +3467,26 @@ function fmtRule(k, v, tun) {
     return (Number.isInteger(+v) ? v : (+v).toFixed(1)) + ' ' + t.unit;
 }
 
+// The sidebar's Running list: a dot for each (on, off, busy, needs setting up) and a line on what it does now. Intraday's and
+// options' lines and dots come with their own data (renderIntraday, renderOptSidebar), the watcher's with the scan state.
+function sbStatus() {
+    const st = S.settings, tgReady = S.telegram_configured, tgOn = tgReady && st.telegram === '1';
+    $('st-auto').dataset.state = st.auto_scan === '1' ? 'on' : 'off';
+    $('auto-sub').textContent = st.auto_scan === '1' ? `Weekdays at ${st.scan_time}` : 'Off';
+    $('st-news').dataset.state = st.news === '1' ? 'on' : 'off';
+    $('news-sub').textContent = st.news === '1' ? 'Filings and media, every 15 min' : 'Off';
+    const sends = [[true, 'entries'], [st.pattern_alerts === '1', 'patterns'], [st.news_alerts === '1' && st.news === '1', 'filings'],
+        [st.options_alerts === '1', 'option ideas'], [st.options_level_alerts === '1', 'levels']].filter((x) => x[0]).map((x) => x[1]);
+    $('st-tg').dataset.state = !tgReady ? 'warn' : tgOn ? 'on' : 'off';
+    $('tg-sub').textContent = !tgReady ? 'Not set up: open to set up' : !tgOn ? 'Off' : sends.join(', ').replace(/^./, (c) => c.toUpperCase());
+}
+
 function renderRules() {
     const ov = S.rule_overrides || {};
     const changed = Object.keys(ov).length;
     $('rules-summary').textContent = changed ? `Custom · ${changed} changed` : 'Protocol defaults';
     $('rules-summary').title = changed ? `${changed} rule(s) changed from the protocol's defaults` : "The protocol's defaults";
     $('rules-summary').dataset.custom = changed ? '1' : '0';
-    $('rules').innerHTML = (S.tunable_order || Object.keys(S.tunable)).map((k) =>
-        `<dt>${esc(S.tunable[k].label)}</dt><dd${k in ov ? ' style="color:var(--warn)" title="Changed in the tuner"' : ''}>${esc(fmtRule(k, S.rules[k]))}</dd>`).join('');
 }
 
 function funnelKeys(intra) {
@@ -3423,7 +3560,7 @@ function renderSetups() {
     const all = S.candidates;
     if (!all.length) {
         $('setups').innerHTML = `<tr><td colspan="10"><div class="empty"><b>${S.scan ? 'No setups passed every step'
-            : 'Nothing scanned yet'}</b>${S.scan ? 'That is a normal result: the protocol is strict. Click a funnel step to see where stocks dropped out, or try the rule tuner.'
+            : 'Nothing scanned yet'}</b>${S.scan ? 'That is a normal result: the protocol is strict. Click a funnel step to see where stocks dropped out, or <button class="btn-link" type="button" data-settings="swing">try the rule tuner</button>.'
             : 'Run a scan to screen the universe.'}</div></td></tr>`;
         $('setups-meta').textContent = '';
         paged('setups', []);
@@ -3710,7 +3847,7 @@ function openIndicatorSettings() {
         }
         const input = sp.values
             ? `<select data-ind="${k}">${sp.values.map((x) => `<option value="${x}"${String(x) === String(v) ? ' selected' : ''}>${x}${sp.unit ? ' ' + sp.unit : ''}</option>`).join('')}</select>`
-            : `<input type="number" data-ind="${k}" value="${v}" min="${sp.min}" max="${sp.max}" step="${sp.step}">`;
+            : ctlStepper(`data-ind="${k}"`, v, { min: sp.min, max: sp.max, step: sp.step, label: sp.label });
         return `<label class="ind-row"><span><b>${esc(sp.label)}</b><small>default ${sp.default}${sp.unit ? ' ' + sp.unit : ''}</small></span>${input}</label>`;
     };
     openModal('Indicator settings', 'Every chart, on every device', `<div class="ind-form" id="ind-form">
@@ -3757,7 +3894,7 @@ function openIndicatorSettings() {
 }
 
 document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-indset]')) { openIndicatorSettings(); return; }
+    if (e.target.closest('[data-indset]')) { openSettings('charts'); return; }
     const zb = e.target.closest('[data-zoom]');
     if (zb) { zb.dataset.zoom === 'fit' ? zoomReset() : zoomBy(zb.dataset.zoom === 'in' ? 0.7 : 1.4, 1); return; }
     if (e.target.closest('[data-magnet]')) { toggleMagnet(); return; }
@@ -5486,6 +5623,9 @@ function trxSettingsModal() {
         <span class="trs-l">${label}</span>
         <span class="trs-box">${pre ? `<i>${pre}</i>` : ''}<input type="number" step="${step}" min="0" name="${k}" value="${st[k]}" inputmode="decimal">${unit ? `<i>${unit}</i>` : ''}</span>
         ${help ? `<small>${help}</small>` : ''}</label>`;
+    // A count: a stepper inside its limits (execution.LIMITS).
+    const cnt = (k, label, help, min, max, when) => `<label class="trs-f"${when ? ` data-when="${when}"` : ''}><span class="trs-l">${label}</span>
+        ${ctlStepper(`name="${k}"`, st[k], { min, max, label })}${help ? `<small>${help}</small>` : ''}</label>`;
     const group = (title, sub, body) => `<section class="trs-g"><header><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</header><div class="trs-grid">${body}</div></section>`;
     openModal('Live trading settings', 'How each order is sized, and the limits that stop new ones', `<div id="trs-form" class="trs">
         ${group('Sizing', 'What each order is worth', `
@@ -5495,22 +5635,18 @@ function trxSettingsModal() {
                     <button type="button" data-sz="risk" aria-pressed="${st.sizing !== 'lots'}">By risk</button>
                     <button type="button" data-sz="lots" aria-pressed="${st.sizing === 'lots'}">Fixed lots</button></div>
                 <small id="trs-sz-help"></small></div>
-            <label class="trs-f" data-when="lots"><span class="trs-l">Lots a trade</span>
-                <span class="trs-step"><button type="button" data-step="-1" aria-label="One lot fewer">−</button>
-                    <input type="number" step="1" min="1" max="100" name="lots" value="${st.lots}" inputmode="numeric">
-                    <button type="button" data-step="1" aria-label="One lot more">+</button></span>
-                <small>Options and stock futures in exchange lots; shares one at a time</small></label>
+            ${cnt('lots', 'Lots a trade', 'Options and stock futures in exchange lots; shares one at a time', 1, 100, 'lots')}
             ${fld('risk_pct', 'Risk a trade', 0.05, '% of capital', 'Between entry and stop', 'risk')}
             ${fld('max_alloc_pct', 'Most in one position', 1, '% of capital', 'Value or margin it may tie up', 'risk')}`)}
         ${group('Limits', 'Reaching one stops new orders', `
             ${fld('max_trade_loss', 'Most a trade may risk', 500, '', 'Bigger orders are not sent', '', '₹')}
             ${fld('daily_loss_pct', "Day's loss that halts all", 0.1, '% of capital', 'Closed and open together')}
-            ${fld('max_open', 'Positions open at once', 1, '', 'All modes together')}
-            ${fld('max_per_day', 'New entries a day', 1, '', 'All modes together')}`)}
+            ${cnt('max_open', 'Positions open at once', 'All modes together', 1, 50)}
+            ${cnt('max_per_day', 'New entries a day', 'All modes together', 1, 100)}`)}
         ${group('Orders', 'How an entry is placed', `
             ${fld('buffer_bps', 'Entry limit past the alert', 1, 'bps', '10 bps = 0.1 %; never a market order')}
             ${fld('max_drift_pct', 'Skip if the price ran past entry', 0.05, '%', 'Toward the target, before sending')}
-            ${fld('offer_minutes', 'An offer lapses after', 1, 'min', 'Confirm each: time to press Place')}
+            ${cnt('offer_minutes', 'An offer lapses after (minutes)', 'Confirm each: time to press Place', 1, 60)}
             <div class="trs-f"><span class="trs-l">Swing shorts live</span>
                 <span class="trs-sw"><button class="switch" type="button" role="switch" id="trs-shorts" aria-checked="${!!st.shorts}" aria-label="Swing shorts live"></button>
                     <span>Stock futures (MARGIN)</span></span></div>`)}
@@ -5530,9 +5666,8 @@ function trxSettingsModal() {
     };
     showSizing();
     F.addEventListener('click', (e) => {
-        const z = e.target.closest('[data-sz]'), st1 = e.target.closest('[data-step]'), sw = e.target.closest('#trs-shorts');
+        const z = e.target.closest('[data-sz]'), sw = e.target.closest('#trs-shorts');
         if (z) { sizing = z.dataset.sz; showSizing(); }
-        else if (st1) { const i = F.querySelector('[name="lots"]'); i.value = Math.min(100, Math.max(1, (+i.value || 1) + +st1.dataset.step)); }
         else if (sw) sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
     });
     $('trs-cancel').addEventListener('click', closeModal);
@@ -5562,7 +5697,7 @@ document.getElementById('trade-view').addEventListener('click', async (e) => {
     } else if (dm) {
         trxPost(`/api/exec/offer/${dm.dataset.trd}`, { action: 'dismiss' }, 'Dismissed');
     } else if (x && x.dataset.trx === 'settings') {
-        trxSettingsModal();
+        openSettings('trade');
     } else if (x && x.dataset.trx === 'resume') {
         if (await ask({ title: 'Resume live trading?', ok: 'Resume', body: 'New trades are offered and sent again at each mode\'s level.' }))
             trxPost('/api/exec/resume', {}, 'Resumed', true);
@@ -5918,6 +6053,10 @@ async function appSettingsModal(focus) {
     const field = (k, label, input) => `<label class="apps-f"><span class="apps-l">${label}</span>${input}</label>`;
     const secret = (k, ph) => `<input type="password" data-apps="${k}" autocomplete="new-password" spellcheck="false" placeholder="${F[k].set ? 'Saved · type to replace' : ph}">`;
     const text = (k, ph, mode) => `<input type="text" data-apps="${k}" value="${esc(F[k].value)}" autocomplete="off" spellcheck="false" placeholder="${ph}"${mode ? ` inputmode="${mode}"` : ''}>`;
+    // A time and a date as pickers, held to what the server accepts (config.CLOCKS); a delay as a stepper of seconds.
+    const clock = (k, lo, hi) => `<input type="time" data-apps="${k}" value="${esc(F[k].value)}" min="${lo}" max="${hi}" step="60">`;
+    const day = (k) => `<input type="date" data-apps="${k}" value="${esc(F[k].value)}" min="2024-01-01">`;
+    const secs = (k, max) => ctlStepper(`data-apps="${k}"`, F[k].value, { min: 0, max, step: 5, label: names[k] });
     const sel = (k, opts) => `<select data-apps="${k}">${opts.map(([v, l]) => `<option value="${v}"${F[k].value === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
     const status = (ok, msg) => `<p class="apps-status" data-ok="${ok ? 1 : 0}"><i></i>${msg}</p>`;
     // One quiet line per tab: which values come from .env, and a way back to .env for any saved here.
@@ -5951,16 +6090,17 @@ async function appSettingsModal(focus) {
             ${foot(['dhan_client_id', 'dhan_pin', 'dhan_totp'])}</div>
         <div class="apps-pane" data-pane="data" hidden>
             ${field('data_source', 'Price data', sel('data_source', [['auto', 'Dhan when connected'], ['yfinance', 'yfinance only']]))}
-            ${field('live_watch_delay', 'Wait after a candle, with Dhan (seconds)', text('live_watch_delay', '10', 'numeric'))}
-            ${field('watch_delay', 'Wait after a candle, with yfinance (seconds)', text('watch_delay', '90', 'numeric'))}
+            ${field('live_watch_delay', 'Wait after a candle, with Dhan (seconds)', secs('live_watch_delay', 120))}
+            ${field('watch_delay', 'Wait after a candle, with yfinance (seconds)', secs('watch_delay', 600))}
+            <p class="apps-foot">How long the watcher waits after a 15-minute candle closes before reading it, so the candle is complete at the source.</p>
             ${foot(['data_source', 'live_watch_delay', 'watch_delay'])}</div>
         <div class="apps-pane" data-pane="session" hidden>
-            ${field('intraday_square_off', 'Intraday square-off', text('intraday_square_off', '15:10', 'numeric'))}
+            ${field('intraday_square_off', 'Intraday square-off', clock('intraday_square_off', '09:30', '15:30'))}
             <p class="apps-foot">Dhan squares off intraday equity at 15:10. An F&amp;O stock is never squared off after its trading ends (below).</p>
-            ${field('nse_cts_end_fo', 'F&amp;O stocks stop trading at', text('nse_cts_end_fo', '15:15', 'numeric'))}
-            ${field('nse_closes_final', 'Official closes are out by', text('nse_closes_final', '15:45', 'numeric'))}
-            ${field('nse_fo_close', 'F&amp;O segment closes at', text('nse_fo_close', '15:40', 'numeric'))}
-            ${field('nse_cas_start', 'Closing auction began on', text('nse_cas_start', '2026-08-03'))}
+            ${field('nse_cts_end_fo', 'F&amp;O stocks stop trading at', clock('nse_cts_end_fo', '14:00', '15:30'))}
+            ${field('nse_closes_final', 'Official closes are out by', clock('nse_closes_final', '15:30', '17:00'))}
+            ${field('nse_fo_close', 'F&amp;O segment closes at', clock('nse_fo_close', '15:15', '16:00'))}
+            ${field('nse_cas_start', 'Closing auction began on', day('nse_cas_start'))}
             <p class="apps-foot">Since the closing auction, a stock with F&amp;O stops continuous trading at 15:15 and closes in an auction;
             the rest trade to 15:30. SEBI may move these times again: set them here and they apply within seconds, no restart.
             Days before the auction's first day keep one 15:30 close for every stock.</p>
@@ -5971,7 +6111,7 @@ async function appSettingsModal(focus) {
             <details class="apps-more"><summary>What still lives in .env</summary>
                 <p><code>NIFTYWHALE_SCHEDULER</code>, <code>PORT</code>, <code>DB_PATH</code>, <code>UNIVERSE_PATH</code> and <code>TZ</code>: the app
                 runs on them, so they are set in docker-compose. Rule thresholds (<code>SMC_*</code>, <code>INTRADAY_*</code>) are set with the
-                sidebar's <b>Tune…</b> buttons, which also replace .env. The intraday start and entry cutoff
+                tuners in Settings (Swing scan, Intraday), which also replace .env. The intraday start and entry cutoff
                 (<code>INTRADAY_START</code>, <code>INTRADAY_NO_ENTRY_AFTER</code>) stay in .env.</p></details></div>
         <div class="sch-err" id="apps-err" hidden></div>
         <div class="apps-actions"><button class="btn btn-primary" type="button" id="apps-save">Save</button></div></div>`);
@@ -6010,7 +6150,7 @@ async function appSettingsModal(focus) {
 }
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-appset]');
-    if (b) { e.preventDefault(); appSettingsModal(b.dataset.appset || null); }
+    if (b) { e.preventDefault(); openSettings('app', b.dataset.appset || null); }
 });
 
 /* ------------------------------------------------------------- Account & security */
@@ -6176,7 +6316,7 @@ async function accountModal(tab) {
 }
 document.addEventListener('click', async (e) => {
     const a = e.target.closest('[data-account]');
-    if (a) { e.preventDefault(); accountModal(a.dataset.account || null); return; }
+    if (a) { e.preventDefault(); openSettings('account', a.dataset.account || null); return; }
     if (e.target.closest('[data-signout]')) {
         e.preventDefault();
         try { await api('/api/auth/logout', {}); } catch (er) { /* signed out anyway */ }
@@ -6642,7 +6782,7 @@ window.addEventListener('storage', (e) => { if (e.key === 'nw.money.hidden') set
 /* ------------------------------------------------------------- theme */
 // The engine is static/theme.js (loaded first in <head>); here, its switches: the top bar's button with a
 // Light / System / Dark menu and a Glass / Classic one under it (every screen size), and the same in the
-// sidebar's App section.
+// Settings, under Appearance.
 $('tm-menu').appendChild(NWTheme.control({ vertical: true }));
 $('tm-menu').insertAdjacentHTML('beforeend', '<div class="tm-head">Style</div>');
 $('tm-menu').appendChild(NWTheme.styleControl({ vertical: true }));
@@ -7068,13 +7208,14 @@ function renderDemoTotals() {
         const of = (s) => rows.filter((p) => p.mode === m && p.status === s), c = of('closed'), o = of('open');
         return { closed: c.length, wins: c.filter((p) => (p.net || 0) > 0).length, net: sum(c, (p) => (p.net || 0) - less(p)),
                  charges: sum(c, (p) => p.charges || 0), open: o.length, unreal: sum(o, (p) => (p.unreal || 0) - less(p)),
-                 skipped: of('skipped').length };
+                 skipped: of('skipped').length, used: sum([...c, ...o], (p) => p.margin || 0) };
     };
     $('dm-modes').innerHTML = ['swing', 'intraday', 'options'].map((m) => {
         const x = byMode(m), on = d.settings[m];
         return `<tr class="clickable dmc-pick" data-dmcm="${m}" aria-selected="${dmcState().mode === m}" title="Chart ${MODE_NAME[m]} alone (click again for all)">
             <td><b>${MODE_NAME[m]}</b>${on ? '' : ' <span class="muted">· off</span>'}</td>
             <td class="r num">${x.closed || 0}<span class="muted"> · ${x.closed ? Math.round(100 * x.wins / x.closed) + '%' : '—'}</span></td>
+            <td class="r num">${rs(x.used || 0)}</td>
             <td class="r num">${rsSigned(x.net || 0)}</td><td class="r num">${rs(x.charges || 0)}</td>
             <td class="r num">${x.open || 0}${x.open ? ` <span class="muted">·</span> ${rsSigned(x.unreal || 0)}` : ''}</td>
             <td class="r num">${x.skipped || 0}</td></tr>`;
@@ -7182,6 +7323,9 @@ function demoSettingsModal() {
     const sw = (k, label, help) => `<div class="trs-f"><span class="trs-l">${label}</span>
         <span class="trs-sw"><button class="switch" type="button" role="switch" data-sw="${k}" aria-checked="${!!st[k]}" aria-label="${label}"></button>
             <span>${help}</span></span></div>`;
+    // A count: a stepper inside its limits (demo.LIMITS).
+    const cnt = (k, label, help, min, max, when) => `<label class="trs-f"${when ? ` data-when="${when}"` : ''}><span class="trs-l">${label}</span>
+        ${ctlStepper(`name="${k}"`, st[k] ?? min, { min, max, label })}${help ? `<small>${help}</small>` : ''}</label>`;
     const group = (title, sub, body) => `<section class="trs-g"><header><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</header><div class="trs-grid">${body}</div></section>`;
     openModal('Demo funds settings', 'How each trade is sized and costed, and the limits that stop new ones', `<div id="dms-form" class="trs">
         ${group('Sizing', 'What each trade is worth', `
@@ -7190,19 +7334,15 @@ function demoSettingsModal() {
                     <button type="button" data-sz="risk" aria-pressed="${st.sizing !== 'lots'}">By risk</button>
                     <button type="button" data-sz="lots" aria-pressed="${st.sizing === 'lots'}">Fixed lots</button></div>
                 <small id="dms-sz-help"></small></div>
-            <label class="trs-f" data-when="lots"><span class="trs-l">Lots a trade</span>
-                <span class="trs-step"><button type="button" data-step="-1" aria-label="One lot fewer">−</button>
-                    <input type="number" step="1" min="1" max="100" name="lots" value="${st.lots || 1}" inputmode="numeric">
-                    <button type="button" data-step="1" aria-label="One lot more">+</button></span>
-                <small>Options and stock futures in exchange lots; shares one at a time</small></label>
+            ${cnt('lots', 'Lots a trade', 'Options and stock futures in exchange lots; shares one at a time', 1, 100, 'lots')}
             ${fld('risk_pct', 'Risk a trade', 0.1, '% of balance', 'Lost if the stop is hit', 'risk')}
             ${fld('max_alloc_pct', 'Most in one position', 1, '% of balance', 'Value, margin or premium it may tie up', 'risk')}`)}
         ${group('Margins', 'What a position ties up', `
             ${fld('intraday_leverage', 'Intraday leverage', 0.5, '×', 'MIS: margin = value ÷ this')}
             ${fld('futures_margin_pct', 'Futures margin', 1, '% of value', 'Approx. SPAN + exposure')}`)}
         ${group('Limits', 'Reaching one stops new trades', `
-            ${fld('max_open', 'Positions open at once', 1, '', 'All modes together · 0 = no limit')}
-            ${fld('max_per_day', 'New entries a day', 1, '', 'All modes together · 0 = no limit')}`)}
+            ${cnt('max_open', 'Positions open at once', 'All modes together · 0 = no limit', 0, 200)}
+            ${cnt('max_per_day', 'New entries a day', 'All modes together · 0 = no limit', 0, 500)}`)}
         ${group('Trades taken', 'Which modes the account mirrors', `
             ${sw('swing', 'Swing', 'Delivery shares; shorts as stock futures')}
             ${sw('intraday', 'Intraday', 'Intraday shares, long or short')}
@@ -7221,9 +7361,8 @@ function demoSettingsModal() {
     };
     showSizing();
     F.addEventListener('click', (e) => {
-        const z = e.target.closest('[data-sz]'), st1 = e.target.closest('[data-step]'), s1 = e.target.closest('[data-sw]');
+        const z = e.target.closest('[data-sz]'), s1 = e.target.closest('[data-sw]');
         if (z) { sizing = z.dataset.sz; showSizing(); }
-        else if (st1) { const i = F.querySelector('[name="lots"]'); i.value = Math.min(100, Math.max(1, (+i.value || 1) + +st1.dataset.step)); }
         else if (s1) s1.setAttribute('aria-checked', String(s1.getAttribute('aria-checked') !== 'true'));
     });
     $('dms-cancel').addEventListener('click', closeModal);
@@ -7267,7 +7406,7 @@ $('demo-view').addEventListener('click', async (e) => {
     if (b) {
         const k = b.dataset.dm;
         if (k === 'deposit' || k === 'withdraw') demoFundsModal(k);
-        else if (k === 'settings') demoSettingsModal();
+        else if (k === 'settings') openSettings('demo');
         else if (k === 'reset') demoResetModal();
         return;
     }
@@ -7393,13 +7532,13 @@ function renderIntraday() {
     $('sw-intra').setAttribute('aria-checked', String(st.intraday === '1'));
     $('sw-ishorts').setAttribute('aria-checked', String(st.intraday_shorts === '1'));
     const iov = Object.keys(I.rule_overrides || {}).length;
-    $('i-rules-summary').textContent = iov ? `Rules (${iov})` : 'Rules';
-    $('i-tune-btn').title = iov ? `Intraday rules: ${iov} changed from the defaults` : 'Intraday rules: the defaults';
+    $('i-rules-summary').textContent = iov ? `${iov} changed from the defaults` : 'The defaults';
     $('i-rules-summary').dataset.custom = iov ? '1' : '0';
     $('i-scan-btn').disabled = s.scanning;
     $('i-scan-btn').textContent = s.scanning ? `Scanning ${s.done}/${s.total}…` : 'Scan now';
     $('intra-sub').textContent = st.intraday !== '1' ? 'Off' : s.scanning ? '15m scan running…'
         : s.next_scan ? 'Next scan ' + tm(s.next_scan) : I.phase.label;
+    $('st-intra').dataset.state = st.intraday !== '1' ? 'off' : s.scanning ? 'busy' : 'on';
 
     // The tab's count, as Swing's: open paper trades when there are any (not those the demo account skipped), else
     // the zones being watched.
@@ -7444,7 +7583,7 @@ function renderIntraday() {
             <td class="note">${esc(z.note || 'not checked yet')}${z.last_checked ? `<br><span class="muted">${tm(z.last_checked)}</span>` : ''}</td>
             <td>${['watching', 'tapped'].includes(z.status) ? `<button class="btn-link" data-idismiss="${z.id}" type="button">Dismiss</button>` : ''}</td></tr>`;
     }).join('') : `<tr><td colspan="8"><div class="empty"><b>No zones today</b>${st.intraday !== '1'
-        ? 'Intraday mode is off — switch it on in the sidebar.'
+        ? 'Intraday mode is off: switch it on in Settings → Intraday.'
         : `From ${r.start} each 15m scan turns its setups into zones, watched on 5m candles until ${r.no_entry_after}.`}</div></td></tr>`;
 
     // funnel + setups
@@ -7697,14 +7836,14 @@ function renderOptSidebar() {
     $('opt-sub').textContent = st.options !== '1' ? 'Off' : !live ? 'Needs Dhan (real-time data)'
         : os.running ? `Fetching ${os.done}/${os.total}…` : os.next_run ? 'Next pass ' + tm(os.next_run)
         : os.last_run ? 'Last pass ' + hhmm(os.last_run) : 'Runs during market hours';
+    $('st-opt').dataset.state = st.options !== '1' ? 'off' : !live ? 'warn' : os.running ? 'busy' : 'on';
     $('o-refresh-btn').disabled = !!os.running || !live;
     const nStocks = (st.options_stocks || '').trim() ? st.options_stocks.trim().split(/\s+/).length : 30;
     $('o-stocks-summary').textContent = `5 indices + ${nStocks} stocks`;
     let ov = {};
     try { ov = JSON.parse(st.options_rules || '{}'); } catch (e) { ov = {}; }
     const n = Object.keys(ov).length;
-    $('o-rules-summary').textContent = n ? `Rules (${n})` : 'Rules';
-    $('o-tune-btn').title = n ? `Idea rules: ${n} changed from the defaults` : 'Idea rules: the defaults';
+    $('o-rules-summary').textContent = n ? `${n} changed from the defaults` : 'The defaults';
     $('o-rules-summary').dataset.custom = n ? '1' : '0';
     const open = (S.options && S.options.open) || 0;
     $('opt-badge').textContent = open ? `${open} open` : '';
@@ -7796,8 +7935,10 @@ function renderOptions() {
         return `<tr data-oc-sym="${esc(i.symbol)}" data-click data-ref="options:${i.id}" title="${esc(i.reason || '')}">
             <td class="num">${hhmm(i.created_at)}</td>
             <td><span class="sym">${esc(i.symbol)} ${kfmt(i.strike)} ${esc(i.side)}</span>${sideTag(i.direction)}<span class="sub">${expLabel(i.expiry)} expiry${i.lot ? ' · lot ' + i.lot : ''}</span></td>
-            <td class="r num">${px(i.entry)}</td><td class="r num">${px(i.stop)}</td><td class="r num">${px(i.target)}</td>
-            <td>${tradeChip(i.status, i.status === 'open' ? 'open' : i.note || i.status, i.skipped)}${
+            <td class="r num">${px(i.entry)}</td>
+            <td class="r num">${i.trail != null ? `${px(i.trail)}<span class="sub" title="Best premium ${px(i.peak)}">trailing ${+i.trail_pct}%</span>` : px(i.stop)}</td>
+            <td class="r num">${px(i.target)}${i.trail_pct ? `<span class="sub">${i.trail != null ? 'reached' : 'then trail'}</span>` : ''}</td>
+            <td>${tradeChip(i.status, i.status === 'open' ? (i.trail != null ? 'trailing' : 'open') : i.note || i.status, i.skipped)}${
                 i.status === 'open' && !i.skipped ? sqBtn('paper', `options:${i.id}`, `${i.symbol} ${kfmt(i.strike)} ${i.side}`) : ''}</td>
             <td class="r num">${i.exit != null ? px(i.exit) + ' <span class="muted">' + tm(i.exit_time) + '</span>' : i.last != null ? (i.status === 'open' ? sparkCell(`options:${i.id}`) : '') + '<span class="muted">now ' + (i.lp ? `<span data-lp="${esc(i.lp)}" data-v="${i.last}">${px(i.last)}</span>` : px(i.last)) + '</span>' : '—'}</td>
             <td class="r num">${i.lp ? lpR(i.lp, i, 'long', rfmt(rr)) : rfmt(rr)}</td>
@@ -7805,7 +7946,7 @@ function renderOptions() {
     }).join('') : SK.length ? `<tr><td colspan="9"><div class="empty"><b>No ideas taken</b>Every idea so far was skipped by the demo account: they are in Skipped, above.</div></td></tr>`
         : `<tr><td colspan="9"><div class="empty"><b>No ideas yet</b>Between ${r.start} and ${r.no_entry_after}, when near-the-money
         writing leans clearly one way (bias ±${r.min_bias}), the underlying agrees over 30 minutes and the PCR has not turned against it,
-        an at-the-money option buy is suggested here and followed to its target (+${r.target_pct}%), stop (−${r.stop_pct}%) or the ${r.square_off} square-off.</div></td></tr>`;
+        an at-the-money option buy is suggested here and followed to its target (+${r.target_pct}%${r.trail_pct ? `, then a stop ${r.trail_pct}% under the best premium` : ''}), stop (−${r.stop_pct}%) or the ${r.square_off} square-off.</div></td></tr>`;
 }
 
 /* The chain drawer: headline numbers, OI by strike, the day's lines, the chain table. */
@@ -8047,26 +8188,98 @@ function openOptStocks() {
     });
 }
 
-async function openOptTuner() {
-    if (!O) { try { O = await api('/api/options'); } catch (e) { toast(e.message); return; } }
-    const T = O.tunable;
-    const field = (k) => `<label>${esc(T[k].label)}<input type="number" data-orule="${k}" min="${T[k].min}" max="${T[k].max}"
-        step="${T[k].step}" value="${O.rules[k]}" data-changed="${O.rules[k] !== T[k].default ? 1 : 0}"></label>`;
-    openModal('Option idea rules', `Defaults are a starting point · entries ${O.rules.start}–${O.rules.no_entry_after}, square off ${O.rules.square_off}`, `
-        <div class="otune">${O.tunable_order.map(field).join('')}</div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-            <button class="btn" type="button" id="o-rules-reset">Defaults</button>
-            <button class="btn btn-primary" type="button" id="o-rules-save">Save</button></div>`);
-    document.querySelectorAll('[data-orule]').forEach((el) => el.addEventListener('input', () => {
-        el.dataset.changed = +el.value !== T[el.dataset.orule].default ? '1' : '0';
-    }));
-    $('o-rules-reset').addEventListener('click', () => document.querySelectorAll('[data-orule]').forEach((el) => {
-        el.value = T[el.dataset.orule].default; el.dataset.changed = '0';
-    }));
+// The option idea rules as controls: a slider for a range, chips for a few choices (Off first), a switch for on/off, a
+// stepper for a count and a clock for the last entry. A card turns amber when it differs from the saved rule, with a
+// button to put it back; Defaults only fills the defaults in, and nothing is saved until Save.
+const OPT_GROUPS = [['Signal', ['min_bias', 'min_move_pct', 'max_iv_pct', 'max_spread_pct']], ['Exits', ['stop_pct', 'target_pct', 'trail_pct']],
+    ['Market and timing', ['market_band_pct', 'last_entry_hour', 'one_direction', 'max_per_day']]];
+const OPT_HELP = {
+    min_bias: 'Near-the-money writing since the open: puts written lean bullish, calls written bearish',
+    min_move_pct: "The underlying's move the idea's way over the last 30 minutes",
+    max_iv_pct: 'Skip when at-the-money IV is above this percentile of its history (once 20 days are recorded)',
+    max_spread_pct: "The option's widest bid-ask spread, as a share of its price",
+    stop_pct: 'Exit when the premium falls this far', target_pct: 'Exit when the premium rises this far (with a trail: start trailing)',
+    trail_pct: 'Off: sell at the target. On: the target starts a stop this far under the best premium since, never below halfway to the target, so a big move runs on',
+    market_band_pct: 'Past this distance from its open, only trades on the side Nifty moved to. Inside it the market is flat: both sides',
+    last_entry_hour: 'No new idea after this; open ones run to the square-off',
+    one_direction: 'A stock or index traded one way today is not traded the other way',
+    max_per_day: 'Ideas on one underlying in a day' };
+const clockOf = (h) => { const m = Math.round(h * 60); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+const OPT_FMT = { min_bias: (v) => (+v).toFixed(2), max_iv_pct: (v) => `${+v}th pct`, max_per_day: (v) => `${+v} a day`,
+    market_band_pct: (v) => `±${+v}%`, last_entry_hour: clockOf, one_direction: (v) => (+v ? 'On' : 'Off') };
+const optFmt = (k, v) => { const t = O.tunable[k]; return t.off != null && +v === +t.off ? 'Off' : (OPT_FMT[k] || ((x) => `${+x}%`))(v); };
+const optKind = (k, t) => t.values ? 'chips' : t.min === 0 && t.max === 1 && t.step === 1 ? 'switch'
+    : k.endsWith('_hour') ? 'clock' : Number.isInteger(t.default) ? 'stepper' : 'slider';
+let optVals = {};
+
+function optCard(k) {
+    const t = O.tunable[k], v = optVals[k], saved = O.rules[k], kind = optKind(k, t), ch = +v !== +saved;
+    let ctl;
+    if (kind === 'chips') {
+        const vals = t.off != null ? [t.off, ...t.values.filter((x) => +x !== +t.off)] : t.values;
+        if (!vals.some((x) => +x === +v)) vals.push(v);          // a value set by hand off the grid stays choosable
+        ctl = `<div class="knob-chips" role="group" aria-label="${esc(t.label)}">${vals.map((x) => `<button type="button" data-oc="${k}" data-v="${x}"
+            aria-pressed="${+x === +v}"${+x === +saved ? ' data-saved="1" title="Saved"' : ''}>${esc(optFmt(k, x))}</button>`).join('')}</div>`;
+    } else if (kind === 'switch') {
+        ctl = ctlSwitch(`data-osw="${k}"`, +v, t.label);
+    } else if (kind === 'stepper') {
+        ctl = ctlStepper(`data-orule="${k}"`, v, { min: t.min, max: t.max, step: t.step, label: t.label });
+    } else {
+        const pos = Math.max(0, Math.min(100, (saved - t.min) / ((t.max - t.min) || 1) * 100));
+        ctl = `<div class="knob-track"><input type="range" id="ok-in-${k}" data-orule="${k}" min="${t.min}" max="${t.max}" step="${t.step}" value="${v}">
+            <i class="knob-saved" style="left:${pos}%" title="Saved: ${esc(optFmt(k, saved))}"></i></div>
+            <div class="knob-range"><span>${esc(optFmt(k, t.min))}</span><span>${esc(optFmt(k, t.max))}</span></div>`;
+    }
+    return `<div class="knob" id="ok-${k}" data-changed="${ch ? 1 : 0}"><div class="knob-top"><label${kind === 'slider' || kind === 'clock' ? ` for="ok-in-${k}"` : ''}>${esc(t.label)}</label>
+        <span class="knob-val" id="okv-${k}" data-off="${t.off != null && +v === +t.off ? 1 : 0}">${esc(optFmt(k, v))}</span></div>${ctl}
+        <small>${esc(OPT_HELP[k] || '')}</small><button class="knob-reset" type="button" data-oreset="${k}"${ch ? '' : ' hidden'}>Back to ${esc(optFmt(k, saved))}</button></div>`;
+}
+
+function optCount() {
+    const n = Object.keys(O.tunable).filter((k) => +optVals[k] !== +O.rules[k]).length;
+    $('otune-n').innerHTML = n ? `<b>${n}</b> change${n === 1 ? '' : 's'} not saved yet` : 'Your saved rules';
+}
+
+// One rule changed. A slider keeps its grip (only the value and the card's state change); anything else redraws its card.
+function optSet(k, v, redraw) {
+    optVals[k] = v;
+    if (redraw) $('ok-' + k).outerHTML = optCard(k);
+    else {
+        const t = O.tunable[k], el = $('okv-' + k), card = $('ok-' + k), ch = +v !== +O.rules[k];
+        el.textContent = optFmt(k, v);
+        el.dataset.off = t.off != null && +v === +t.off ? '1' : '0';
+        card.dataset.changed = ch ? '1' : '0';
+        card.querySelector('[data-oreset]').hidden = !ch;
+    }
+    optCount();
+}
+
+// Settings → Options draws the rules into `host` (fresh from the server each time, so a save shows what is now in force).
+async function renderOptRules(host) {
+    try { O = await api('/api/options'); } catch (e) { host.innerHTML = `<p class="hub-loading">Could not load the rules: ${esc(e.message)}</p>`; return; }
+    if (!host.isConnected || HUB.sec !== 'options') return;
+    optVals = Object.fromEntries(Object.keys(O.tunable).map((k) => [k, O.rules[k]]));
+    const placed = OPT_GROUPS.flatMap((g) => g[1]), rest = O.tunable_order.filter((k) => !placed.includes(k));
+    const groups = [...OPT_GROUPS, ['Other', rest]].map(([name, ks]) => [name, ks.filter((k) => O.tunable[k])]).filter((g) => g[1].length);
+    host.innerHTML = `<div class="otune" id="otune">${groups.map(([name, ks]) => `<div class="tz-group"><h3>${esc(name)}</h3>
+            <div class="tz-cards">${ks.map(optCard).join('')}</div></div>`).join('')}</div>
+        <div class="otune-bar"><span class="muted" id="otune-n"></span>
+            <button class="btn" type="button" id="o-rules-reset" title="Fill in the defaults (not saved until Save)">Defaults</button>
+            <button class="btn btn-primary" type="button" id="o-rules-save">Save rules</button></div>
+        <p class="hint">Entries from ${O.rules.start}; everything still open is squared off at ${O.rules.square_off}.</p>`;
+    host.querySelectorAll('[data-stepper]').forEach(stepperEnds);
+    optCount();
+    const box = $('otune');
+    box.addEventListener('input', (e) => { const k = e.target.dataset.orule; if (k) optSet(k, +e.target.value, false); });
+    box.addEventListener('change', (e) => { const sw = e.target.closest('[data-osw]'); if (sw) optSet(sw.dataset.osw, sw.getAttribute('aria-checked') === 'true' ? 1 : 0, false); });
+    box.addEventListener('click', (e) => {
+        const c = e.target.closest('[data-oc]'), r = e.target.closest('[data-oreset]');
+        if (c) optSet(c.dataset.oc, +c.dataset.v, true);
+        else if (r) optSet(r.dataset.oreset, O.rules[r.dataset.oreset], true);
+    });
+    $('o-rules-reset').addEventListener('click', () => Object.keys(O.tunable).forEach((k) => optSet(k, O.tunable[k].default, true)));
     $('o-rules-save').addEventListener('click', async () => {
-        const body = {};
-        document.querySelectorAll('[data-orule]').forEach((el) => { if (el.value !== '') body[el.dataset.orule] = +el.value; });
-        try { await api('/api/options/rules', body); closeModal(); toast('Idea rules saved'); refresh(); loadOptions(); }
+        try { await api('/api/options/rules', optVals); toast('Idea rules saved'); refresh(); loadOptions(); renderOptRules(host); }
         catch (e) { toast(e.message); }
     });
 }
@@ -8087,7 +8300,6 @@ $('sw-optlv').addEventListener('click', () => {
     saveSetting('options_level_alerts', on);
 });
 $('o-stocks-btn').addEventListener('click', openOptStocks);
-$('o-tune-btn').addEventListener('click', openOptTuner);
 $('o-refresh-btn').addEventListener('click', async () => {
     try { await api('/api/options/refresh', {}); toast('Fetching every option chain — about a minute'); setMode('options'); }
     catch (e) { toast(e.message); }
@@ -8303,7 +8515,8 @@ const MODE_LABEL = { swing: 'Swing', intraday: 'Intraday', options: 'Options' };
 const sgnR = (v, d = 2) => v == null ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + 'R';
 const PARAM_LABEL = { min_avg_volume: 'Min volume', min_atr_pct: 'Min ATR %', max_discount: 'Discount ≤', pre_min_rr: 'Provisional R:R',
     min_rr: 'Final R:R', min_bias: 'Min OI bias', min_move_pct: 'Min 30-min move %', max_iv_pct: 'Max IV pct',
-    max_spread_pct: 'Max spread %', stop_pct: 'Stop %', target_pct: 'Target %',
+    max_spread_pct: 'Max spread %', stop_pct: 'Stop %', target_pct: 'Target %', trail_pct: 'Trail after target %',
+    market_band_pct: 'Nifty band %', last_entry_hour: 'Last entry hour', one_direction: 'One direction a day',
     max_market_run: 'Max Nifty 20-day run %', min_zone_age: 'Min zone age (days)', max_rr: 'Max R:R',
     min_breadth: 'Min breadth %', weekly_align: 'Weekly trend agrees', min_rs_nifty: 'Min strength vs Nifty',
     min_rs_sector: 'Min strength vs sector', min_choch_rvol: 'Min CHoCH volume ×', min_close_loc: 'Min CHoCH close',
@@ -8890,36 +9103,193 @@ $('perf-view').addEventListener('change', (e) => {
     loadPerf();
 });
 
+// Autopilot settings: what it may do (one policy for every mode), then per mode its safety nets and the range it may set each
+// rule in. Edits are a draft across all three modes, so switching mode keeps them; Save sends the lot.
+const AP_LEVELS = [['off', 'Off', 'No tuning, shadow runs, rollbacks or pauses'],
+    ['approve', 'Ask me first', 'A change waits for you to apply it (Telegram and the Performance tab)'],
+    ['auto', 'By itself', 'A change that passes its shadow run is applied']];
+const POL = { draft: null, mode: 'swing' };
+
+// The values a rule's limit can sit on, lowest first: its grid, else its range in tuner steps.
+function limVals(sp) {
+    if (sp.values) return [...new Set(sp.values.map(Number))].sort((x, y) => x - y);
+    const dp = (String(sp.step).split('.')[1] || '').length, n = Math.round((sp.max - sp.min) / sp.step);
+    return Array.from({ length: n + 1 }, (_, i) => +(sp.min + i * sp.step).toFixed(dp));
+}
+const limBinary = (vals) => vals.length === 2 && vals[0] === 0 && vals[1] === 1;
+const limIdx = (vals, v) => vals.reduce((best, x, i) => Math.abs(x - v) < Math.abs(vals[best] - v) ? i : best, 0);
+function limFmt(k, sp, v) {
+    if (v == null) return '—';
+    if (sp.off != null && +v === +sp.off) return 'Off';
+    const u = sp.unit || '';
+    if (k === 'last_entry_hour') return clockOf(v);
+    if (k === 'min_avg_volume') return lakh(v);
+    if (k === 'max_iv_pct') return `${+v}th pct`;
+    if (k === 'min_bias') return (+v).toFixed(2);
+    if (k === 'market_band_pct') return `±${+v}%`;
+    if (k === 'oi_align') return `Level ${+v}`;
+    if (limBinary(limVals(sp))) return +v ? 'On' : 'Off';
+    if (u === '%' || k.endsWith('_pct')) return `${+v}%`;
+    if (u === ': 1') return `1:${+v}`;
+    if (u === 'days') return `${+v} day${+v === 1 ? '' : 's'}`;
+    if (u === '× usual') return `${+v}×`;
+    return String(+v);
+}
+function polDraft() {
+    const p = LAB.policy, d = { mode: p.mode, max_steps: p.max_steps, shadow_days: p.shadow_days, cooldown_days: p.cooldown_days,
+        pause_r: { ...p.pause_r }, rollback_r: { ...p.rollback_r }, limits: {} };
+    for (const m of ['swing', 'intraday', 'options']) {
+        d.limits[m] = {};
+        for (const [k, sp] of Object.entries((LAB.modes[m] || {}).specs || {})) {
+            const vals = limVals(sp), l = ((p.limits || {})[m] || {})[k];
+            d.limits[m][k] = l ? [limIdx(vals, l[0]), limIdx(vals, l[1])] : [0, vals.length - 1];
+        }
+    }
+    return d;
+}
+// How many settings differ from the saved policy.
+function polChanges() {
+    const d = POL.draft, saved = polDraft();
+    let n = ['mode', 'max_steps', 'shadow_days', 'cooldown_days'].filter((k) => d[k] !== saved[k]).length;
+    for (const m of Object.keys(d.limits)) {
+        n += +(d.pause_r[m] !== saved.pause_r[m]) + +(d.rollback_r[m] !== saved.rollback_r[m]);
+        n += Object.keys(d.limits[m]).filter((k) => d.limits[m][k].join() !== saved.limits[m][k].join()).length;
+    }
+    return n;
+}
+function apRow(label, help, ctl) {
+    return `<div class="ap-row"><div class="ap-lbl"><b>${label}</b>${help ? `<small>${help}</small>` : ''}</div>${ctl}</div>`;
+}
+const apNum = (key, v, { min, max, step, unit, label }) =>
+    `<span class="ap-ctl">${ctlStepper(`data-pol="${key}"`, v, { min, max, step, label })}<span class="ap-unit">${unit}</span></span>`;
+
+// One rule's limit: a switch-like choice for an on/off rule, else a slider with two ends over the values it can take.
+function limRow(m, k, sp) {
+    const vals = limVals(sp), [lo, hi] = POL.draft.limits[m][k], now = (LAB.modes[m].current || {})[k];
+    const name = esc(sp.label || PARAM_LABEL[k] || k), help = sp.help || (m === 'options' ? OPT_HELP[k] : '') || '';
+    const nowTxt = now == null ? '' : `Now ${esc(limFmt(k, sp, now))}`;
+    const out = now != null && (now < vals[lo] - 1e-9 || now > vals[hi] + 1e-9);
+    if (limBinary(vals)) {
+        const pick = lo === hi ? (lo ? 'on' : 'off') : 'any';
+        const opts = [['any', 'Its choice', [0, 1]], ['off', 'Keep off', [0, 0]], ['on', 'Keep on', [1, 1]]];
+        return `<div class="lim" id="lim-${k}"><div class="lim-top"><span class="lim-name">${name}</span><span class="lim-now">${nowTxt}</span></div>
+            <div class="knob-chips" role="group" aria-label="${name}">${opts.map(([v, t, r]) =>
+                `<button type="button" data-limb="${k}" data-lo="${r[0]}" data-hi="${r[1]}" aria-pressed="${v === pick}">${t}</button>`).join('')}</div>
+            ${help ? `<small>${esc(help)}</small>` : ''}</div>`;
+    }
+    const last = vals.length - 1, f = (i) => (last ? i / last : 0).toFixed(4);
+    const full = lo === 0 && hi === last;
+    return `<div class="lim" id="lim-${k}"><div class="lim-top"><span class="lim-name">${name}</span>
+            <span class="lim-val" id="limv-${k}" data-full="${full ? 1 : 0}">${full ? 'Any' : `${esc(limFmt(k, sp, vals[lo]))} – ${esc(limFmt(k, sp, vals[hi]))}`}</span></div>
+        <div class="lim-track" style="--a:${f(lo)};--b:${f(hi)}">
+            <input type="range" min="0" max="${last}" step="1" value="${lo}" data-limr="${k}" data-i="0" aria-label="${name}: lowest the autopilot may set"
+                aria-valuetext="${esc(limFmt(k, sp, vals[lo]))}"${lo === last ? ' style="z-index:3"' : ''}>
+            <input type="range" min="0" max="${last}" step="1" value="${hi}" data-limr="${k}" data-i="1" aria-label="${name}: highest the autopilot may set"
+                aria-valuetext="${esc(limFmt(k, sp, vals[hi]))}">
+            ${now != null ? `<i class="lim-mark" style="--n:${f(limIdx(vals, now))}" title="${nowTxt}"></i>` : ''}</div>
+        <div class="knob-range"><span>${esc(limFmt(k, sp, vals[0]))}</span><span class="lim-now" data-out="${out ? 1 : 0}">${nowTxt}${out ? ': outside, the next change moves it in' : ''}</span><span>${esc(limFmt(k, sp, vals[last]))}</span></div>
+        ${help ? `<small>${esc(help)}</small>` : ''}</div>`;
+}
+
+function polModeHtml() {
+    const m = POL.mode, d = POL.draft, specs = (LAB.modes[m] || {}).specs || {}, word = MODE_LABEL[m].toLowerCase();
+    return `<div class="seg small ap-modes" role="group" aria-label="Mode">${['swing', 'intraday', 'options'].map((x) =>
+            `<button type="button" data-apm="${x}" aria-pressed="${x === m}">${MODE_LABEL[x]}</button>`).join('')}</div>
+        <h4 class="ap-h">Safety nets</h4>
+        ${apRow('Pause alerts after losing', `When ${word}'s last ${LAB.policy.pause_window} closed trades lose this much, Telegram entry alerts stop. Trades are still followed on the dashboard.`,
+            apNum('pause_r', d.pause_r[m], { min: 1, max: 50, step: 0.5, unit: 'R', label: 'Pause alerts after losing' }))}
+        ${apRow('Undo a change after losing', 'Puts the previous rules back when trades since a change lose this much and the previous rules would have done better.',
+            apNum('rollback_r', d.rollback_r[m], { min: 1, max: 50, step: 0.5, unit: 'R', label: 'Undo a change after losing' }))}
+        <h4 class="ap-h">Where it may set each rule</h4>
+        <p class="ap-note">Drag the two ends to fence a rule in; the autopilot never sets it outside. The tick is today's value. Any: no fence.</p>
+        <div class="lims">${Object.entries(specs).map(([k, sp]) => limRow(m, k, sp)).join('') || '<p class="muted">No rules to tune in this mode.</p>'}</div>`;
+}
+
 function openPolicy() {
-    const p = LAB.policy, a = LAB.modes[pfMode];
-    const num = (k, label, v, step = 1) => `<label>${label}<input type="number" data-pol="${k}" value="${v}" step="${step}"></label>`;
-    const lim = Object.entries(a.specs).map(([k, sp]) => { const l = ((p.limits || {})[pfMode] || {})[k] || [sp.min, sp.max];
-        return `<div class="pol-lim"><span>${esc(PARAM_LABEL[k] || k)}</span><input type="number" data-lim="${k}" data-i="0" value="${l[0]}" step="${sp.step}">
-            <input type="number" data-lim="${k}" data-i="1" value="${l[1]}" step="${sp.step}"></div>`; }).join('');
-    openModal('Autopilot settings', 'Applies to all three modes; limits are per mode', `<div class="pol-grid" id="pol">
-        <label>Autopilot<select data-pol="mode"><option value="auto"${p.mode === 'auto' ? ' selected' : ''}>On — promote by itself</option>
-            <option value="approve"${p.mode === 'approve' ? ' selected' : ''}>On — wait for my approval</option>
-            <option value="off"${p.mode === 'off' ? ' selected' : ''}>Off</option></select></label>
-        ${num('max_steps', 'Most a threshold may move per change (tuner steps)', p.max_steps)}
-        ${num('shadow_days', 'Shadow run before a change (sessions)', p.shadow_days)}
-        ${num('cooldown_days', 'Days between changes', p.cooldown_days)}
-        ${num('pause_r_' + pfMode, `Pause ${MODE_LABEL[pfMode].toLowerCase()} alerts after losing (R, last ${p.pause_window} trades)`, p.pause_r[pfMode], 0.5)}
-        ${num('rollback_r_' + pfMode, `Roll back a ${MODE_LABEL[pfMode].toLowerCase()} change after losing (R)`, p.rollback_r[pfMode], 0.5)}
-        <h3 class="label" style="margin:6px 0 0">${MODE_LABEL[pfMode]} limits <span class="muted">(min · max the autopilot may use)</span></h3>${lim}
-        <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" type="button" id="pol-save">Save</button></div></div>`);
-    $('pol-save').addEventListener('click', async () => {
-        const body = { pause_r: { ...p.pause_r }, rollback_r: { ...p.rollback_r }, limits: { ...(p.limits || {}) } };
-        $('pol').querySelectorAll('[data-pol]').forEach((el) => {
-            const k = el.dataset.pol, v = el.tagName === 'SELECT' ? el.value : +el.value;
-            if (k.startsWith('pause_r_')) body.pause_r[pfMode] = v;
-            else if (k.startsWith('rollback_r_')) body.rollback_r[pfMode] = v;
-            else body[k] = v;
-        });
-        const lims = {};
-        $('pol').querySelectorAll('[data-lim]').forEach((el) => { (lims[el.dataset.lim] ||= [null, null])[+el.dataset.i] = +el.value; });
-        body.limits[pfMode] = lims;
-        try { await api('/api/autopilot/policy', body); closeModal(); toast('Autopilot settings saved'); loadPerf(); }
-        catch (e) { toast(e.message); }
+    POL.draft = polDraft();
+    POL.mode = LAB.modes[pfMode] ? pfMode : 'swing';
+    const d = POL.draft, lvl = AP_LEVELS.find((x) => x[0] === d.mode) || AP_LEVELS[0];
+    openModal('Autopilot settings', '', `<div class="ap" id="pol">
+        <h4 class="ap-h">What it may do</h4>
+        <p class="ap-note">One policy for swing, intraday and options.</p>
+        <div class="seg ap-level" role="group" aria-label="Autopilot">${AP_LEVELS.map(([v, t]) =>
+            `<button type="button" data-aplvl="${v}" aria-pressed="${v === d.mode}">${t}</button>`).join('')}</div>
+        <p class="ap-note" id="ap-lvl-note">${esc(lvl[2])}</p>
+        <div class="ap-rows" id="ap-global"${d.mode === 'off' ? ' data-dim="1"' : ''}>
+        ${apRow('Biggest move per change', 'How far one change may shift a rule, in the tuner\'s steps (for an options stop, 2 steps is 25% → 15% or 40%)',
+            apNum('max_steps', d.max_steps, { min: 1, max: 6, step: 1, unit: 'steps', label: 'Biggest move per change' }))}
+        ${apRow('Test in shadow first', 'A proposal is replayed beside the current rules on new sessions before it can apply',
+            apNum('shadow_days', d.shadow_days, { min: 5, max: 120, step: 1, unit: 'sessions', label: 'Test in shadow first' }))}
+        ${apRow('Wait between changes', 'The least time from one change to the next in a mode',
+            apNum('cooldown_days', d.cooldown_days, { min: 1, max: 90, step: 1, unit: 'days', label: 'Wait between changes' }))}
+        </div>
+        <div id="ap-mode">${polModeHtml()}</div>
+        <div class="otune-bar"><span class="muted" id="ap-n"></span>
+            <button class="btn" type="button" id="pol-reset">Undo edits</button>
+            <button class="btn btn-primary" type="button" id="pol-save">Save</button></div></div>`);
+    const box = $('pol');
+    box.querySelectorAll('[data-stepper]').forEach(stepperEnds);
+    const count = () => { const n = polChanges(); $('ap-n').innerHTML = n ? `<b>${n}</b> change${n === 1 ? '' : 's'} not saved yet` : 'Your saved settings';
+        $('pol-reset').disabled = !n; };
+    const drawMode = () => { $('ap-mode').innerHTML = polModeHtml(); $('ap-mode').querySelectorAll('[data-stepper]').forEach(stepperEnds); };
+    count();
+    box.addEventListener('input', (e) => {
+        const t = e.target, k = t.dataset.pol;
+        if (k === 'pause_r' || k === 'rollback_r') { POL.draft[k][POL.mode] = +t.value; count(); return; }
+        if (k) { POL.draft[k] = +t.value; count(); return; }
+        const r = t.dataset.limr;
+        if (!r) return;
+        const sp = LAB.modes[POL.mode].specs[r], vals = limVals(sp), lim = POL.draft.limits[POL.mode][r], i = +t.dataset.i;
+        let v = +t.value;
+        v = i ? Math.max(v, lim[0]) : Math.min(v, lim[1]);          // the ends never cross
+        t.value = v; lim[i] = v;
+        const last = vals.length - 1, track = t.parentNode, full = lim[0] === 0 && lim[1] === last;
+        track.style.setProperty(i ? '--b' : '--a', (last ? v / last : 0).toFixed(4));
+        t.setAttribute('aria-valuetext', limFmt(r, sp, vals[v]));
+        track.querySelector('[data-i="0"]').style.zIndex = lim[0] === last ? 3 : '';
+        const el = $('limv-' + r);
+        el.textContent = full ? 'Any' : `${limFmt(r, sp, vals[lim[0]])} – ${limFmt(r, sp, vals[lim[1]])}`;
+        el.dataset.full = full ? '1' : '0';
+        const now = (LAB.modes[POL.mode].current || {})[r], nowEl = $('lim-' + r).querySelector('.knob-range .lim-now');
+        if (now != null && nowEl) {
+            const out = now < vals[lim[0]] - 1e-9 || now > vals[lim[1]] + 1e-9;
+            nowEl.dataset.out = out ? '1' : '0';
+            nowEl.textContent = `Now ${limFmt(r, sp, now)}${out ? ': outside, the next change moves it in' : ''}`;
+        }
+        count();
+    });
+    box.addEventListener('click', async (e) => {
+        const lv = e.target.closest('[data-aplvl]'), md = e.target.closest('[data-apm]'), lb = e.target.closest('[data-limb]');
+        if (lv) {
+            POL.draft.mode = lv.dataset.aplvl;
+            box.querySelectorAll('[data-aplvl]').forEach((b) => b.setAttribute('aria-pressed', String(b === lv)));
+            $('ap-lvl-note').textContent = AP_LEVELS.find((x) => x[0] === POL.draft.mode)[2];
+            $('ap-global').dataset.dim = POL.draft.mode === 'off' ? '1' : '0';
+            count();
+        } else if (md) {
+            POL.mode = md.dataset.apm; drawMode();
+        } else if (lb) {
+            const k = lb.dataset.limb;
+            POL.draft.limits[POL.mode][k] = [+lb.dataset.lo, +lb.dataset.hi];
+            $('lim-' + k).outerHTML = limRow(POL.mode, k, LAB.modes[POL.mode].specs[k]);
+            count();
+        } else if (e.target.closest('#pol-reset')) {
+            openPolicy();
+        } else if (e.target.closest('#pol-save')) {
+            const d = POL.draft, limits = {};
+            for (const [m, ps] of Object.entries(d.limits)) {
+                const out = {};
+                for (const [k, [lo, hi]] of Object.entries(ps)) {
+                    const vals = limVals(LAB.modes[m].specs[k]);
+                    if (lo > 0 || hi < vals.length - 1) out[k] = [vals[lo], vals[hi]];     // only a real fence is saved
+                }
+                if (Object.keys(out).length) limits[m] = out;
+            }
+            const body = { mode: d.mode, max_steps: d.max_steps, shadow_days: d.shadow_days, cooldown_days: d.cooldown_days,
+                pause_r: d.pause_r, rollback_r: d.rollback_r, limits };
+            try { await api('/api/autopilot/policy', body); pfMode = POL.mode; closeModal(); toast('Autopilot settings saved'); loadPerf(); }
+            catch (err) { toast(err.message); }
+        }
     });
 }
 
@@ -8952,8 +9322,8 @@ $('perf-view').addEventListener('click', async (e) => {
         catch (er) { toast(er.message); }
     }
 });
-$('ap-policy-btn').addEventListener('click', () => { if (LAB) openPolicy(); });
-document.addEventListener('click', (e) => { if (e.target.closest('#lab-settings-btn')) labSettingsModal(); });
+$('ap-policy-btn').addEventListener('click', () => openSettings('autopilot'));
+document.addEventListener('click', (e) => { if (e.target.closest('#lab-settings-btn')) openSettings('lab'); });
 
 // What the lab backtests and tunes each mode on, and how much history: by default the universe
 // the mode trades live, so rules tuned on large caps are never applied to small caps.
@@ -8980,11 +9350,11 @@ function labSettingsModal() {
         <label class="ind-row"><span><b>History</b><small>5m and 15m candles replayed</small></span>${years('lab_years_intraday')}</label>
         <p class="hint" id="labs-est"></p>
         <h3 class="label">Costs</h3>
-        <label class="ind-row"><span><b>Count costs</b><small>Dhan's charges and slippage on every backtested trade, so rules are judged on what a trade keeps</small></span><input type="checkbox" data-labs="lab_costs"${st.lab_costs !== '0' ? ' checked' : ''}></label>
-        <label class="ind-row"><span><b>Slippage</b><small>basis points of the price, on the entry and on a stop or square-off (5 = 0.05 %)</small></span><input type="number" data-labs="lab_slippage_bps" min="0" max="50" step="1" value="${esc(st.lab_slippage_bps || '5')}"></label>
+        <label class="ind-row"><span><b>Count costs</b><small>Dhan's charges and slippage on every backtested trade, so rules are judged on what a trade keeps</small></span>${ctlSwitch('data-labs="lab_costs"', st.lab_costs !== '0', 'Count costs')}</label>
+        <label class="ind-row"><span><b>Slippage</b><small>basis points of the price, on the entry and on a stop or square-off (5 = 0.05 %)</small></span>${ctlStepper('data-labs="lab_slippage_bps"', st.lab_slippage_bps || '5', { min: 0, max: 50, step: 1, label: 'Slippage (bps)' })}</label>
         <h3 class="label">Report</h3>
-        <label class="ind-row"><span><b>Weekly report</b><small>Telegram, Saturday 09:00</small></span><input type="checkbox" data-labs="weekly_report"${st.weekly_report === '1' ? ' checked' : ''}></label>
-        <label class="ind-row"><span><b>Job alerts</b><small>Telegram: 15 minutes before each scheduled run, then when a job starts (with when it should end) and ends</small></span><input type="checkbox" data-labs="lab_alerts"${st.lab_alerts !== '0' ? ' checked' : ''}></label>
+        <label class="ind-row"><span><b>Weekly report</b><small>Telegram, Saturday 09:00</small></span>${ctlSwitch('data-labs="weekly_report"', st.weekly_report === '1', 'Weekly report')}</label>
+        <label class="ind-row"><span><b>Job alerts</b><small>Telegram: 15 minutes before each scheduled run, then when a job starts (with when it should end) and ends</small></span>${ctlSwitch('data-labs="lab_alerts"', st.lab_alerts !== '0', 'Job alerts')}</label>
         <p class="hint">Options are tuned on the candidates the live scanner records, so they have no universe or history to set.
             A different universe or more history is downloaded on the next run (nightly 20:30, or Run backtest now). Tuning on a universe
             other than the one a mode trades live means its rules are judged on stocks it does not trade.</p>
@@ -9002,7 +9372,9 @@ function labSettingsModal() {
     est();
     $('labs-save').addEventListener('click', async () => {
         const body = {};
-        $('labs-form').querySelectorAll('[data-labs]').forEach((el) => { body[el.dataset.labs] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value; });
+        $('labs-form').querySelectorAll('[data-labs]').forEach((el) => {
+            body[el.dataset.labs] = el.getAttribute('role') === 'switch' ? (el.getAttribute('aria-checked') === 'true' ? '1' : '0') : el.value;
+        });
         try {
             S.settings = await api('/api/settings', body);
             toast('Lab settings saved: the next backtest and tuning use them');
@@ -9197,21 +9569,161 @@ document.addEventListener('keydown', (e) => {
     }
 }, true);
 
+/* Controls for settings: a stepper (− value +) for a count or a small number, and a switch for on/off. A value with a
+   unit of money or a price stays a typed box. One handler below steps and toggles every one of them, so a form only reads
+   its inputs (`attrs` on the input, e.g. name="max_open") and its switches' aria-checked. */
+function ctlStepper(attrs, v, { min = 0, max = '', step = 1, label = '' } = {}) {
+    // The input first: a <label> around it then focuses the number, not the − (shown first by CSS order).
+    return `<span class="trs-step" data-stepper><input type="number" ${attrs} value="${esc(v)}" min="${min}" max="${max}" step="${step}"
+        inputmode="decimal" aria-label="${esc(label)}"><button type="button" data-nudge="-1" aria-label="Less: ${esc(label)}">−</button>
+        <button type="button" data-nudge="1" aria-label="More: ${esc(label)}">+</button></span>`;
+}
+function ctlSwitch(attrs, on, label) {
+    return `<button class="switch" type="button" role="switch" data-toggle ${attrs} aria-checked="${!!on}" aria-label="${esc(label)}"></button>`;
+}
+// The stepper's − and + greyed at its ends.
+function stepperEnds(box) {
+    const i = box.querySelector('input'), v = +i.value;
+    box.querySelector('[data-nudge="-1"]').disabled = i.min !== '' && v <= +i.min;
+    box.querySelector('[data-nudge="1"]').disabled = i.max !== '' && v >= +i.max;
+}
+document.addEventListener('click', (e) => {
+    const n = e.target.closest('[data-stepper] [data-nudge]');
+    if (n) {
+        const box = n.closest('[data-stepper]'), i = box.querySelector('input'), step = +i.step || 1;
+        const dp = (String(i.step).split('.')[1] || '').length;
+        let v = (+i.value || 0) + +n.dataset.nudge * step;
+        if (i.min !== '') v = Math.max(+i.min, v);
+        if (i.max !== '') v = Math.min(+i.max, v);
+        i.value = v.toFixed(dp);
+        stepperEnds(box);
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+        i.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+    }
+    const t = e.target.closest('.switch[data-toggle]');
+    if (t) {
+        t.setAttribute('aria-checked', String(t.getAttribute('aria-checked') !== 'true'));
+        t.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+});
+document.addEventListener('input', (e) => { const box = e.target.closest && e.target.closest('[data-stepper]'); if (box) stepperEnds(box); });
+
 function openModal(title, sub, html, wide) {
+    // A settings form asked for by the section of Settings on show renders there, not in a dialog (HUB.title:
+    // the form that section shows). Anything else, a dialog it opens included, is a dialog over Settings.
+    if (HUB.host && title === HUB.title && $('modal').hidden) {
+        HUB.host.innerHTML = (sub ? `<p class="hub-embed-sub">${esc(sub)}</p>` : '') + html;
+        HUB.host.querySelectorAll('[data-stepper]').forEach(stepperEnds);
+        return;
+    }
     modalReturn = document.activeElement;
     $('modal-title').textContent = title;
     $('modal-sub').textContent = sub || '';
     $('modal-body').innerHTML = html;
     $('modal').dataset.wide = wide ? '1' : '0';
-    $('modal').dataset.top = $('mscrim').dataset.top = '0';
+    $('modal').dataset.top = $('mscrim').dataset.top = $('hub').hidden ? '0' : '1';     // over Settings when it is open
     $('modal').hidden = false; $('mscrim').hidden = false;
+    $('modal-body').querySelectorAll('[data-stepper]').forEach(stepperEnds);
     $('modal-close').focus();
 }
 function closeModal() {
+    // A form shown in Settings closes (Save, Cancel) by showing its section again, with what is now saved.
+    if (HUB.host && $('modal').hidden && !$('hub').hidden) { hubShow(HUB.sec, HUB.arg); return; }
     $('modal').hidden = true; $('mscrim').hidden = true;
     tunerToken++;
     if (modalReturn && modalReturn.focus) modalReturn.focus();
 }
+
+/* ------------------------------------------------------------- Settings */
+// Every setting in one place: a section list, and each section with what it does. Switches and lists live in the page's
+// markup (#hub), so the code that saves and shows them is the same as before; a section with its own form (demo funds,
+// live trading, lab, autopilot, charts, ticker, connections, account) runs that form's builder, whose openModal renders
+// here. It fetches what it shows each time, so after a save the section shows what is now saved.
+// `title`: the form's own title, which routes it here; `load`: what the builder needs first; `kw`: words to find it by.
+const HUB_SECS = [
+    { id: 'swing', name: 'Swing scan', sub: 'Auto-scan, shorts, watcher, rules', kw: 'auto scan time schedule shorts watcher zones rules tuner thresholds whatif',
+      title: 'Rule tuner', run: async () => openTuner(false) },
+    { id: 'intraday', name: 'Intraday', sub: 'Mode, stocks, shorts, rules', kw: 'intraday 15m 5m mis shorts universe rules tuner thresholds whatif',
+      title: 'Intraday rule tuner', run: async () => openTuner(true) },
+    { id: 'options', name: 'Options', sub: 'Chain scanner, stocks, idea rules', kw: 'options chain oi pcr iv idea rules stop target nifty band entry hour direction stocks' },
+    { id: 'news', name: 'News desk', sub: 'Filings and headlines', kw: 'news filings media sentiment tone' },
+    { id: 'alerts', name: 'Alerts', sub: 'What goes to Telegram', kw: 'telegram alerts entry pattern filing option idea level notifications' },
+    { id: 'demo', name: 'Demo funds', sub: 'Sizing, margins, limits', kw: 'demo paper sizing lots risk margin leverage limits charges', title: 'Demo funds settings',
+      run: async () => { demoData = await api('/api/demo'); demoSettingsModal(); } },
+    { id: 'trade', name: 'Live trading', sub: 'Real orders: sizing and limits', kw: 'live real orders dhan sizing capital risk limits loss sending', title: 'Live trading settings',
+      run: async () => { trxData = await api('/api/exec'); trxSettingsModal(); } },
+    { id: 'lab', name: 'Lab', sub: 'Backtests: universe, history, costs', kw: 'lab backtest universe history years costs slippage weekly report job alerts', title: 'Lab settings',
+      run: async () => { LAB = await api('/api/lab'); labSettingsModal(); } },
+    { id: 'autopilot', name: 'Autopilot', sub: 'Tuning and its safety limits', kw: 'autopilot tuning shadow cooldown rollback pause limits policy', title: 'Autopilot settings',
+      run: async () => { LAB = await api('/api/lab'); openPolicy(); } },
+    { id: 'charts', name: 'Charts', sub: 'Indicators and colours', kw: 'chart indicators bollinger orb opening range delta colours colors vwap', title: 'Indicator settings',
+      run: async () => openIndicatorSettings() },
+    { id: 'app', name: 'Connections & data', sub: 'Telegram bot, Dhan, prices, session', kw: 'telegram bot token chat dhan login client pin totp data source yfinance delay session square-off auction logging', title: 'App settings',
+      run: async (tab) => appSettingsModal(tab) },
+    { id: 'account', name: 'Account & security', sub: 'Password, passkeys, devices', kw: 'account password authenticator passkeys devices api tokens sign-in security', title: 'Account & security',
+      run: async (tab) => accountModal(tab) },
+    { id: 'ticker', name: 'Index ticker', sub: 'The strip of indices', kw: 'ticker strip indices speed change range hover', title: 'Ticker settings',
+      run: async () => openTkSettings() },
+    { id: 'look', name: 'Appearance', sub: 'Theme and palette', kw: 'theme dark light glass classic palette colours appearance' },
+];
+const HUB = { sec: null, arg: null, host: null, title: null, token: 0 };
+
+function openSettings(sec, arg) {
+    if ($('hub').hidden) {
+        HUB.ret = document.activeElement;
+        document.body.classList.toggle('hub-over', $('drawer').dataset.open === '1');
+    }
+    $('hub').hidden = $('hub-scrim').hidden = false;
+    document.body.classList.add('hub-on');
+    if (!wide.matches) sbOpen(false);
+    hubNav();
+    hubShow(sec || HUB.sec || 'swing', arg);
+}
+function closeSettings() {
+    $('hub').hidden = $('hub-scrim').hidden = true;
+    document.body.classList.remove('hub-on', 'hub-over');
+    HUB.host = HUB.title = null;
+    tunerToken++;
+    document.querySelectorAll('.hub-embed').forEach((h) => { h.innerHTML = ''; });
+    if (HUB.ret && HUB.ret.focus) HUB.ret.focus();
+}
+// The section list, narrowed by the search box (a section's words and, for the ones in the markup, its text).
+function hubNav() {
+    const q = $('hub-q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const hits = HUB_SECS.filter((x) => {
+        const text = `${x.name} ${x.sub} ${x.kw} ${(document.querySelector(`.hub-sec[data-sec="${x.id}"]`) || {}).textContent || ''}`.toLowerCase();
+        return q.every((w) => text.includes(w));
+    });
+    $('hub-nav').innerHTML = hits.map((x) => `<button type="button" data-hub-sec="${x.id}" aria-current="${x.id === HUB.sec ? 'page' : 'false'}">
+        <b>${esc(x.name)}</b><small>${esc(x.sub)}</small></button>`).join('') || '<p class="hub-none">Nothing matches.</p>';
+    return hits;
+}
+async function hubShow(sec, arg) {
+    const def = HUB_SECS.find((x) => x.id === sec) || HUB_SECS[0], token = ++HUB.token;
+    tunerToken++;                                   // a what-if still running answers a tuner no longer shown
+    HUB.sec = def.id; HUB.arg = arg || null;
+    $('hub-nav').querySelectorAll('[data-hub-sec]').forEach((b) => b.setAttribute('aria-current', b.dataset.hubSec === def.id ? 'page' : 'false'));
+    document.querySelectorAll('.hub-sec').forEach((x) => { x.hidden = x.dataset.sec !== def.id; });
+    // Only the section on show keeps its form: two forms would share their ids.
+    document.querySelectorAll('.hub-embed').forEach((h) => { if (h.id !== 'hub-embed-' + def.id) h.innerHTML = ''; });
+    $('hub-main').scrollTop = 0;
+    HUB.host = def.run ? $('hub-embed-' + def.id) : null;
+    HUB.title = def.title || null;
+    if (def.id === 'options') renderOptRules($('hub-optrules'));
+    if (!def.run) return;
+    if (!HUB.host.childElementCount) HUB.host.innerHTML = '<p class="hub-loading">Loading…</p>';
+    try { await def.run(HUB.arg); }
+    catch (e) { if (token === HUB.token) HUB.host.innerHTML = `<p class="hub-loading">Could not load: ${esc(e.message)}</p>`; }
+}
+$('hub-nav').addEventListener('click', (e) => { const b = e.target.closest('[data-hub-sec]'); if (b) { hubShow(b.dataset.hubSec); b.focus(); } });
+$('hub-q').addEventListener('input', () => { const hits = hubNav(); if (hits.length && !hits.some((x) => x.id === HUB.sec)) hubShow(hits[0].id); });
+$('hub-close').addEventListener('click', closeSettings);
+$('hub-scrim').addEventListener('click', closeSettings);
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-settings]');
+    if (b) { e.preventDefault(); openSettings(b.dataset.settings || null); }
+});
 $('modal-close').addEventListener('click', closeModal);
 $('mscrim').addEventListener('click', closeModal);
 
@@ -9236,11 +9748,11 @@ let TU = null;                  // which tuner is open: swing or intraday
 function tunerCtx(intra) {
     const I = S.intraday;
     return intra
-        ? { intra: true, tunable: I.tunable, order: I.tunable_order, rules: I.rules, env: I.env_rules, candidates: I.candidates,
+        ? { intra: true, tunable: I.tunable, order: I.tunable_order, rules: I.rules, env: I.env_rules, candidates: I.candidates, last: I.scan,
             whatif: '/api/intraday/whatif', save: '/api/intraday/rules', scan: '/api/intraday/scan',
             title: 'Intraday rule tuner', guide: '/docs#58-intraday-settings',
             sub: 'What-if on the 15m candles of the last intraday scan. Nothing changes until you press Save.' }
-        : { intra: false, tunable: S.tunable, order: S.tunable_order, rules: S.rules, env: S.env_rules, candidates: S.candidates,
+        : { intra: false, tunable: S.tunable, order: S.tunable_order, rules: S.rules, env: S.env_rules, candidates: S.candidates, last: S.scan,
             whatif: '/api/whatif', save: '/api/rules', scan: '/api/scan', title: 'Rule tuner', guide: '/docs#47-rule-tuner',
             sub: `What-if on the ${uniLabel(S.settings.universe)} candles already downloaded. Nothing changes until you press Save.` };
 }
@@ -9277,7 +9789,7 @@ function openTuner(intra) {
             <button class="btn" id="t-env" type="button">Protocol defaults</button>
             <button class="btn" id="t-saverun" type="button">Save &amp; rescan</button>
             <button class="btn btn-primary" id="t-save" type="button">Save as my rules</button></div>`, true);
-    const load = (src) => { Object.keys(TU.tunable).forEach((k) => { tunerVals[k] = src[k]; }); renderKnobs(); runWhatIf(); };
+    const load = (src) => { Object.keys(TU.tunable).forEach((k) => { tunerVals[k] = src[k]; }); renderKnobs(); tzRescreen(); };
     $('t-saved').addEventListener('click', () => load(TU.rules));
     $('t-env').addEventListener('click', () => load(TU.env));
     $('t-save').addEventListener('click', () => saveRules(false));
@@ -9287,7 +9799,27 @@ function openTuner(intra) {
         if (g) { tzGroup = g.dataset.tzg; renderKnobs(); }
     });
     renderKnobs();
-    runWhatIf();
+    tzLastScan();
+}
+
+// Until a rule changes, the result panel shows the last scan: a re-screen of the saved rules finds the same, and on a
+// large universe takes seconds on the Pi each time Settings opens.
+function tzLastScan() {
+    const f = (TU.last && TU.last.funnel) || {}, total = f.universe || 1, n = TU.candidates.length;
+    $('t-bars').innerHTML = TU.last ? funnelKeys(TU.intra).map(([k, label]) => `<div class="bar-row"><span>${esc(label)}</span>
+        <span class="track"><i style="width:${100 * (f[k] || 0) / total}%"></i></span><b>${f[k] ?? '—'}</b></div>`).join('') : '';
+    $('t-diff').innerHTML = '<span class="muted">Change a rule to see the stocks it adds or drops.</span>';
+    $('t-setups').innerHTML = n ? TU.candidates.map(tzSetupLi).join('')
+        : `<li style="cursor:default"><b>None</b><span>${TU.last ? 'The last scan found no setup.' : 'No scan yet.'}</span></li>`;
+    $('t-big').innerHTML = `<b>${n}</b><span>setup${n === 1 ? '' : 's'}</span><span>in the last scan</span>`;
+    $('t-status').textContent = TU.last ? `The last scan · ${uniLabel(TU.last.universe)}` + (TU.last.finished_at ? ' · ' + tm(TU.last.finished_at) : '') : '';
+}
+
+function tzSetupLi(x) {
+    const dist = x.distance_pct ?? (x.analysis || {}).distance_pct;
+    return `<li data-sym="${esc(x.symbol)}" data-whatif="1"${TU.intra ? ' data-intra="1"' : ''}>
+        <b>${esc(x.symbol)}${sideTag(x.side)}</b><span>${x.in_zone ? 'in zone' : pct(dist) + (x.side === 'short' ? ' below' : ' above') + ' zone'} · R:R ${rr(x.rr)}${
+        x.target_label ? ' to ' + esc(x.target_label.toLowerCase()) : ''} · score ${x.score}</span></li>`;
 }
 
 function tzGroupsOf() {
@@ -9349,7 +9881,14 @@ function tzSet(k, v, redraw) {
             if (c && tag) tag.textContent = c; else if (c) b.insertAdjacentHTML('beforeend', `<b>${c}</b>`); else if (tag) tag.remove();
         });
     }
-    clearTimeout(tunerTimer); tunerTimer = setTimeout(runWhatIf, 300);
+    clearTimeout(tunerTimer); tunerTimer = setTimeout(tzRescreen, 300);
+}
+
+// Re-screen under the values shown, or, with nothing changed, the last scan again (a re-screen still running is dropped).
+function tzRescreen() {
+    if (Object.keys(TU.tunable).some(tzChanged)) { runWhatIf(); return; }
+    tunerToken++;
+    tzLastScan();
 }
 
 function knobLabel(k) {
@@ -9371,9 +9910,7 @@ async function runWhatIf() {
         $('t-diff').innerHTML = (added.length || removed.length)
             ? added.map((x) => `<span class="add">+ ${esc(x)}</span>`).join('') + removed.map((x) => `<span class="del">${esc(x)}</span>`).join('')
             : '<span class="muted">The same stocks.</span>';
-        $('t-setups').innerHTML = r.setups.length ? r.setups.map((x) => `<li data-sym="${esc(x.symbol)}" data-whatif="1"${TU.intra ? ' data-intra="1"' : ''}>
-            <b>${esc(x.symbol)}${sideTag(x.side)}</b><span>${x.in_zone ? 'in zone' : pct(x.distance_pct) + (x.side === 'short' ? ' below' : ' above') + ' zone'} · R:R ${rr(x.rr)}${
-            x.target_label ? ' to ' + esc(x.target_label.toLowerCase()) : ''} · score ${x.score}</span></li>`).join('')
+        $('t-setups').innerHTML = r.setups.length ? r.setups.map(tzSetupLi).join('')
             : '<li style="cursor:default"><b>None</b><span>No stock passes every step under these rules.</span></li>';
         const d = r.setups.length - TU.candidates.length;
         $('t-big').innerHTML = `<b>${r.setups.length}</b><span>setup${r.setups.length === 1 ? '' : 's'}</span>`
@@ -9389,12 +9926,10 @@ async function saveRules(rescan) {
         await api(TU.save, { rules: tunerVals });
         if (rescan) await api(TU.scan, TU.intra ? {} : { universe: S.settings.universe });
         toast(rescan ? 'Rules saved — rescanning now' : 'Rules saved — the next scan and the watcher use them');
+        await refresh();                            // the saved rules first, so the tuner shown again (in Settings) has them
         closeModal();
-        refresh();
     } catch (e) { toast(e.message); }
 }
-$('tuner-btn').addEventListener('click', () => openTuner(false));
-$('i-tune-btn').addEventListener('click', () => openTuner(true));
 
 /* ------------------------------------------------------------- legend */
 let GLOSS = null;
@@ -9467,16 +10002,20 @@ const CK_ACTIONS = [
     ['Refresh smart money from NSE', 'smart fii dii deals fetch', CK_IC.run, () => { setMode('smart'); ckClick('sm-refresh')(); }, 'smart'],
     ['Add demo funds…', 'demo deposit money', CK_IC.money, () => { setMode('demo'); demoFundsModal('deposit'); }, 'demo'],
     ['Withdraw demo funds…', 'demo money out', CK_IC.money, () => { setMode('demo'); demoFundsModal('withdraw'); }, 'demo'],
-    ['Demo funds settings', 'risk limits charges max open per day', CK_IC.gear, () => { setMode('demo'); demoSettingsModal(); }, 'demo'],
+    ['Settings: every setting, explained', 'settings preferences configure setup options switches', CK_IC.gear, () => openSettings(), ''],
+    ['Demo funds settings', 'risk limits charges max open per day', CK_IC.gear, () => openSettings('demo'), 'demo'],
     ['Square off positions…', 'square off close exit all bulk selected paper trades demo positions', CK_IC.money, () => squareOffModal('all'), 'demo'],
     ['Start the demo account over…', 'demo reset fresh', CK_IC.money, () => { setMode('demo'); demoResetModal(); }, 'demo'],
     ['Download the demo statement (CSV)', 'demo ledger export csv', CK_IC.doc, () => { location.href = '/api/demo/statement.csv'; }, 'demo'],
-    ['Indicator settings', 'bollinger vwap orb delta colours colors', CK_IC.gear, () => openIndicatorSettings(), ''],
-    ['Swing rule tuner', 'rules thresholds whatif', CK_IC.gear, () => openTuner(false), 'swing'],
-    ['Intraday rule tuner', 'rules thresholds whatif', CK_IC.gear, () => openTuner(true), 'intraday'],
+    ['Indicator settings', 'bollinger vwap orb delta colours colors', CK_IC.gear, () => openSettings('charts'), ''],
+    ['Swing rules', 'rules thresholds whatif tuner', CK_IC.gear, () => openSettings('swing'), 'swing'],
+    ['Intraday rules', 'rules thresholds whatif tuner', CK_IC.gear, () => openSettings('intraday'), 'intraday'],
     ['Options stock list', 'which stocks chains', CK_IC.gear, () => openOptStocks(), 'options'],
-    ['Autopilot policy', 'lab learning tuning', CK_IC.gear, () => { setMode('perf'); openPolicy(); }, 'perf'],
-    ['Ticker settings', 'index strip', CK_IC.gear, () => openTkSettings(), ''],
+    ['Option idea rules', 'options rules stop target nifty band last entry one direction', CK_IC.gear, () => openSettings('options'), 'options'],
+    ['Autopilot policy', 'lab learning tuning', CK_IC.gear, () => openSettings('autopilot'), 'perf'],
+    ['Lab settings', 'backtest universe history costs slippage', CK_IC.gear, () => openSettings('lab'), 'perf'],
+    ['Alert settings', 'telegram alerts notifications', CK_IC.gear, () => openSettings('alerts'), ''],
+    ['Ticker settings', 'index strip', CK_IC.gear, () => openSettings('ticker'), ''],
     ['Market and data feed status', 'dhan feed market open closed', CK_IC.list, () => openStatus(), ''],
     ['Connect Dhan', 'token login data', CK_IC.gear, () => openDhan(), ''],
     ['Legend: every abbreviation', 'glossary symbols help', CK_IC.doc, () => openLegend(), ''],
@@ -9488,7 +10027,7 @@ const CK_ACTIONS = [
         NWTheme.STYLE_ICON[m], () => NWTheme.setStyle(m), '']),
     ['Theme manager', 'theme palette colours colors appearance', CK_IC.gear, () => openThemes(), ''],
     ['Hide or show money', 'privacy redact mask amounts balance rupees eye', CK_IC.money, () => setMoneyHidden(!moneyHidden), ''],
-    ['Live trading settings', 'real orders sizing limits risk capital sending', CK_IC.gear, () => { setMode('trade'); trxLoad().then(() => trxData && trxSettingsModal()); }, 'trade'],
+    ['Live trading settings', 'real orders sizing limits risk capital sending', CK_IC.gear, () => openSettings('trade'), 'trade'],
     ['Kill switch: halt live trading', 'stop panic cancel exit all real orders', CK_IC.gear, () => { setMode('trade'); document.querySelector('[data-trx="kill"]').click(); }, 'trade'],
     ...NWTheme.PALETTES.map((p) => [`Palette: ${p.name}`, `theme palette colours colors ${p.note}`, CK_IC.gear, () => NWTheme.setPalette(p.id), '']),
 ];
@@ -9853,6 +10392,9 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.key !== 'Escape') return;
     if (!$('fullchart').hidden) closeFull();
+    else if (!$('modal').hidden && !$('hub').hidden) closeModal();
+    else if (!$('hub').hidden && $('drawer').dataset.open === '1' && !document.body.classList.contains('hub-over')) closeDrawer();
+    else if (!$('hub').hidden) { if (e.target === $('hub-q') && $('hub-q').value) { $('hub-q').value = ''; hubNav(); } else closeSettings(); }
     else if ($('drawer').dataset.open === '1') closeDrawer();
     else if (!$('modal').hidden) closeModal();
 });
