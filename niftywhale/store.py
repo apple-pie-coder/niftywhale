@@ -25,6 +25,8 @@ SETTING_DEFAULTS = {
     'scan_time': '16:15',       # IST, after the close has settled
     'watcher': '1',             # check zones on 15m candles during market hours
     'telegram': '1',            # send alerts to Telegram
+    'telegram_commands': '1',   # answer commands sent to the bot from the alerts' chat (telebot.py)
+    'telegram_mute_until': '',  # ISO time: alerts muted until then (/mute); live trading's still go
     'rules': '{}',              # JSON: protocol thresholds saved from the rule tuner
     'pattern_alerts': '0',      # Telegram for 15m candlestick patterns at a zone
     'intraday': '1',            # intraday mode: 15m scans + 5m triggers during the session

@@ -180,6 +180,27 @@ def totp_check(secret: str, code: str, last_step: int = 0, at: float = None) -> 
     return None
 
 
+def use_totp(code: str, kind: str = 'telegram') -> str:
+    """Spend one authenticator code outside a sign-in (a real order placed from Telegram): '' when it is right and
+    unused, else why not. Claimed as the sign-in claims it, so a code seen once cannot be replayed; a wrong one
+    counts toward the account lock as a failed sign-in does."""
+    u = owner()
+    if not u or not u.get('totp_secret'):
+        return 'set up an authenticator first (Account & security)'
+    if _locked_for():
+        return 'sign-in is locked after repeated failures: try again later'
+    step = totp_check(u['totp_secret'], code, int(u['totp_last_step'] or 0))
+    won = 0
+    if step is not None:
+        with _db() as c:
+            won = c.execute('UPDATE auth_user SET totp_last_step = ? WHERE id = 1 AND totp_last_step < ?', (step, step)).rowcount
+    if won != 1:
+        _fail(kind, 'wrong or used authenticator code')
+        return 'that code is not right (or was already used): wait for the next one'
+    _event(kind, True, 'authenticator code')
+    return ''
+
+
 def otpauth_uri(secret: str, username: str) -> str:
     return f'otpauth://totp/{quote(RP_NAME)}:{quote(username)}?secret={secret}&issuer={quote(RP_NAME)}&digits=6&period=30'
 

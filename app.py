@@ -39,7 +39,8 @@ from flask import Flask, g, jsonify, redirect, render_template, request  # noqa:
 from flask_sock import Sock  # noqa: E402
 
 from niftywhale import (auth, autopilot, broker, charts, config, costs, data, demo, dhan, execution, features, glossary,  # noqa: E402
-                        history, hub, indicators, intraday, news, notify, options, patterns, perf, session, smart, smc, store, ticker, universe)
+                        history, hub, indicators, intraday, news, notify, options, patterns, perf, session, smart, smc, store, telebot,
+                        ticker, universe)
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
                     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
@@ -2397,7 +2398,7 @@ def exec_halt(why: str) -> None:
     for r in store.exec_orders(['offered']):
         store.update_exec_order(r['id'], only_if='offered', status='dismissed', note='halted')
     store.add_notice(f"exec-halt:{int(time.time())}", 'exec', 'bad', 'Live trading halted', why, None, None, {'tab': 'trade'})
-    notify.send(f'<b>Live trading halted</b>\n{html_escape(why)}\nResume from the Trading tab once it is checked.')
+    notify.send(f'<b>Live trading halted</b>\n{html_escape(why)}\nResume from the Trading tab once it is checked.', urgent=True)
     logger.warning(f'Live trading halted: {why}')
 
 
@@ -2408,7 +2409,10 @@ def exec_notice(r: dict, what: str, detail: str) -> None:
     store.add_notice(f"exec:{what}:{r['ref']}", 'exec', 'bad' if what in ('rejected', 'blocked') else 'info',
                      f"{title} · {r.get('instrument') or r['symbol']}", detail, r['symbol'], r['mode'], {'tab': 'trade', 'ref': r['ref']})
     if r.get('level') in execution.REAL or what == 'offered':
-        notify.send(f"<b>{html_escape(title)}</b> · {html_escape(r.get('instrument') or r['symbol'])} ({r['mode']})\n{html_escape(detail)}")
+        how = f"\nOr here: /place {r['id']} and a code from your authenticator, e.g. /place {r['id']} 123456" \
+            if what == 'offered' and r.get('id') else ''
+        notify.send(f"<b>{html_escape(title)}</b> · {html_escape(r.get('instrument') or r['symbol'])} ({r['mode']})\n"
+                    f"{html_escape(detail)}{how}", urgent=True)
 
 
 def html_escape(s) -> str:
@@ -3004,7 +3008,7 @@ IDEA_EXIT_WORD = {'target': 'Target hit', 'stop': 'Stopped out', 'squared off': 
 
 def idea_trail_message(i: dict) -> str:
     """The premium reached the target of an idea with a trail: it runs on."""
-    return (f"📈 <b>Option idea · {h(i['symbol'])} {i['strike']:g} {i['side']} · target reached, now trailing</b>\n"
+    return (f"<b>Option idea · {h(i['symbol'])} {i['strike']:g} {i['side']} · target reached, now trailing</b>\n"
             f"Premium {_inr(i['peak'])}. Stop now {_inr(i['trail'])} ({i['trail_pct']:g}% under the best price, never below "
             f"{_inr(options.trail_floor(i['entry'], i['target']))}); it moves up as the premium does.\nPaper trade.")
 
@@ -3704,6 +3708,11 @@ def api_settings():
             return jsonify({'error': 'lab_slippage_bps is 0 to 50 basis points'}), 400
     if 'lab_costs' in body and str(body['lab_costs']) not in ('0', '1', 'True', 'False'):
         return jsonify({'error': 'lab_costs is 1 (count them) or 0'}), 400
+    if body.get('telegram_mute_until'):
+        try:
+            datetime.fromisoformat(str(body['telegram_mute_until']))
+        except ValueError:
+            return jsonify({'error': "telegram_mute_until is an ISO time, or '' for not muted"}), 400
     if 'scan_time' in body:
         try:
             datetime.strptime(str(body['scan_time']), '%H:%M')
@@ -4260,27 +4269,36 @@ def api_exec_offer(oid):
         return jsonify(safe(exec_view()))
     if action != 'place':
         return jsonify({'error': 'action is place or dismiss'}), 400
+    err, code = exec_place(row)
+    if err:
+        return jsonify({'error': err}), code
+    return jsonify(safe(exec_view()))
+
+
+def exec_place(row: dict) -> tuple:
+    """Place an offered order (confirm level) now, through every guard: ('', 200) when sent, else (why, status)."""
+    oid = row['id']
     if (_when(row['expires']) or data.now_ist()) <= data.now_ist():
         store.update_exec_order(oid, only_if='offered', status='expired', note='not placed in time')
-        return jsonify({'error': 'the offer lapsed'}), 409
+        return 'the offer lapsed', 409
     st = exec_settings()
     t = next((t for t in store.live_trades(row['mode']) if t['ref'] == row['ref']), None)
     if not t or t['status'] != 'open':
         store.update_exec_order(oid, only_if='offered', status='expired', note='the trade is no longer open')
-        return jsonify({'error': 'the trade has already closed'}), 409
+        return 'the trade has already closed', 409
     inst = _exec_instrument(t, {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if row['mode'] == 'options' else 'FUT'}.get(row['product'], 'CNC'))
     others = [r for r in exec_rows() if r['id'] != oid]
     day = exec_day(st, others)
     why = ([f'live trading is halted: {exec_halted()}'] if exec_halted() else []) + ([broker.sending()] if broker.sending() else [])
     why += execution.guards(row, t, exec_book(others, day=day), st, day['capital'], inst.get('last'), _exec_session_open(t))
     if why:
-        return jsonify({'error': '; '.join(why)}), 409
+        return '; '.join(why), 409
     if not store.update_exec_order(oid, only_if='offered', status='placing'):
-        return jsonify({'error': 'that order is no longer waiting'}), 409
+        return 'that order is no longer waiting', 409
     res = exec_send(oid)
     if res.get('error'):
-        return jsonify({'error': res['error']}), 502
-    return jsonify(safe(exec_view()))
+        return res['error'], 502
+    return '', 200
 
 
 @app.route('/api/exec/kill', methods=['POST'])
@@ -4290,8 +4308,14 @@ def api_exec_kill():
     bad = auth._need_session()
     if bad:
         return bad
-    flatten = bool((request.get_json(silent=True) or {}).get('flatten'))
-    exec_halt('kill switch' + (' (everything exited)' if flatten else ''))
+    errors = exec_kill(bool((request.get_json(silent=True) or {}).get('flatten')))
+    return jsonify(safe({**exec_view(), 'errors': errors}))
+
+
+def exec_kill(flatten: bool, where: str = '') -> list:
+    """The kill switch: halt, lower every sending level to shadow, cancel entries not yet filled, and with
+    `flatten` exit every position at Dhan too. The errors, if any."""
+    exec_halt('kill switch' + where + (' (everything exited)' if flatten else ''))
     st = exec_settings()
     store.set_settings({'exec': {**st, **{m: 'shadow' for m in execution.MODES if st[m] in execution.REAL}}})
     errors = []
@@ -4305,7 +4329,7 @@ def api_exec_kill():
         ok, _, err = broker.exit_all()
         if not ok:
             errors.append(f'exit all: {err}')
-    return jsonify(safe({**exec_view(), 'errors': errors}))
+    return errors
 
 
 @app.route('/api/exec/resume', methods=['POST'])
@@ -4443,6 +4467,17 @@ def api_squareoff():
         ids = [x['id'] for x in items['demo']]
     if not refs and not ids:
         return jsonify({'error': 'nothing to square off'}), 400
+    results = square_off_now(refs, ids, now, items)
+    done = sum(r['ok'] for rs in results.values() for r in rs)
+    return jsonify(safe({'results': results, 'closed': done, 'failed': sum(len(v) for v in results.values()) - done,
+                         **squareoff_items()}))
+
+
+def square_off_now(refs: list, ids: list, now: datetime = None, items: dict = None) -> dict:
+    """Close these paper trades (refs) and demo positions (ids) at the live price: {paper: [...], demo: [...]},
+    each closed or with why not. A paper trade's demo position settles at the same price."""
+    now = now or data.now_ist()
+    items = items or squareoff_items(now)
     by_ref, by_id = {x['ref']: x for x in items['paper']}, {x['id']: x for x in items['demo']}
     results = {'paper': [], 'demo': []}
     with DEMO_LOCK:                     # the demo positions first: a sync must not settle them meanwhile
@@ -4455,9 +4490,7 @@ def api_squareoff():
                                 else {'ref': ref, 'ok': False, 'why': 'not an open paper trade'})
     if any(r['ok'] for r in results['paper']):
         demo_sync()                     # their demo positions settle at the same price
-    done = sum(r['ok'] for rs in results.values() for r in rs)
-    return jsonify(safe({'results': results, 'closed': done, 'failed': sum(len(v) for v in results.values()) - done,
-                         **squareoff_items()}))
+    return results
 
 
 @app.route('/api/smart')
@@ -4917,6 +4950,49 @@ def api_autopilot_policy():
     return jsonify({'policy': lab.policy()})
 
 
+def autopilot_decide(mode: str, action: str, since: str, where: str = 'on the Performance tab') -> str:
+    """Approve or reject the proposal made on `since` (the one you were shown): '' when done, else why not.
+    The lab may have replaced it meanwhile, and a decision must never act on one you did not see."""
+    from niftywhale import lab
+    st = lab.state(mode)
+    if action == 'approve':
+        aw = next((p for p in (st.get('awaiting'), st.get('challenger')) if p and p.get('since') == since), None)
+        if not aw:
+            return 'that proposal is no longer open: reload to see the current one'
+        # apply_thresholds changes only what is not in force yet, and clears the proposal as it records
+        # the change: racing the lab's own promotion of the same one, the second does nothing.
+        lab.apply_thresholds(mode, aw['params'], f"approved by you: {aw.get('evidence', '')}", by='you', base=aw.get('base'))
+        return ''
+    got = {}
+
+    def drop(s):
+        for k in ('awaiting', 'challenger'):
+            if (s.get(k) or {}).get('since') == since:
+                got['p'] = s.pop(k)
+                return
+    lab.update_state(mode, drop)
+    if not got:
+        return 'that proposal is no longer open: reload to see the current one'
+    store.log_autopilot(mode, 'reject', None, got['p'].get('params'), f'rejected {where}', 'you')
+    return ''
+
+
+def set_paused(mode: str, on: bool, where: str = 'on the Performance tab') -> None:
+    """Mute (or unmute) a mode's Telegram entry alerts, as the autopilot's pause does."""
+    from niftywhale import lab
+    store.set_settings({f'paused_{mode}': on})
+    at = data.now_ist().isoformat(timespec='seconds')
+
+    def flip(s):
+        if on:
+            s['paused_at'] = at
+        else:
+            s.pop('paused_at', None)
+            s['watch_from'] = at                     # the old streak no longer counts
+    lab.update_state(mode, flip)
+    store.log_autopilot(mode, 'pause' if on else 'resume', None, None, where, 'you')
+
+
 @app.route('/api/autopilot/<action>', methods=['POST'])
 def api_autopilot_action(action):
     from niftywhale import lab
@@ -4924,32 +5000,16 @@ def api_autopilot_action(action):
     mode = _ap_mode(body)
     if not mode:
         return jsonify({'error': 'mode must be swing, intraday or options'}), 400
-    # Approve and reject name the proposal the page showed (`since`, the day it was made): the lab may
-    # have replaced it since the page loaded, and a click must never act on one you did not see.
+    # Approve and reject name the proposal the page showed (`since`, the day it was made).
     since = str(body.get('since') or '')
-    if action in ('approve', 'reject') and not since:
-        return jsonify({'error': "send the proposal's since"}), 400
-    st = lab.state(mode)
-    if action == 'approve':
-        aw = next((p for p in (st.get('awaiting'), st.get('challenger')) if p and p.get('since') == since), None)
-        if not aw:
-            return jsonify({'error': 'that proposal is no longer open: reload to see the current one'}), 409
-        # apply_thresholds changes only what is not in force yet, and clears the proposal as it records
-        # the change: racing the lab's own promotion of the same one, the second does nothing.
-        lab.apply_thresholds(mode, aw['params'], f"approved by you: {aw.get('evidence', '')}", by='you', base=aw.get('base'))
-    elif action == 'reject':
-        got = {}
-
-        def drop(s):
-            for k in ('awaiting', 'challenger'):
-                if (s.get(k) or {}).get('since') == since:
-                    got['p'] = s.pop(k)
-                    return
-        lab.update_state(mode, drop)
-        if not got:
-            return jsonify({'error': 'that proposal is no longer open: reload to see the current one'}), 409
-        store.log_autopilot(mode, 'reject', None, got['p'].get('params'), 'rejected on the Performance tab', 'you')
+    if action in ('approve', 'reject'):
+        if not since:
+            return jsonify({'error': "send the proposal's since"}), 400
+        err = autopilot_decide(mode, action, since)
+        if err:
+            return jsonify({'error': err}), 409
     elif action == 'undo':
+        st = lab.state(mode)
         lc = st.get('last_change')
         if not lc or lc.get('reverted') or not lab.claim_revert(mode, lc):
             return jsonify({'error': 'no change to undo'}), 409
@@ -4957,18 +5017,7 @@ def api_autopilot_action(action):
         store.log_autopilot(mode, 'undo', {k: a for k, (_, a) in (lc.get('changed') or {}).items()},
                             {k: b for k, (b, _) in (lc.get('changed') or {}).items()}, 'undone on the Performance tab', 'you')
     elif action == 'pause':
-        on = body.get('paused') is not False
-        store.set_settings({f'paused_{mode}': on})
-        at = data.now_ist().isoformat(timespec='seconds')
-
-        def flip(s):
-            if on:
-                s['paused_at'] = at
-            else:
-                s.pop('paused_at', None)
-                s['watch_from'] = at                     # the old streak no longer counts
-        lab.update_state(mode, flip)
-        store.log_autopilot(mode, 'pause' if on else 'resume', None, None, 'on the Performance tab', 'you')
+        set_paused(mode, body.get('paused') is not False)
     else:
         return jsonify({'error': 'unknown action'}), 404
     return jsonify({'ok': True, 'state': lab.state(mode), 'paused': paused(mode)})
@@ -5399,6 +5448,455 @@ def api_live_status():
 store.init()
 
 
+# ---------------------------------------------------------------------------
+# Telegram commands (telebot.py): what you send the bot, answered from the app's own state. Reading is
+# immediate; a change asks first (telebot.confirm), and a real order needs an authenticator code too.
+# ---------------------------------------------------------------------------
+TG_COMMANDS = [
+    ('status', 'Market, Dhan, scans, paused alerts and live trading at a glance'),
+    ('open', 'Open trades with their R and rupees now, with square-off buttons'),
+    ('today', "Today's closed trades by mode: wins, R and rupees after charges"),
+    ('ideas', "Today's option ideas and how each is doing"),
+    ('demo', 'Demo account: balance, money in use, free cash, today'),
+    ('week', 'The weekly report, now'),
+    ('chain', 'An option chain in brief: /chain NIFTY'),
+    ('mood', "The market's mood and the index strip"),
+    ('stock', 'One stock: price, open trades, zones, news: /stock RELIANCE'),
+    ('autopilot', 'What the autopilot is testing or waiting on'),
+    ('rules', 'The rules in force: /rules options, swing or intraday'),
+    ('pause', "Stop a mode's entry alerts: /pause options, or all"),
+    ('resume', "Restart a mode's entry alerts: /resume options, or all"),
+    ('squareoff', 'Square off a paper trade now: /squareoff o12, or all'),
+    ('apply', 'Apply the autopilot proposal waiting for you: /apply options'),
+    ('reject', 'Reject an autopilot proposal: /reject options'),
+    ('scan', 'Run a scan now: /scan swing, intraday or options'),
+    ('mute', 'Silence alerts for a while: /mute 1h, /mute 30m, /mute off'),
+    ('place', 'Place an offered live order: /place 12 and your authenticator code'),
+    ('halt', 'Live trading kill switch: /halt, or /halt exit to exit positions too'),
+    ('help', 'What each command does'),
+]
+TG_MODES = ('swing', 'intraday', 'options')
+_TG_REF = {'s': 'swing', 'i': 'intraday', 'o': 'options'}
+
+
+def tg_ref(ref: str) -> str:
+    """'options:12' -> 'o12': short enough to type."""
+    mode, _, n = ref.partition(':')
+    return mode[:1] + n
+
+
+def tg_unref(short: str) -> str:
+    """'o12' -> 'options:12'; '' when it is not one."""
+    m = re.fullmatch(r'([sio])(\d{1,9})', (short or '').strip().lower())
+    return f'{_TG_REF[m[1]]}:{m[2]}' if m else ''
+
+
+def _tg_rs(x, d: int = 0) -> str:
+    return '-' if x is None else f"{'+' if x >= 0 else '-'}₹{abs(x):,.{d}f}"
+
+
+def _tg_hm(x) -> str:
+    return str(x)[11:16] if x and len(str(x)) >= 16 else '-'
+
+
+def _tg_modes(args: list, verb: str):
+    """The modes a command names ('all' for every one), or the usage line as a str."""
+    w = (args[0].lower() if args else '')
+    if w == 'all':
+        return list(TG_MODES)
+    if w in TG_MODES:
+        return [w]
+    return f'Which mode? /{verb} swing, intraday, options or all'
+
+
+def tg_help(args):
+    return '<b>Commands</b>\n' + '\n'.join(f'/{c}: {h(d)}' for c, d in TG_COMMANDS) + \
+        '\n\nA command that changes something asks first: tap Yes within two minutes.'
+
+
+def tg_status(args):
+    now, scan, dh = data.now_ist(), store.latest_scan(), dhan.status()
+    sc, ws, it, op = STATE['scan'], STATE['watch'], STATE['intraday'], STATE['options']
+    lines = [f'<b>NiftyWhale</b> · {now:%a %d %b %H:%M}',
+             'Market: ' + ('open' if data.market_open(now) else 'F&O still open' if session.fo_open(now) else 'closed'),
+             f"Dhan: {h(dh.get('message'))}",
+             'Swing scan: ' + (f"running, {sc['done']} of {sc['total']}" if sc['running'] else
+                               f"last {h(scan['status'])} {str(scan.get('finished_at') or scan.get('started_at') or '')[:16].replace('T', ' ')}"
+                               if scan else 'none yet'),
+             f"Zone watcher: last look {_tg_hm(ws.get('last_run'))}",
+             f"Intraday: last scan {_tg_hm(it.get('last_scan'))}, last check {_tg_hm(it.get('last_check'))}",
+             f"Options: last pass {_tg_hm(op.get('last_run'))}, {len(store.ideas(status='open'))} open ideas"]
+    off = [m for m in TG_MODES if paused(m)]
+    lines.append('Entry alerts paused: ' + (', '.join(off) if off else 'none'))
+    mu = notify.muted()
+    if mu:
+        lines.append(f'All alerts muted until {_tg_hm(mu)} (/mute off)')
+    halt, ex = exec_halted(), exec_settings()
+    lines.append('Live trading: ' + (f'halted ({h(halt)})' if halt else
+                                     ', '.join(f"{m} {execution.LEVEL_LABEL[ex[m]].lower()}" for m in TG_MODES)))
+    return '\n'.join(lines)
+
+
+def tg_open(args):
+    items, skips = squareoff_items(), demo_skips()
+    demo_by_ref = {p['ref']: p for p in items['demo']}
+    ideas = {f"options:{i['id']}": i for i in store.ideas(status='open')}
+    rows = [x for x in items['paper'] if x['ref'] not in skips]
+    if not rows:
+        return 'Nothing open.'
+    lines, buttons = [f'<b>Open trades</b> ({len(rows)})'], []
+    for x in rows:
+        d, i = demo_by_ref.get(x['ref']), ideas.get(x['ref'])
+        bits = [f"{x['r']:+.2f}R" if x.get('r') is not None else 'no live price']
+        if d and d.get('unreal') is not None:
+            bits.append(_tg_rs(d['unreal']))
+        if i and i.get('trail') is not None:
+            bits.append(f"trailing stop {i['trail']:g}")
+        lines.append(f"<code>{tg_ref(x['ref'])}</code> {h(x['label'])} · " + ' · '.join(bits))
+        if len(buttons) < 8 and not x.get('why'):
+            buttons.append([telebot.command_button(f"Square off {x['label']}"[:60], f"/squareoff {tg_ref(x['ref'])}")])
+    rs = [x['r'] for x in rows if x.get('r') is not None]
+    un = [demo_by_ref[x['ref']]['unreal'] for x in rows if (demo_by_ref.get(x['ref']) or {}).get('unreal') is not None]
+    lines.append(f"\nOpen: {sum(rs):+.2f}R" + (f", demo {_tg_rs(sum(un))}" if un else ''))
+    return '\n'.join(lines), buttons
+
+
+def tg_today(args):
+    now, skips = data.now_ist(), demo_skips()
+    today = now.date().isoformat()
+    closed_pos = [p for p in store.demo_positions('closed') if str(p.get('exit_time') or '')[:10] == today]
+    pos = {p['ref']: p for p in closed_pos}
+    lines = [f'<b>Today</b> · {now:%a %d %b}']
+    for m in TG_MODES:
+        trades = [t for t in store.live_trades(m) if t['ref'] not in skips]
+        done = [t for t in trades if t['status'] != 'open' and str(t.get('exit_time') or '')[:10] == today]
+        still = [t for t in trades if t['status'] == 'open']
+        if not done and not still:
+            lines.append(f'{m.capitalize()}: nothing')
+            continue
+        r = sum(t.get('r') or 0 for t in done)
+        net = sum(pos[t['ref']].get('net') or 0 for t in done if t['ref'] in pos)
+        lines.append(f'<b>{m.capitalize()}</b>: {len(done)} closed, {sum((t.get("r") or 0) > 0 for t in done)} won, '
+                     f'{r:+.2f}R, {_tg_rs(net)} net' + (f'; {len(still)} open' if still else ''))
+    if closed_pos:
+        lines.append(f"\nDemo account: {_tg_rs(sum(p.get('net') or 0 for p in closed_pos))} net, "
+                     f"after ₹{sum(p.get('charges') or 0 for p in closed_pos):,.0f} charges")
+    return '\n'.join(lines)
+
+
+def tg_ideas(args):
+    today, skips = data.now_ist().date().isoformat(), demo_skips()
+    ideas = sorted(store.ideas(session=today), key=lambda i: i['created_at'] or '')
+    if not ideas:
+        return 'No option ideas today.'
+    lines, total = [f'<b>Option ideas today</b> ({len(ideas)})'], 0.0
+    for i in ideas:
+        live_idea(i)
+        if i['status'] == 'open':
+            state, r = ('trailing' if i.get('trail') is not None else 'open'), i.get('r_open')
+        else:
+            state, r = i.get('note') or i['status'], i.get('r')
+            total += r or 0
+        lines.append(f"{_tg_hm(i['created_at'])} <code>o{i['id']}</code> {h(i['symbol'])} {i['strike']:g} {i['side']} · {h(state)} · "
+                     + (f'{r:+.2f}R' if r is not None else '-') + (' · skipped by the demo' if f"options:{i['id']}" in skips else ''))
+    lines.append(f'\nClosed: {total:+.2f}R')
+    return '\n'.join(lines)
+
+
+def tg_demo(args):
+    if not store.settings().get('demo_since'):
+        return 'No demo account yet: start one on the Demo tab.'
+    a = demo_account()
+    today = data.now_ist().date().isoformat()
+    closed = [p for p in store.demo_positions('closed') if str(p.get('exit_time') or '')[:10] == today]
+    return '\n'.join([
+        '<b>Demo account</b>',
+        f"Balance ₹{a['balance']:,.0f} · equity ₹{a['equity']:,.0f}" + (f" ({a['return_pct']:+.2f}% overall)" if a.get('return_pct') is not None else ''),
+        f"In use ₹{a['blocked']:,.0f} across {a['open']} open · free ₹{a['free']:,.0f}",
+        f"Open P&L {_tg_rs(a['unreal'])}",
+        f"Today: {len(closed)} closed, {_tg_rs(sum(p.get('net') or 0 for p in closed))} net after ₹{sum(p.get('charges') or 0 for p in closed):,.0f} charges",
+    ])
+
+
+def tg_week(args):
+    from niftywhale import lab
+    return lab.weekly_report()
+
+
+def tg_chain(args):
+    sym = (args[0] if args else 'NIFTY').upper()
+    since = (data.now_ist().date() - timedelta(days=7)).isoformat()
+    snap = next((x for x in store.latest_summaries(since) if x['symbol'] == sym and x['summary'].get('is_near')), None)
+    if not snap:
+        return f'No recent chain for {h(sym)}: options mode reads the indices and its stock list (Settings, Options).'
+    sm = snap['summary']
+    b = sm.get('bias_intraday')
+    lean = '' if b is None else ' (bullish)' if b >= 0.35 else ' (bearish)' if b <= -0.35 else ' (no clear lean)'
+    f = lambda v, fmt='{:,.2f}': '-' if v is None else fmt.format(v)       # noqa: E731
+    lines = [f"<b>{h(sym)}</b> · {_exp_label(snap['expiry'])} expiry · read {_tg_hm(snap['ts'])}",
+             f"Spot {f(sm.get('spot'))}",
+             f"PCR {f(sm.get('pcr_open'))} at the open, {f(sm.get('pcr'))} now",
+             f"Support {f(sm.get('support'), '{:g}')} · resistance {f(sm.get('resistance'), '{:g}')} · max pain {f(sm.get('max_pain'), '{:g}')}",
+             f"OI bias since the open {f(b, '{:+.2f}')}{lean}",
+             f"ATM IV {f(sm.get('atm_iv'), '{:.1f}')}%" + (f", {sm['iv_pct']:.0f}th percentile" if sm.get('iv_pct') is not None else '')]
+    if OPT_WHY.get(sym):
+        lines.append(f'No idea now: {h(OPT_WHY[sym])}')
+    return '\n'.join(lines)
+
+
+def tg_mood(args):
+    t = ticker_state()
+    m = market_mood()
+    lines = ['<b>Market</b>']
+    if m and m.get('label'):
+        lines.append(f"Mood: {h(m['label'])} · Nifty {m['nifty']:+.2f}% · {m['up']} up, {m['down']} down"
+                     + (f" · VIX {m['vix']:.2f} ({m['vix_chg']:+.2f}%)" if m.get('vix') else ''))
+    for r in (t.get('rows') or [])[:12]:
+        if r.get('last') is not None:
+            lines.append(f"{h(r.get('label') or r.get('name'))} {r['last']:,.2f}"
+                         + (f" ({r['change_pct']:+.2f}%)" if r.get('change_pct') is not None else ''))
+    if len(lines) == 1:
+        lines.append(h(t.get('message') or 'No prices yet.'))
+    return '\n'.join(lines)
+
+
+def tg_stock(args):
+    if not args or not SYMBOL_RE.match(args[0].upper()):
+        return 'Which stock? /stock RELIANCE'
+    sym = args[0].upper()
+    q = data.live_quotes([sym + '.NS']).get(sym + '.NS') or {}
+    lines = [f'<b>{h(sym)}</b>']
+    if q.get('last'):
+        chg = (q['last'] / q['prev_close'] - 1) * 100 if q.get('prev_close') else None
+        lines.append(f"Price {q['last']:,.2f}" + (f' ({chg:+.2f}% on the day)' if chg is not None else ''))
+    else:
+        lines.append('No live price (it needs Dhan).')
+    mine = [x for x in squareoff_items()['paper'] if x['symbol'] == sym]
+    for x in mine:
+        lines.append(f"Open: <code>{tg_ref(x['ref'])}</code> {h(x['label'])}" + (f" · {x['r']:+.2f}R" if x.get('r') is not None else ''))
+    zones = [z for z in store.chart_zones(sym, 6) if z.get('status') in ('watching', 'tapped', 'triggered')]
+    for z in zones:
+        lines.append(f"Zone {z['zone_low']:,.2f} to {z['zone_high']:,.2f} · {h(z.get('mode') or 'swing')} {h(z.get('side') or 'long')}, "
+                     f"{h(z['status'])}")
+    since = (data.now_ist() - timedelta(days=7)).isoformat()
+    for n in store.news([sym], since=since, limit=3, routine=False):
+        lines.append(f"News {str(n.get('published') or '')[:10]}: {h(n.get('title'))}")
+    if len(lines) == 2 and not mine:
+        lines.append('No open trade, zone or news this week.')
+    return '\n'.join(lines)
+
+
+def tg_autopilot(args):
+    from niftywhale import lab
+    pol = lab.policy()
+    lines = ['<b>Autopilot</b>: ' + {'auto': 'applies changes by itself', 'approve': 'asks you before a change',
+                                     'off': 'off'}.get(pol['mode'], pol['mode'])]
+    buttons = []
+    for m in TG_MODES:
+        st = lab.state(m)
+        line = f'\n<b>{m.capitalize()}</b>' + (' · entry alerts paused' if paused(m) else '')
+        aw, ch, lc = st.get('awaiting'), st.get('challenger'), st.get('last_change')
+        if aw:
+            line += f"\nWaiting for you since {h(aw.get('since'))}: {h(aw.get('change'))}\n{h(aw.get('evidence') or '')}"
+            buttons.append([telebot.command_button(f'Apply {m}', f'/apply {m}'), telebot.command_button(f'Reject {m}', f'/reject {m}')])
+        elif ch:
+            line += f"\nTesting in shadow since {h(ch.get('since'))}: {h(ch.get('change'))}"
+        else:
+            line += '\nNothing proposed.'
+        if lc:
+            moved = ', '.join(f'{k} {b} → {a}' for k, (b, a) in (lc.get('changed') or {}).items())
+            line += f"\nLast change {str(lc.get('at') or '')[:10]}: {h(moved or lc.get('why') or '')}" + (' (undone)' if lc.get('reverted') else '')
+        lines.append(line)
+    return '\n'.join(lines), buttons
+
+
+def tg_rules(args):
+    from niftywhale import lab
+    mode = (args[0].lower() if args else 'options')
+    if mode not in TG_MODES:
+        return 'Which mode? /rules swing, intraday or options'
+    thr, specs = lab.current_thresholds(mode), lab.specs(mode)
+    try:
+        saved = json.loads(store.settings().get(lab.SETTING_KEYS[mode]) or '{}')
+    except ValueError:
+        saved = {}
+    lines = [f'<b>{mode.capitalize()} rules</b> (* set by you or the autopilot)']
+    for k, v in thr.items():
+        sp = specs.get(k) or {}
+        label = sp.get('label') or (options.TUNABLE[k][4] if mode == 'options' and k in options.TUNABLE else k)
+        off = sp.get('off', options.OFF.get(k) if mode == 'options' else None)
+        val = 'off' if off is not None and v == off else f'{v:g}'
+        lines.append(f"{'* ' if k in saved else ''}{h(label)}: {val}")
+    return '\n'.join(lines)
+
+
+def tg_pause(args, on: bool = True):
+    modes = _tg_modes(args, 'pause' if on else 'resume')
+    if isinstance(modes, str):
+        return modes
+    names = ', '.join(modes)
+
+    def do():
+        for m in modes:
+            set_paused(m, on, 'from Telegram')
+        return f"{'Paused' if on else 'Resumed'}: {names}."
+    telebot.confirm(f"{'Pause' if on else 'Resume'} the entry alerts of {names}?" +
+                    (' Trades are still recorded and followed.' if on else ''), 'pause' if on else 'resume', do)
+
+
+def tg_squareoff(args):
+    if not args:
+        return 'Which trade? /squareoff o12 (the codes are in /open), or /squareoff all'
+    items = squareoff_items()
+    by_ref = {x['ref']: x for x in items['paper']}
+    if args[0].lower() == 'all':
+        refs, ids = list(by_ref), [p['id'] for p in items['demo']]
+        if not refs and not ids:
+            return 'Nothing open.'
+        what = f'all {len(refs)} open paper trades' + (f' and {len(ids)} demo positions' if ids else '')
+    else:
+        refs, ids = [tg_unref(a) for a in args], []
+        bad = [a for a, r in zip(args, refs) if r not in by_ref]
+        if bad:
+            return f"Not an open trade: {h(', '.join(bad))}. /open lists them."
+        what = '; '.join(f"{h(by_ref[r]['label'])}" + (f" at about {by_ref[r]['price']:g} ({by_ref[r]['r']:+.2f}R)"
+                                                        if by_ref[r].get('price') is not None and by_ref[r].get('r') is not None else '')
+                         for r in refs)
+
+    def do():
+        res = square_off_now(refs, ids)
+        out = []
+        for x in res['paper']:
+            out.append(f"{tg_ref(x['ref'])}: " + (f"closed at {x['price']:g} ({x['r']:+.2f}R)" if x['ok'] else f"not closed, {h(x['why'])}"))
+        for x in res['demo']:
+            if not x['ok']:
+                out.append(f"demo position {x['id']}: not closed, {h(x['why'])}")
+        return '\n'.join(out) or 'Nothing to close.'
+    telebot.confirm(f'Square off {what} now, at the live price?', 'square off', do)
+
+
+def tg_decide(args, action: str):
+    from niftywhale import lab
+    verb = 'apply' if action == 'approve' else 'reject'
+    mode = args[0].lower() if args else ''
+    if mode not in TG_MODES:
+        return f'Which mode? /{verb} swing, intraday or options'
+    st = lab.state(mode)
+    p = st.get('awaiting') or st.get('challenger')
+    if not p:
+        return f'No {mode} proposal is open.'
+    since = p.get('since')
+    phase = 'waiting for you' if st.get('awaiting') else 'still in its shadow test'
+
+    def do():
+        err = autopilot_decide(mode, action, since, 'from Telegram')
+        return h(err) if err else f"{'Applied' if action == 'approve' else 'Rejected'}: {h(p.get('change'))}."
+    telebot.confirm(f"{verb.capitalize()} the {mode} proposal ({phase}, since {h(since)})?\n{h(p.get('change'))}\n"
+                    f"{h(p.get('evidence') or '')}", verb, do)
+
+
+def tg_scan(args):
+    which = args[0].lower() if args else ''
+    if which == 'swing':
+        if STATE['scan']['running']:
+            return 'A swing scan is already running.'
+        telebot.confirm('Run a swing scan now? It takes a few minutes.', 'scan',
+                        lambda: 'Started.' if start_scan_thread('manual') else 'A scan is already running.')
+        return None
+    if which == 'intraday':
+        if STATE['intraday']['scanning']:
+            return 'An intraday scan is already running.'
+
+        def go():
+            start_intraday_scan_thread('manual')
+            return 'Started.' + ('' if data.market_open() else ' Outside the session it is a preview: no zones.')
+        telebot.confirm('Run an intraday scan now?', 'scan', go)
+        return None
+    if which == 'options':
+        if not dhan.available():
+            return 'Option chains need Dhan: connect it on the dashboard.'
+
+        def go():
+            if OPT_LOCK.locked():
+                return 'A pass is already running.'
+            threading.Thread(target=run_options_cycle, args=('manual', None), daemon=True, name='options-refresh').start()
+            return 'Started.'
+        telebot.confirm('Read every option chain now?', 'read the chains', go)
+        return None
+    return 'Which scan? /scan swing, intraday or options'
+
+
+def tg_mute(args):
+    w = (args[0].lower() if args else '')
+    if w in ('off', 'on', 'no', 'stop'):
+        store.set_settings({'telegram_mute_until': ''})
+        return 'Alerts are on again.'
+    m = re.fullmatch(r'(\d{1,3})\s*(m|min|h|hr)?', w)
+    if not m:
+        return 'For how long? /mute 30m, /mute 1h, /mute 2h (or /mute off)'
+    mins = int(m[1]) * (60 if (m[2] or 'h').startswith('h') else 1)
+    if not 1 <= mins <= 24 * 60:
+        return 'Between a minute and a day.'
+    until = data.now_ist() + timedelta(minutes=mins)
+    store.set_settings({'telegram_mute_until': until.isoformat(timespec='seconds')})
+    return f'Alerts muted until {until:%H:%M}. Live trading messages still come, and commands still answer. /mute off to undo.'
+
+
+def tg_place(args):
+    offers = store.exec_orders(['offered'])
+    if len(args) != 2 or not args[0].isdigit():
+        if not offers:
+            return 'No live order is waiting for you.'
+        return 'Orders waiting:\n' + '\n'.join(f"{r['id']}: {h(r.get('instrument') or r['symbol'])} ({r['mode']}), "
+                                               f"until {_tg_hm(r.get('expires'))}" for r in offers) + \
+            '\n\nPlace one with /place ID CODE, the code from your authenticator.'
+    row = next((r for r in offers if r['id'] == int(args[0])), None)
+    if not row:
+        return f'Order {h(args[0])} is not waiting (placed, lapsed or dismissed).'
+    err = auth.use_totp(args[1])
+    if err:
+        return h(err.capitalize())
+    err, _ = exec_place(row)
+    return f"Not placed: {h(err)}" if err else f"Sent: {h(row.get('instrument') or row['symbol'])}. Its fill will come here."
+
+
+def tg_halt(args):
+    flatten = bool(args) and args[0].lower() in ('exit', 'all', 'flatten')
+    q = ('Halt live trading and EXIT every position at Dhan now?' if flatten else
+         'Halt live trading now? New orders stop and unfilled entries are cancelled; open positions keep their stops.')
+
+    def do():
+        errors = exec_kill(flatten, ' from Telegram')
+        return 'Halted. Resume from the Trading tab (it needs a fresh sign-in).' + \
+            (''.join(f'\n{h(e)}' for e in errors) if errors else '')
+    telebot.confirm(q, 'halt' + (' and exit' if flatten else ''), do)
+
+
+TG_HANDLERS = {'help': tg_help, 'start': tg_help, 'status': tg_status, 'open': tg_open, 'today': tg_today, 'ideas': tg_ideas,
+               'demo': tg_demo, 'week': tg_week, 'chain': tg_chain, 'mood': tg_mood, 'stock': tg_stock,
+               'autopilot': tg_autopilot, 'rules': tg_rules, 'pause': tg_pause, 'resume': lambda a: tg_pause(a, False),
+               'squareoff': tg_squareoff, 'apply': lambda a: tg_decide(a, 'approve'), 'reject': lambda a: tg_decide(a, 'reject'),
+               'scan': tg_scan, 'mute': tg_mute, 'place': tg_place, 'halt': tg_halt}
+
+
+def tg_handle(name: str, args: list) -> None:
+    """One command from our chat: its handler's answer (a str, or (str, buttons)) goes back; a handler that asks
+    first (telebot.confirm) has replied itself and returns None."""
+    fn = TG_HANDLERS.get(name)
+    if not fn:
+        telebot.reply(f'I do not know /{h(name)}. /help lists what I can do.' if name else '/help lists what I can do.')
+        return
+    out = fn(args)
+    if isinstance(out, tuple):
+        telebot.reply(*out)
+    elif out:
+        telebot.reply(out)
+
+
+def telegram_loop() -> None:
+    telebot.loop(tg_handle, TG_COMMANDS, lambda: store.settings().get('telegram_commands') == '1')
+
+
 def _upgrade_universe():
     """Universe files from before the index list have no per-stock `indices`;
     rebuild once so every index option has members."""
@@ -5425,6 +5923,7 @@ if os.getenv('NIFTYWHALE_SCHEDULER', '1') == '1':      # off for tests and secon
     threading.Thread(target=smart_loop, daemon=True, name='smart').start()
     threading.Thread(target=demo_loop, daemon=True, name='demo').start()
     threading.Thread(target=marks_loop, daemon=True, name='marks').start()
+    threading.Thread(target=telegram_loop, daemon=True, name='telegram').start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5058')))

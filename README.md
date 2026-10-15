@@ -1978,6 +1978,57 @@ Every entry alert names its direction: **SMC ENTRY · LONG** / **SHORT**, and **
 
 Rejected triggers are never sent. The **Entry alerts** switch controls both modes.
 
+### 9.1 Commands
+
+The bot also answers what you send it, from the same chat the alerts go to (`TELEGRAM_CHAT_ID`); a message from
+any other chat is ignored, and logged once. In a private chat with the bot that is only you; in a group, everyone
+in it. Switch it with **Settings → Alerts → Answer commands** (on by default).
+
+The app asks Telegram for new messages itself (long polling, `niftywhale/telebot.py`), so nothing has to reach
+the Pi from outside. Telegram serves a bot's messages to one reader at a time: while the app reads them, the
+`getUpdates` link in step 2 above shows nothing. Switch **Answer commands** off while you look up a chat id.
+
+| Command | What it does |
+|---|---|
+| `/status` | Market session, Dhan, the last swing scan, watcher, intraday and options passes, paused alerts, mute, live trading |
+| `/open` | Open paper trades with their R and the demo position's ₹ now, and a trailing stop where one runs; a **Square off** button under each (up to 8) |
+| `/today` | Today's closed trades per mode: how many, how many won, R, and ₹ net from the demo account |
+| `/ideas` | Today's option ideas: time, code, state (open, trailing, its exit), R |
+| `/demo` | The demo account: balance, equity, money in use, free cash, open P&L, today after charges |
+| `/week` | The weekly report (7.5), now |
+| `/chain NIFTY` | One underlying's latest chain: spot, PCR at the open and now, support, resistance, max pain, OI bias, ATM IV, and why it made no idea |
+| `/mood` | The market's mood and the index strip |
+| `/stock RELIANCE` | Price, open trades, live zones and the week's news for one stock |
+| `/autopilot` | Each mode: a proposal waiting for you (with **Apply** / **Reject** buttons), one in its shadow test, the last change |
+| `/rules options` | The rules in force for a mode (swing, intraday, options); `*` marks the ones set by you or the autopilot |
+| `/pause options` | Stop a mode's Telegram entry alerts (`all` for every mode); trades are still recorded and followed |
+| `/resume options` | Start them again |
+| `/squareoff o12` | Square off a paper trade at the live price (its demo position follows); `all` for everything open |
+| `/apply options` | Apply the autopilot's proposal for a mode (as **Apply now** does) |
+| `/reject options` | Reject it |
+| `/scan swing` | Run a scan now: `swing`, `intraday` or `options` (every chain) |
+| `/mute 1h` | Hold back alerts for a while (`30m`, `2h`, up to a day); `/mute off` undoes it |
+| `/place 12 123456` | Place a live order offered to you (Confirm each), with a code from your authenticator |
+| `/halt` | Live trading's kill switch; `/halt exit` also exits every position at Dhan |
+| `/help` | The list |
+
+Trades are named by a short code: `s` swing, `i` intraday, `o` options, and the trade's number (`/open` and `/ideas`
+show them).
+
+**Nothing changes on a message alone.** `/pause`, `/resume`, `/squareoff`, `/apply`, `/reject`, `/scan` and `/halt`
+answer with a question and **Yes** / **No** buttons, and act only on **Yes** within two minutes; each button works
+once. `/apply` and `/reject` act on the proposal the question showed: if the lab replaced it meanwhile, nothing
+happens. `/mute` acts at once: it only holds messages back.
+
+**Real money needs more.** `/place` takes the order's number and a 6-digit code from your authenticator
+(Account & security): a code works once, and a wrong one counts toward the sign-in lock like a failed sign-in.
+Without an authenticator set up, `/place` refuses. An order offer on Telegram says how. Resuming live trading after
+`/halt` still needs a fresh sign-in on the Trading tab.
+
+**While muted** only live trading's messages go out (an order to confirm, sent, filled, refused, closed, a halt);
+the commands still answer. A command sent while the app was down is not acted on when it comes back: the bot says
+so, and you send it again.
+
 ---
 
 ## 10. Configuration

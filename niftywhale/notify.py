@@ -1,6 +1,7 @@
 """Telegram delivery. Configured in App settings (or .env, config.py); silent if unset."""
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -30,10 +31,29 @@ def bot_name() -> str:
     return bot
 
 
-def send(html: str) -> bool:
-    """Send one HTML-formatted message. Returns whether Telegram accepted it."""
+def muted() -> str:
+    """Until when alerts are muted (/mute on Telegram), as ISO time; '' when they are not."""
+    from niftywhale import store
+    until = store.settings().get('telegram_mute_until') or ''
+    if not until:
+        return ''
+    try:
+        t = datetime.fromisoformat(until)
+    except ValueError:
+        return ''
+    if t.tzinfo is None:                          # saved without its zone: the app's times are IST
+        t = t.replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    return until if t > datetime.now(timezone.utc) else ''
+
+
+def send(html: str, urgent: bool = False) -> bool:
+    """Send one HTML-formatted message. Returns whether Telegram accepted it. While muted (/mute) only an
+    `urgent` one goes: live trading's (an order to confirm, a fill, a halt), which are about real money."""
     if not configured():
         logger.info('Telegram not configured; message not sent')
+        return False
+    if not urgent and muted():
+        logger.info('Telegram muted; message not sent')
         return False
     TOKEN, CHAT_ID = config.get('telegram_token'), config.get('telegram_chat_id')
     try:

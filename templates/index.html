@@ -2581,6 +2581,7 @@
             <div class="set-row"><div class="set-txt"><b id="newsalert-label">Filing alerts</b><p>An NSE filing on a stock with an open trade or a tapped zone. Needs the news desk.</p></div><div class="set-ctl"><button class="switch" id="sw-newsalert" role="switch" aria-checked="false" type="button" aria-labelledby="newsalert-label"></button></div></div>
             <div class="set-row"><div class="set-txt"><b id="optal-label">Option idea alerts</b><p>Each option idea and its result.</p></div><div class="set-ctl"><button class="switch" id="sw-optal" role="switch" aria-checked="false" type="button" aria-labelledby="optal-label"></button></div></div>
             <div class="set-row"><div class="set-txt"><b id="optlv-label">Option level alerts</b><p>An index&#39;s OI support or resistance moving to another strike and holding.</p></div><div class="set-ctl"><button class="switch" id="sw-optlv" role="switch" aria-checked="false" type="button" aria-labelledby="optlv-label"></button></div></div>
+            <div class="set-row"><div class="set-txt"><b id="tgcmd-label">Answer commands</b><p>Reply to what you send the bot from this chat: /status, /open, /today and more (/help lists them). Anything that changes something asks first; placing a real order needs a code from your authenticator.</p></div><div class="set-ctl"><button class="switch" id="sw-tgcmd" role="switch" aria-checked="false" type="button" aria-labelledby="tgcmd-label"></button></div></div>
         </section>
         <section class="hub-sec" data-sec="demo" aria-labelledby="hs-demo" hidden>
             <header class="hub-sec-head"><h3 id="hs-demo">Demo funds</h3><p>The demo account takes every trade the app takes, with pretend money, real lot sizes and real charges. These settings size those trades and set the limits that skip one.</p></header>
@@ -3236,6 +3237,8 @@ function render() {
     $('sw-tg').disabled = !S.telegram_configured;
     $('sw-pat').setAttribute('aria-checked', String(st.pattern_alerts === '1' && S.telegram_configured));
     $('sw-pat').disabled = !S.telegram_configured || st.telegram !== '1';
+    $('sw-tgcmd').setAttribute('aria-checked', String(st.telegram_commands === '1' && S.telegram_configured));
+    $('sw-tgcmd').disabled = !S.telegram_configured;
     $('sw-news').setAttribute('aria-checked', String(st.news === '1'));
     $('sw-newsalert').setAttribute('aria-checked', String(st.news_alerts === '1' && st.news === '1' && S.telegram_configured));
     $('sw-newsalert').disabled = !S.telegram_configured || st.telegram !== '1' || st.news !== '1';
@@ -9418,7 +9421,7 @@ $('scan-btn').addEventListener('click', async () => {
     refresh();
 });
 
-[['sw-auto', 'auto_scan'], ['sw-watch', 'watcher'], ['sw-tg', 'telegram'], ['sw-pat', 'pattern_alerts'],
+[['sw-auto', 'auto_scan'], ['sw-watch', 'watcher'], ['sw-tg', 'telegram'], ['sw-pat', 'pattern_alerts'], ['sw-tgcmd', 'telegram_commands'],
  ['sw-news', 'news'], ['sw-newsalert', 'news_alerts'],
  ['sw-shorts', 'shorts'], ['sw-ishorts', 'intraday_shorts']].forEach(([id, key]) =>
     $(id).addEventListener('click', () => {
@@ -9648,7 +9651,7 @@ const HUB_SECS = [
       title: 'Intraday rule tuner', run: async () => openTuner(true) },
     { id: 'options', name: 'Options', sub: 'Chain scanner, stocks, idea rules', kw: 'options chain oi pcr iv idea rules stop target nifty band entry hour direction stocks' },
     { id: 'news', name: 'News desk', sub: 'Filings and headlines', kw: 'news filings media sentiment tone' },
-    { id: 'alerts', name: 'Alerts', sub: 'What goes to Telegram', kw: 'telegram alerts entry pattern filing option idea level notifications' },
+    { id: 'alerts', name: 'Alerts', sub: 'What goes to Telegram', kw: 'telegram alerts entry pattern filing option idea level notifications commands bot' },
     { id: 'demo', name: 'Demo funds', sub: 'Sizing, margins, limits', kw: 'demo paper sizing lots risk margin leverage limits charges', title: 'Demo funds settings',
       run: async () => { demoData = await api('/api/demo'); demoSettingsModal(); } },
     { id: 'trade', name: 'Live trading', sub: 'Real orders: sizing and limits', kw: 'live real orders dhan sizing capital risk limits loss sending', title: 'Live trading settings',
