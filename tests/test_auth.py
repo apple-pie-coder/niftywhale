@@ -92,7 +92,11 @@ class Gate(Base):
         anon = app.app.test_client()
         r = self.get('/docs', client=anon)
         self.assertEqual((r.status_code, r.headers['Location']), (302, '/login?next=/docs'))
+        self.assertEqual(self.get('/docs/screenshots/funnel.png', client=anon).status_code, 302)    # the guide's pictures too
         self.assertEqual(self.get('/api/glossary').status_code, 200)                        # the setup's own session
+        r = self.get('/docs/screenshots/funnel.png')
+        self.assertEqual((r.status_code, r.mimetype), (200, 'image/png'))
+        self.assertEqual(self.get('/docs/screenshots/../README.md').status_code, 404)        # nothing outside the folder
 
     def test_setup_needs_the_code_and_happens_once(self):
         r = self.post('/api/auth/setup/begin', {'setup_code': 'WRONG-CODE-XXXX', 'username': 'owner', 'password': PW})

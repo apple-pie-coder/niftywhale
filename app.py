@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from flask import Flask, g, jsonify, redirect, render_template, request  # noqa: E402
+from flask import Flask, g, jsonify, redirect, render_template, request, send_from_directory  # noqa: E402
 from flask_sock import Sock  # noqa: E402
 
 from niftywhale import (auth, autopilot, broker, charts, config, costs, data, demo, dhan, execution, features, glossary,  # noqa: E402
@@ -3567,6 +3567,12 @@ def docs():
     md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc', 'sane_lists'])
     body = md.convert(text)
     return render_template('docs.html', body=body, toc=md.toc)
+
+
+@app.route('/docs/screenshots/<path:name>')
+def docs_screenshot(name):
+    """The README's pictures, at the path it links them by, so the rendered guide shows them as GitHub does."""
+    return send_from_directory(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs', 'screenshots'), name)
 
 
 @app.route('/favicon.ico')

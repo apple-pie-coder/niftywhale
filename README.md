@@ -12,11 +12,13 @@ Around them: an **options** chain scanner with option-buying ideas (6), a **news
 reaction (4.14), **smart money** from what NSE publishes after each session (4.15), a **demo funds** account that takes every
 trade at a real size after charges (4.16), and **performance** with a backtesting, self-tuning lab (7).
 
+![The swing tab: the sidebar's controls, and the live board with each zone's price, chart, entry, stop and target](docs/screenshots/dashboard.png)
+
 - **Dashboard:** https://pandorasbox.local:5443 (sign in, 10.4; press **Ctrl K** / **⌘K** for the command palette, 4.8)
 - **Runs as:** three Docker containers on the Pi: `niftywhale` (the dashboard and its schedulers), `niftywhale-lab`
   (backtests and the autopilot) and `niftywhale-nlp` (the FinBERT news scorer). It depends on no other app.
-- **Places orders?** No. NiftyWhale is analysis only. Nothing in it can trade, and nothing it
-  shows is investment advice.
+- **Places orders?** Only through Live trading (4.18), when you turn it on and at the levels you set there; otherwise
+  it is analysis and paper trades. Nothing it shows is investment advice.
 
 ---
 
@@ -435,6 +437,8 @@ a choice from a few values with chips. Prices and rupee amounts stay typed boxes
 
 ### 4.3 Protocol funnel
 
+![The protocol funnel: 500 stocks in, 13 setups out, with how many stopped at each step](docs/screenshots/funnel.png)
+
 One card per step, showing how many stocks of the last scan **passed** that step, with a red
 **−N here** for how many stopped there.
 
@@ -448,6 +452,8 @@ Click a stock in that list to open its chart. This is the quickest answer to "wh
 my list?".
 
 ### 4.4 Setups table
+
+![The setups table: setups in the zone now and those waiting for the pullback, with zone, leg position, target, R:R, score and the watcher's status](docs/screenshots/setups.png)
 
 | Column | Meaning |
 |---|---|
@@ -485,6 +491,8 @@ heading (*In the zone now* / *Waiting*) again wherever that group appears on it.
 ### 4.6 The stock panel
 
 Opens from any table row, funnel list, tuner result or search result. From top to bottom:
+
+![The stock panel: timeframes, overlays, the daily chart with the zone, liquidity, stop and target, delta below, and the setup's numbers](docs/screenshots/stock-panel.png)
 
 **Chart controls**
 
@@ -863,6 +871,8 @@ them, and no alert depends on them. Typical reads alongside a setup:
 ### 4.12 Paper trades
 
 Below the setups, four figures and the journal of every swing paper trade (3.7):
+
+![Paper trades: open, closed, win rate and total R, then the journal with each trade's entry, stop, target, result and R](docs/screenshots/paper-trades.png)
 
 | Figure | What it shows |
 |---|---|
@@ -4971,6 +4981,24 @@ The tests build charts by hand, so the right answer is known:
   idea, following an idea to target, stop, a broken OI level and the square-off, settling after the
   close, pruning old chains, the API's validation, and a whole morning through `fetch_options` with
   Dhan and Telegram mocked: one idea, one entry message, one result message.
+
+### The README's screenshots
+
+`docs/screenshots/` holds the pictures in sections 1 and 4, taken by `scripts/readme-screenshots.mjs` (headless Chromium
+over its DevTools protocol, Node 20's built-in WebSocket) from a throwaway copy of the app: sign-in and the schedulers
+off, no secrets key (so it cannot reach Dhan or Telegram), on the Pi's loopback only, over a copy of the database.
+
+```sh
+mkdir -p /tmp/nw-shots/data && cp var/universe.json /tmp/nw-shots/data/
+python3 -c "import sqlite3; s = sqlite3.connect('file:var/niftywhale.db?mode=ro', uri=True); d = sqlite3.connect('/tmp/nw-shots/data/niftywhale.db'); s.backup(d)"
+docker run -d --name nw-shots -p 127.0.0.1:5197:5058 -v /tmp/nw-shots/data:/data -e TZ=Asia/Kolkata -e PORT=5058 \
+  -e DB_PATH=/data/niftywhale.db -e UNIVERSE_PATH=/data/universe.json -e NIFTYWHALE_AUTH=0 -e NIFTYWHALE_SCHEDULER=0 niftywhale:latest
+node --experimental-websocket scripts/readme-screenshots.mjs http://127.0.0.1:5197 /tmp/nw-shots/out RELIANCE
+docker rm -f nw-shots
+```
+
+Look at every picture before copying it into `docs/screenshots/`: none should show a balance, P&L, capital or your
+Dhan details (the stock panel is cut above its Trade planner). The rendered guide (`/docs`) serves the folder too.
 
 ### Rebuilding the universe by hand
 
