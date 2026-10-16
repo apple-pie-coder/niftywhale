@@ -714,6 +714,10 @@ the pointer between the two clicks; the tool goes back to the pointer when the d
   wicks included, and a drawing's point snaps to the nearest of them when you click within a few pixels of it.
 - They are saved with the app (`POST /api/charts/drawings`), so every device shows them, colours included.
 
+**Picture:** the camera button on every Charts-tab chart, and **Picture** on the stock chart (drawer and full screen), save a
+PNG of the chart as it shows, levels and drawings included, under a title line with the instrument, timeframe, last candle and
+time. On a phone it goes to the share sheet; elsewhere it downloads.
+
 ### 4.10 Real-time data with Dhan
 
 By default, live prices come from yfinance, which lags a few minutes. With a
@@ -871,6 +875,11 @@ The journal lists them newest first: entry time, stock and side, entry, stop, ta
 result (*open*, *target* or *stop*, with **≈** when daily candles decided part of it), the exit
 and its time (or the price now, while open) and R. Click a row to open the stock. After a few
 weeks it shows how the swing alerts actually perform on your universe.
+
+Each open trade has a **sparkline** of its price since the entry beside its current price: the entry dashed, the stop and
+target when near, the line green in profit and red not, a dot on the latest price. It is refreshed every minute and shows
+in the swing, intraday and options journals, the demo account's open positions (**Since entry**) and the Trading tab's
+open and shadow orders (`GET /api/spark`).
 
 ### 4.13 Index ticker
 
@@ -1693,6 +1702,23 @@ Options mode also keeps every **candidate**: each read of a chain that came clos
 out what each candidate would have done for a grid of stops and targets, using that day's later option prices.
 Without the candidates, the autopilot could only ever make the idea rules stricter, never learn that looser ones would have done better.
 
+Each candidate also keeps the context the rules may one day use, so the backtests can break results down by it and the
+autopilot can judge a rule on it:
+
+- **The market's day:** Nifty's move since its open and how far it is back off its low and high; its gap at the open
+  against the previous session's last read; India VIX, Nifty's trend and breadth at the last close in the lab's daily file.
+- **The underlying's day:** its move since its open, how far it is back off its own low and high, and its move less Nifty's.
+- **The pass:** how many looks in the same pass leaned the same way (`crowd`, worked out after the session; an underlying
+  with an idea open has no look, so these count too few).
+- **For a stock:** the news and smart money an idea records (news and its tone in the 24 hours before, delivery,
+  institutional deals, futures OI build-up, FII positioning and cash, days to results).
+- **The option itself:** its delta and contracts traded, its premium and OI against yesterday's, the written side's OI
+  against yesterday's, and what a lot costs.
+
+The lab fills in the market's and underlying's day, the news and smart money each night for candidates recorded before
+they were kept, from the Nifty and chain reads (kept 30 days) and the news (45 days). The option's own numbers are
+recorded live only: full chains are kept 3 days.
+
 ### 7.2 The Performance tab
 
 Pick a mode (Swing, Intraday or Options) and a source:
@@ -1712,7 +1738,9 @@ The tab then shows:
 - **Breakdowns:** every condition a trade was taken in (direction, entry time, weekday, Nifty trend, breadth, VIX, gap,
   R:R, pullback depth, ATR, score, stop distance, zone age, target pool, stock trend, strength against Nifty and against its sector,
   the weekly trend, the CHoCH candle's volume and close, news, deals, delivery, futures buildup, FII positioning and cash,
-  days to results), bucket by bucket.
+  days to results; for options also Nifty's gap at the open, Nifty back off its low or high against the trade, same-way
+  looks in the pass, the underlying's move since its open and against Nifty, the premium's move that day before the
+  entry and a lot's cost), bucket by bucket.
   - Measure: **Avg R a trade**, **Total R**, **Win rate** or **Trades**.
   - **Charts:** columns on a zero line for a scale (VIX bands, times, weekdays read left to right), ranked bars for
     categories, all on one scale so the same length means the same R everywhere. **Heatmap:** every condition at once,
@@ -1798,7 +1826,7 @@ Use backtests to compare rules, not as a forecast.
 | When | What |
 |---|---|
 | First start | Bootstrap: download the history and build the records. About 30 minutes of downloads and 1–2 hours of replay, outside market hours. |
-| Weekdays 20:30 | Nightly: top up history and records, backtest the current rules, run the shadow, rollback and pause checks, work out options candidate outcomes. |
+| Weekdays 20:30 | Nightly: top up history and records, backtest the current rules, run the shadow, rollback and pause checks; fill in options candidates' context and crowding, and work out their outcomes. |
 | Saturday 06:00 | Walk-forward tuning for each mode. |
 | Saturday 09:00 | Weekly Telegram report. |
 
@@ -1847,12 +1875,16 @@ idea counts.
 1. **Tune (weekly, walk-forward).** The history is cut into 3-month folds (1-month for options).
    - For each fold, rules are tuned on everything before it and judged on the fold itself, data the tuning never saw.
    - The tuner maximises *average R minus one standard error*, which rewards rules that are both profitable and consistent over many trades.
+     For options the standard error is worked out **by the day**: a day's trades count as one draw, so a dozen ideas
+     stopped by one turn of the market weigh as one bad day, not as a dozen pieces of evidence.
    - A change is proposed only if, out of sample, the tuned rules beat the current ones on all of these:
      - at least +0.05R a trade;
      - more total R;
      - a drawdown not much deeper;
      - enough trades (swing 40, intraday 60, options 40); a rule set also needs 60 swing trades in training to count,
-       so the gates can't win by keeping a lucky handful.
+       so the gates can't win by keeping a lucky handful;
+     - for options, also: those trades come from at least 15 trading days (`min_oos_days`), the tuned rules made more R
+       than the current ones on more days than they made less, and they were not worse in at least half the test months.
    - The proposal is tuned on all the history, and each threshold moves at most 2 tuner steps. The gates move along
      fixed ladders, off first (Nifty run: off, 6, 4, 3, 2, 1, 0, −1, −2 %; zone age: off, 2–6 days; max R:R: off, 15,
      12, 10, 8, 6), so a first change takes a gate at most two rungs in.
@@ -1860,7 +1892,8 @@ idea counts.
    - The proposal is replayed nightly on new data next to the current rules for 20 sessions (up to 60 if trades are scarce).
    - Only the trades the two disagree on count as evidence: those one takes and the other skips, or the same entry with
      another result (options exits). A trade both take adds the same R to each, so it can't tell them apart. It needs
-     swing 4, intraday 15, options 10 of these (`shadow_min_trades`) before it can be dropped early or promoted before 60 sessions.
+     swing 4, intraday 15, options 10 of these (`shadow_min_trades`) before it can be dropped early or promoted before 60 sessions;
+     for options they must also fall on at least 5 days (`shadow_min_days`), not one busy morning.
    - It's promoted if it does at least as well, and dropped if it's clearly worse.
 3. **Promote.** With the autopilot **On — promote by itself**, the new thresholds are saved and the next scan uses them. With **On — wait for my approval**, it asks on Telegram and shows **Apply now** on the tab.
 4. **Rollback.** The previous rules come back when both of these hold:
@@ -1870,6 +1903,11 @@ idea counts.
    - When a mode's last 30 closed paper trades lose more than the pause limit (swing 6R, intraday 10R, options 8R), its Telegram entry alerts stop.
    - Alerts still appear on the dashboard and are followed as paper trades.
    - They resume when trades during the pause add up to +2R, when new rules are promoted, or when you press **Resume alerts**.
+
+**What a proposal changes.** With each proposal comes its effect trade by trade, over all the history: the trades it adds
+and drops with their R, those it exits otherwise, the days it does better and worse on, and the biggest trades it adds and
+drops (date, underlying, direction, R). The proposal card, the tuning's result and the Telegram message show it. The final
+tuning saw that history, so this says what the change does; the checks above are the evidence that it works.
 
 Every proposal, promotion, drop, rollback, pause and resume is announced on Telegram and listed in the **Change log**. **Undo this change** puts the previous rules back.
 
@@ -1921,8 +1959,9 @@ it gave up. Options have weeks of history, not years: no holdout there yet.
 
 Every policy value is kept inside a range, so a saved value can never switch a safeguard off or stall the lab: most
 steps per change 1-6, tuner search 1-12 steps either side, shadow run 5-120 sessions, days between changes 1-90, out-of-sample
-R a trade a change must add 0-1, trades needed out of sample 20-2,000 (in training 20-5,000), roll back and pause after losing
-1-50 R. Outside, a value is clamped; anything but a number keeps the default. The policy is saved only here
+R a trade a change must add 0-1, trades needed out of sample 20-2,000 (in training 20-5,000), trading days those come from
+0-500 (`min_oos_days`: options 15, the others 0, off), days the shadow's differing trades fall on 0-120 (`shadow_min_days`:
+options 5, the others 0), roll back and pause after losing 1-50 R. Outside, a value is clamped; anything but a number keeps the default. The policy is saved only here
 (`POST /api/autopilot/policy`); `POST /api/settings` refuses it, and the rules, pauses and demo account, which have their own
 endpoints.
 
@@ -2098,6 +2137,21 @@ These are set by `docker-compose.yml` and rarely need changing: `PORT=5058` (pub
 All are kept across restarts. The Dhan login (`dhan_client_id`, `secret:dhan_token`, `dhan_token_expiry`) is stored in the same
 table but is not one of these settings: it is never sent to the browser (`/api/state` leaves it out).
 
+### 10.3 Where the rules come from
+
+```
+built-in defaults (smc.Rules)  →  SMC_* in .env  →  values saved from the rule tuner
+                                                     (highest priority)
+```
+
+The tuner can change the eight thresholds in its sliders. The rest (ATR length, OB search window,
+stop buffers, 15-minute swing size, intraday sessions) are `.env`-only. Out-of-range or
+unparsable values are clamped or ignored rather than breaking a scan: a tuner value is clamped
+to its slider's range, and a `.env` value that is not a number, infinite, negative, or a window
+of zero candles (say `SMC_ATR_LEN=0`) is ignored in favour of the default.
+
+---
+
 ### 10.4 Signing in and security
 
 NiftyWhale has one account, yours, and nothing is reachable without signing in except the sign-in page itself, the
@@ -2128,7 +2182,9 @@ after 12 hours idle.
 
 **Account & security** (Settings → Account & security, or **Account** in the sidebar): change the password (every other device is signed out), move the authenticator to a
 new phone, make new recovery codes, add or remove passkeys, see and sign out signed-in devices, create and revoke API tokens,
-and the sign-in history. Changes that matter ask for the password again when the sign-in is more than 10 minutes old.
+and the sign-in history. Changes that matter ask you to confirm when the sign-in is more than 10 minutes old: with a
+passkey (Face ID / Touch ID) first, where the account has one and the page is on its address, else the password. The
+sign-in then counts as fresh for 10 minutes.
 
 **API tokens** are for scripts and curl: create one in Account & security, then send `Authorization: Bearer <token>` (or
 `X-API-Key: <token>`). Each is **read only** (GET requests; the default) or **read and write**, and lasts 30 days, 90 days
@@ -2173,21 +2229,6 @@ docker exec niftywhale python -m niftywhale.auth token "pi scripts"  # an API to
 docker exec niftywhale python -m niftywhale.auth sign-out-all
 docker exec niftywhale python -m niftywhale.auth status
 ```
-
-### 10.3 Where the rules come from
-
-```
-built-in defaults (smc.Rules)  →  SMC_* in .env  →  values saved from the rule tuner
-                                                     (highest priority)
-```
-
-The tuner can change the eight thresholds in its sliders. The rest (ATR length, OB search window,
-stop buffers, 15-minute swing size, intraday sessions) are `.env`-only. Out-of-range or
-unparsable values are clamped or ignored rather than breaking a scan: a tuner value is clamped
-to its slider's range, and a `.env` value that is not a number, infinite, negative, or a window
-of zero candles (say `SMC_ATR_LEN=0`) is ignored in favour of the default.
-
----
 
 ## 11. The rules in detail
 
@@ -2262,6 +2303,16 @@ curl http://127.0.0.1:5058/healthz
 ```text
 ok
 ```
+
+#### `GET /docs`
+
+This README, rendered as a page with its contents beside it, read on each request (so it is always the one in the build).
+Needs a sign-in, as the dashboard does.
+
+#### `GET /trust`
+
+How to trust the Pi's HTTPS certificate on each kind of device (10.4). Public: a device that does not trust the certificate
+yet cannot sign in.
 
 #### `GET /api/state`
 
@@ -3193,6 +3244,46 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/trade/option
 }
 ```
 
+#### `GET /api/spark`
+
+The open trades' sparklines (on screen beside each open trade): for each `ref`, its closes since the entry (at most 80
+points, the latest kept), entry, stop and target. A trade that is not open, or not found, is `{}`.
+
+**Query:** `?refs=<ref>,<ref>` (at most 20)
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/spark?refs=options:16,swing:127'
+```
+
+```json
+{
+  "options:16": {"entry": 21.4, "lp": "", "pts": [["2026-10-09T09:45:00+05:30", 21.4], …], "stop": 16.05, "target": 32.1, "tf": 5, "up": true},
+  "swing:127": {…}
+}
+```
+
+#### `GET /api/candles/<SYMBOL>`
+
+A stock's or an index's (`IDX:<security id>`) candles for the side panels' charts, with their indicators: from Dhan in
+real time when it is connected, else yfinance. Cached for 10 seconds (a minute for daily).
+
+**Query:** `?tf=1`, `5`, `15`, `60` (minutes) or `1440` (daily). Another value, or an unknown instrument, is a `400`.
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/candles/SBIN?tf=15'
+```
+
+```json
+{
+  "bars": [
+    {…}
+  ],
+  "ind": {…},
+  "source": "dhan",
+  "tf": 15
+}
+```
+
 #### `GET /api/notices`
 
 The bell: notifications changed since that seq, newest first, with the unread count. Each has a `kind`, a `level` (`info`, `good`, `bad`, `warn`) and a `link` (a stock, a chain, a tab, or a trade `ref`).
@@ -3389,7 +3480,8 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
 
 Saves the demo settings (clamped; the two limits are whole numbers, 0 = no limit).
 
-**Body:** `risk_pct`, `max_alloc_pct`, `intraday_leverage`, `futures_margin_pct`, `max_open`, `max_per_day`, `swing`, `intraday`, `options`, `charges`
+**Body:** `sizing` (`risk`, or `lots`: the same lots every trade), `lots` (1-100), `risk_pct`, `max_alloc_pct`, `intraday_leverage`,
+`futures_margin_pct`, `max_open`, `max_per_day`, `swing`, `intraday`, `options`, `charges`
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
@@ -3823,11 +3915,13 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
 
 Saves the autopilot settings.
 
-**Body:** `mode`, `max_steps`, `shadow_days`, `cooldown_days`, `pause_r`, `rollback_r`, `limits` (`{mode: {threshold: [min, max]}}`)
+**Body:** `mode` (`auto`, `approve` or `off`), `max_steps`, `shadow_days`, `cooldown_days`, `holdout_months`, `pause_r`,
+`rollback_r`, `min_oos_trades`, `min_oos_days`, `shadow_min_trades`, `shadow_min_days` (the last six per mode:
+`{"options": 15}`), `limits` (`{mode: {threshold: [min, max]}}`)
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"mode": "swing"}' http://127.0.0.1:5058/api/autopilot/policy
+  -d '{"mode": "approve"}' http://127.0.0.1:5058/api/autopilot/policy
 ```
 
 ```json
@@ -3835,9 +3929,11 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
   "policy": {
     "cooldown_days": 14,
     "fold_months": 3,
+    "holdout_months": 3,
     "limits": {},
     "max_steps": 2,
     "min_gain_r": 0.05,
+    "min_oos_days": {…},
     "min_oos_trades": {…},
     "min_train_folds": 2,
     "min_train_trades": {…},
@@ -3848,6 +3944,7 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
     "search_steps": 4,
     "shadow_days": 20,
     "shadow_max_days": 60,
+    "shadow_min_days": {…},
     "shadow_min_trades": {…}
   }
 }
@@ -4389,6 +4486,23 @@ curl -X POST -c jar -b jar -H 'Content-Type: application/json' \
 }
 ```
 
+#### `POST /api/auth/confirm/options`
+
+Starts confirming a change with a passkey instead of the password (10.4): the WebAuthn options for this session's
+challenge, kept two minutes and used once. A `409` when the account has no passkey or the page is not on its address:
+confirm with the password. A signed-in browser only.
+
+#### `POST /api/auth/confirm/verify`
+
+Checks the passkey's answer to that challenge; the sign-in then counts as fresh for 10 minutes. A failure counts against
+the address like a failed sign-in.
+
+**Body:** `credential` (the browser's WebAuthn answer)
+
+```json
+{"ok": true}
+```
+
 #### `POST /api/auth/logout`
 
 Ends this session.
@@ -4643,6 +4757,65 @@ curl -X POST -c jar -b jar http://127.0.0.1:5058/api/auth/tokens/3/revoke
 }
 ```
 
+### 12.12 Live trading
+
+Live trading (4.18). Reading is open to an API token; every change needs a signed-in browser, and a change that can send
+real orders a fresh one (signed in or confirmed in the last 10 minutes), so a token can never arm or place anything.
+
+#### `GET /api/exec`
+
+The Trading tab: the settings and each mode's level, whether real sending is on (and why not), the static IP Dhan has
+whitelisted, the capital it sizes from, the evidence gates, the day's book, offers waiting, every order row, the totals
+and the last 500 requests to Dhan.
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/exec
+```
+
+```json
+{
+  "book": {…}, "capital": 1000.18, "dhan": true, "gates": {…}, "halt": null, "labels": {…}, "levels": {…},
+  "log": [{…}], "offers": [], "rows": [{…}], "sending": {…}, "settings": {…}, "since": "2026-10-11T20:27:16+05:30",
+  "totals": {…}
+}
+```
+
+#### `POST /api/exec/settings`
+
+Levels (`off`, `shadow`, `confirm`, `auto`), sizing and limits. A value that is not valid keeps the current one. A level
+that sends is refused (`400`, with `refused` per mode) without real sending on, with a halt, or without the mode's
+evidence. A fresh signed-in browser only.
+
+**Body:** `{"settings": {…}}` with any of `swing`, `intraday`, `options`, `capital`, `sizing`, `lots`, `risk_pct`,
+`max_alloc_pct`, `intraday_leverage`, `futures_margin_pct`, `max_open`, `max_per_day`, `daily_loss_pct`,
+`max_trade_loss`, `buffer_bps`, `max_drift_pct`, `offer_minutes`, `shorts`
+
+#### `POST /api/exec/send`
+
+Real sending on or off. On needs Dhan connected and a static IP whitelisted at Dhan; off also lowers every sending level to
+shadow. A fresh signed-in browser only.
+
+**Body:** `{"on": true}`
+
+#### `POST /api/exec/offer/<id>`
+
+Place or dismiss an order offered to you (Confirm each). A `409` when it is no longer waiting. A signed-in browser only
+(Telegram's `/place` asks for an authenticator code instead).
+
+**Body:** `{"action": "place"}` or `{"action": "dismiss"}`
+
+#### `POST /api/exec/kill`
+
+The kill switch: halt, lower every sending level to shadow, cancel entries not yet filled, and with `flatten` exit every
+position at Dhan too. A signed-in browser, not necessarily fresh: it has to be quick. Returns the Trading tab's view with
+any `errors`.
+
+**Body:** `{"flatten": false}`
+
+#### `POST /api/exec/resume`
+
+Lifts a halt. A fresh signed-in browser only.
+
 ---
 
 ## 13. Running, updating and backing up
@@ -4842,8 +5015,11 @@ changes for the long; the short follows. Intraday-only logic (target pools, the 
 - **No exchange holiday calendar.** On a holiday the watcher just finds no new candles.
 - **The doc's judgement calls are fixed numbers.** "Massive rally", "minor swing high" and
   similar phrases are the thresholds in section 11. Tune them against charts you trust.
-- **Analysis only.** NiftyWhale never places, modifies or cancels an order, and nothing it shows
-  is investment advice.
+- **Orders only through Live trading.** NiftyWhale places, modifies or cancels orders at Dhan only from Live trading
+  (4.18), at the levels you set there; otherwise it is analysis and paper trades. Nothing it shows is investment advice.
+- **Market context is a day behind.** India VIX, Nifty's trend and breadth come from the lab's daily file, and Dhan
+  adds a day's close only the day after: a trade on Friday reads Wednesday's close. The options' Nifty gap at the open
+  uses the app's own Nifty close instead.
 
 ---
 

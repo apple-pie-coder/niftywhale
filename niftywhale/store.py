@@ -924,6 +924,15 @@ def first_snapshot(symbol: str, expiry: str, session: str) -> Optional[Dict[str,
     return _snap(row) if row else None
 
 
+def prev_close(symbol: str, session: str) -> Optional[float]:
+    """The underlying's last spot of the session before `session` (oc_daily, written each pass and last by the
+    after-close pass): its close, a day fresher than the lab's daily file, which Dhan fills the next day."""
+    with connect() as c:
+        r = c.execute('SELECT spot FROM oc_daily WHERE symbol = ? AND session < ? AND spot IS NOT NULL '
+                      'ORDER BY session DESC LIMIT 1', (symbol, session)).fetchone()
+    return float(r['spot']) if r else None
+
+
 def day_spots(symbol: str, session: str) -> List[Tuple[str, float]]:
     """The underlying's spot at every read of the session, any expiry, oldest first: [(iso time, spot)]
     (options.market_move)."""

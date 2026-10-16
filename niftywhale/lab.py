@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import autopilot, backfill, backtest, config, costs, data, demo, dhan, execution, history, intraday, notify, options, perf, smc, store, universe
+from niftywhale import autopilot, backfill, backtest, config, context, costs, data, demo, dhan, execution, history, intraday, notify, options, perf, smc, store, universe
 
 logger = logging.getLogger('niftywhale.lab')
 
@@ -480,14 +480,21 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
     last_tune = {'at': data.now_ist().isoformat(timespec='seconds'), 'oos_tuned': wf['oos_tuned'],
                  'oos_current': wf['oos_current'], 'gain_r': wf['gain_r'], 'reasons': wf['reasons'],
                  'folds': [{'test': f['test'], 'tuned': f['tuned'], 'current': f['current']} for f in wf['folds']]}
-    challenger = None
+    challenger, why = None, None
     if wf['proposal']:
         proposal = {**current, **wf['proposal']}
+        # What it changes, trade by trade, over all the history (the final tuning saw it: the checks are the
+        # out-of-sample evidence, this is what the change does).
+        why = autopilot.explain(bench.run(proposal), bench.run(current))
+        evidence = (f"out of sample {wf['oos_tuned'].get('avg_r')}R/trade over {wf['oos_tuned'].get('trades')} trades "
+                    f"against {wf['oos_current'].get('avg_r')}R for the current rules")
+        if mode in autopilot.DAY_MODES:
+            ch = {c['key']: c for c in wf.get('checks', [])}
+            evidence += (f", on {wf['oos_tuned'].get('days')} days: better on {ch['days_better']['value']}, worse on "
+                         f"{ch['days_better']['need']}; not worse in {ch['months']['value']} of {ch['months']['need']} months")
         challenger = {'params': proposal, 'base': current, 'since': data.now_ist().date().isoformat(),
                       'proposed_at': data.now_ist().isoformat(timespec='seconds'),
-                      'change': describe(proposal, current),
-                      'evidence': f"out of sample {wf['oos_tuned'].get('avg_r')}R/trade over {wf['oos_tuned'].get('trades')} trades "
-                                  f"against {wf['oos_current'].get('avg_r')}R for the current rules"}
+                      'change': describe(proposal, current), 'evidence': evidence, 'why': why}
     taken = {}
 
     # The tuning ran for hours on the state as it was: only its own result goes in, and a proposal
@@ -502,6 +509,7 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
     if taken:
         store.log_autopilot(mode, 'propose', current, challenger['params'], challenger['evidence'])
         tg(f"🐋 <b>Autopilot · {mode}</b>: proposing {esc(challenger['change'])}.\n{esc(challenger['evidence'])}.\n"
+           f"Over the history it {esc(autopilot.why_text(why))}.\n"
            f"It now runs in shadow for {pol['shadow_days']} sessions before anything changes.")
     proposal = {**current, **wf['proposal']} if wf['proposal'] else None
     keep = ('trades', 'wins', 'win_rate', 'avg_r', 'total_r', 'max_drawdown', 'profit_factor')
@@ -510,6 +518,7 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
             # What the job's detail shows, laid out (the job keeps it with its step).
             'span': [str(first), str(lastday)], 'folds': len(wf['folds']), 'checks': wf.get('checks', []),
             'oos_tuned': {k: wf['oos_tuned'].get(k) for k in keep}, 'oos_current': {k: wf['oos_current'].get(k) for k in keep},
+            'why': why,
             'changes': {k: [current.get(k), v] for k, v in (proposal or {}).items()
                         if k in sp and current.get(k) is not None and abs(float(v) - float(current[k])) > 1e-9}}
 
@@ -696,6 +705,30 @@ def candidate_market(progress: Callable[[str], None]) -> int:
     if todo:
         progress(f'options: market move for {len(todo)} earlier candidates')
     return len(todo)
+
+
+def candidate_context(progress: Callable[[str], None]) -> int:
+    """The day's context, news and smart money (context.candidate_context) for candidates recorded before the
+    app kept them, and every candidate's crowding (context.crowding: its pass is whole once the session ends).
+    The option's own numbers are live only. Returns how many candidates changed."""
+    cands = store.option_candidates()
+    todo = {c['id'] for c in cands if not (c.get('f') or {}).get('ctx')}
+    market = history.load_market() if todo else None
+    sessions = {c['session'] for c in cands if 'crowd' not in (c.get('f') or {})}
+    crowd = context.crowding([c for c in cands if c['session'] in sessions])
+    changed = 0
+    for c in cands:
+        f = dict(c.get('f') or {})
+        if c['id'] in todo:                        # what the app recorded stays
+            f = {**context.candidate_context(c['symbol'], datetime.fromisoformat(c['ts']), market, f.get('mkt_move')), **f}
+        if c['id'] in crowd:
+            f['crowd'] = crowd[c['id']]
+        if f != (c.get('f') or {}):
+            store.set_candidate_features(c['id'], f)
+            changed += 1
+    if changed:
+        progress(f'options: context for {len(todo)} earlier candidates, crowding over {len(sessions)} sessions')
+    return changed
 
 
 def candidate_outcomes(progress: Callable[[str], None]) -> int:
@@ -1022,6 +1055,7 @@ def run_job(job: Dict[str, Any]) -> str:
                         say(f'{mode}: {n}')
             progress('options: candidate outcomes')
             candidate_market(progress)
+            candidate_context(progress)
             candidate_outcomes(progress)
             bench = Bench('options')
             if bench.ready():

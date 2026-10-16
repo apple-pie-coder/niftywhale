@@ -32,6 +32,15 @@ def summary(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     sd = math.sqrt(sum((r - mean) ** 2 for r in rs) / (n - 1)) if n > 1 else 0.0
     # The deepest fall as the equity curve draws it: trades in the order they closed (a swing trade held for days
     # closes after trades entered later), not the order they were entered.
+    # Trades of one day move together (one turn of the market stops a dozen ideas): the same mean's standard error
+    # with each day's trades as one draw (cluster-robust, with the small-sample factor), so 13 trades on one day
+    # count as one observation, not 13.
+    by_day: Dict[str, float] = {}
+    for t, r in zip(c, rs):
+        d = (t.get('entry_time') or '')[:10]
+        by_day[d] = by_day.get(d, 0.0) + (r - mean)
+    days = len(by_day)
+    se_day = math.sqrt(days / (days - 1) * sum(v * v for v in by_day.values())) / n if days > 1 else None
     curve, peak, dd = 0.0, 0.0, 0.0
     for r in (float(t['r']) for t in sorted(c, key=lambda t: t.get('exit_time') or t.get('entry_time') or '')):
         curve += r
@@ -47,6 +56,7 @@ def summary(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
         'max_drawdown': round(dd, 2), 'sd': round(sd, 3),
         # Mean minus one standard error: what the autopilot maximises (rewards consistency and sample size).
         'lcb': round(mean - (sd / math.sqrt(n) if n > 1 else abs(mean)), 3),
+        'days': days, 'lcb_day': round(mean - (se_day if se_day is not None else abs(mean)), 3),
         'first': min((t.get('entry_time') or '' for t in c), default=None), 'last': max((t.get('entry_time') or '' for t in c), default=None),
     }
 
@@ -128,6 +138,17 @@ DIMENSIONS: List[Tuple[str, str, Callable[[Dict[str, Any]], Optional[str]]]] = [
     ('fii_futures', 'FII index futures positioning', lambda t: fii_stance(t)),
     ('fii_cash', 'FII cash flow the session before', lambda t: None if (t.get('f') or {}).get('fii_cash_cr') is None
         else 'FII net buyers' if t['f']['fii_cash_cr'] > 0 else 'FII net sellers'),
+    # Options (context.py, options.candidate): the market's and the underlying's day at the look, the pass, the option.
+    ('nifty_gap', 'Nifty gap at the open', lambda t: _band([-1, -0.3, 0.3, 1], '{:+g}%')(t['f'].get('nifty_gap_pct'))),
+    ('mkt_back', 'Nifty back off its low / high (against the trade)', lambda t: _band([0.2, 0.5, 1], '{:g}%')(
+        t['f'].get('mkt_off_low') if _side(t) < 0 else t['f'].get('mkt_off_high'))),
+    ('crowd', 'Same-way looks in the pass', lambda t: _band([2, 4, 8])(t['f'].get('crowd'))),
+    ('und_move', "Underlying since its open (trade's way)", lambda t: _band([0, 0.5, 1, 2], '{:+g}%')(
+        None if t['f'].get('und_move') is None else t['f']['und_move'] * _side(t))),
+    ('und_vs_nifty', "Underlying vs Nifty today (trade's way)", lambda t: _band([-0.5, 0, 0.5, 1], '{:+g}')(
+        None if t['f'].get('und_vs_nifty') is None else t['f']['und_vs_nifty'] * _side(t))),
+    ('opt_day', 'Option premium today before entry', lambda t: _band([0, 25, 50, 100], '{:+g}%')(t['f'].get('opt_day_pct'))),
+    ('premium_lot', 'Premium a lot (₹)', lambda t: _band([5000, 10000, 20000])(t['f'].get('premium_lot'))),
 ]
 
 

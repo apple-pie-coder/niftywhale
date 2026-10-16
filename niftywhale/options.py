@@ -450,6 +450,15 @@ def market_swing(spots: List[Tuple[str, float]], now: datetime) -> Dict[str, Opt
     return {'off_low': round((last - lo) / lo * 100, 3), 'off_high': round((hi - last) / hi * 100, 3)}
 
 
+def market_gap(spots: List[Tuple[str, float]], now: datetime, prev_close: Optional[float]) -> Optional[float]:
+    """The market's gap at its open against the close before, in %: its first read of the day (as market_move
+    reads it) against `prev_close`. None when either is unknown."""
+    reads = _market_reads(spots, now)
+    if not reads or not prev_close:
+        return None
+    return round((reads[0][1] - prev_close) / prev_close * 100, 3)
+
+
 def bounce_gate(direction: str, off_low: Optional[float], off_high: Optional[float], limit: float) -> Optional[str]:
     """Why a trade bets against the market's turn, or None: a bearish idea once the market is back more than
     `limit` % off its day's low, a bullish one off its high. Unknown, or the limit at its off value, passes."""
@@ -703,18 +712,28 @@ def candidate(symbol: str, chain: Dict[str, Any], summary: Dict[str, Any], histo
     if not o or not o.get('ltp'):
         return None
     spread = (o['ask'] - o['bid']) / o['ask'] * 100 if o.get('bid') and o.get('ask') else None
+    writer = (row or {}).get('pe' if side == 'ce' else 'ce') or {}      # the side written at the same strike
+    pct = lambda a, b: round((a - b) / b * 100, 2) if a is not None and b else None      # noqa: E731
+    entry = round(o['ask'] if o.get('ask') else o['ltp'], 2)
+    lot = summary.get('lot')
     pcr_ok = True
     if summary.get('pcr') is not None and summary.get('pcr_open') is not None:
         pcr_ok = summary['pcr'] >= summary['pcr_open'] if direction == 'long' else summary['pcr'] <= summary['pcr_open']
     return {'symbol': symbol, 'direction': direction, 'side': side.upper(), 'strike': summary.get('atm'),
-            'entry': round(o['ask'] if o.get('ask') else o['ltp'], 2),
+            'entry': entry,
             'level': summary.get('support') if direction == 'long' else summary.get('resistance'),
             'f': {'bias': round(abs(b), 3), 'move_pct': round(abs(move), 3), 'pcr_ok': pcr_ok,
                   'iv_pct': summary.get('iv_pct'), 'atm_iv': summary.get('atm_iv'),
                   'spread_pct': round(spread, 2) if spread is not None else None,
                   'entry_minute': t.hour * 60 + t.minute, 'dte': summary.get('dte'),
                   'index': is_index(symbol), 'mkt_move': market,
-                  'mkt_off_low': (swing or {}).get('off_low'), 'mkt_off_high': (swing or {}).get('off_high')}}
+                  'mkt_off_low': (swing or {}).get('off_low'), 'mkt_off_high': (swing or {}).get('off_high'),
+                  # The option itself: kept only live (full chains are kept 3 days), so these start from the day
+                  # they were added. Its delta and contracts traded today, its premium against yesterday's close,
+                  # its OI and the written side's OI against yesterday's, and what a lot costs.
+                  'opt_delta': o.get('delta'), 'opt_vol': o.get('vol'), 'opt_day_pct': pct(o.get('ltp'), o.get('pc')),
+                  'opt_oi_chg_pct': pct(o.get('oi'), o.get('poi')), 'writer_oi_chg_pct': pct(writer.get('oi'), writer.get('poi')),
+                  'lot': lot, 'premium_lot': round(entry * lot, 2) if lot else None}}
 
 
 def candidate_passes(c: Dict[str, Any], thr: Dict[str, float]) -> bool:

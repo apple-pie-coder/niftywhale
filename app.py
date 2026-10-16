@@ -41,6 +41,7 @@ from flask_sock import Sock  # noqa: E402
 from niftywhale import (auth, autopilot, broker, charts, config, costs, data, demo, dhan, execution, features, glossary,  # noqa: E402
                         history, hub, indicators, intraday, news, notify, options, patterns, perf, session, smart, smc, store, telebot,
                         ticker, universe)
+from niftywhale.context import candidate_context, news_context, smart_context  # noqa: E402
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
                     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
@@ -986,36 +987,6 @@ def smart_stock(symbol: str, until: str = None) -> dict:
     deals = store.deals([symbol], since=since, until=until, limit=100)
     return {'delivery': smart.delivery_read(hist), 'history': hist,
             'deals': smart.deal_summary(deals).get(symbol), 'deal_list': deals}
-
-
-def smart_context(symbol: str, at) -> dict:
-    """What NSE had published before an entry's day, for the trade's context: the stock's
-    delivery read and its institutional deals of the week before, FII index-futures
-    positioning and FII cash flow of the session before."""
-    try:
-        day = pd.Timestamp(at).date().isoformat()
-    except (TypeError, ValueError):
-        return {}
-    out = {'sm': 1}
-    hist = store.delivery_history([symbol], smart.DELIV_SESSIONS + 1, until=day).get(symbol, [])
-    rd = smart.delivery_read(hist)
-    if rd:
-        out.update(deliv_read=rd['read'], deliv_ratio=rd['ratio'], deliv_vol_ratio=rd['vol_ratio'])
-    week = store.deals([symbol], since=(pd.Timestamp(day) - pd.Timedelta(days=8)).date().isoformat(), until=day)
-    sm = smart.deal_summary(week).get(symbol)
-    out['inst_deals_cr'] = sm['inst_net_cr'] if sm else 0.0
-    pos = smart.positioning(store.poi(2, until=day))
-    fii = ((pos.get('latest') or {}).get('FII') or {})
-    if fii.get('long_pct') is not None:
-        out['fii_long_pct'] = fii['long_pct']
-    fl = [r for r in store.flows(10) if r['day'] < day and r['category'] == 'FII']
-    if fl:
-        out['fii_cash_cr'] = fl[-1]['net']
-    # Futures open interest and results timing (backfill.py keeps them nightly), as the backtester records them.
-    fut = store.series('sm_futoi', [symbol], 'oi, oi_chg, close', until=day, sessions=features.FUT_DAYS + 1).get(symbol, [])
-    out.update(features.futures_context(fut))
-    out.update(features.results_context(store.results_dates([symbol]).get(symbol, []), pd.Timestamp(day).date()))
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2454,20 +2425,6 @@ def demo_loop() -> None:
         time.sleep(1)                    # let the watcher finish writing the rest of its pass
 
 
-def news_context(symbol: str, at) -> dict:
-    """What the desk had on a stock in the 24 hours before an entry, for the trade's
-    context (features.py): the Performance tab can then say whether news mattered."""
-    if store.settings().get('news') != '1':
-        return {}
-    at = pd.Timestamp(at)
-    c = store.news_counts([symbol], (at - pd.Timedelta(hours=24)).isoformat(), at.isoformat()).get(symbol, {})
-    out = {'news_24h': int(c.get('n') or 0), 'filing_24h': int(c.get('filings') or 0),
-           'news_pos_24h': int(c.get('pos') or 0), 'news_neg_24h': int(c.get('neg') or 0)}
-    if c.get('tone') is not None:
-        out['news_tone_24h'] = c['tone']          # FinBERT's average read, -1 to +1
-    return out
-
-
 # ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
@@ -3158,6 +3115,11 @@ def fetch_options(sym: str, now: datetime = None, allow_ideas: bool = True, pend
         cand = None
         try:
             cand = options.candidate(sym, chain, summary, past, now, orules(), market=market, swing=swing)
+            if cand and not open_now:
+                try:                                   # the day's context, news and smart money, as an idea's
+                    cand['f'].update(candidate_context(sym, now, market_frame(), market))
+                except Exception as e:
+                    logger.warning(f'Options candidate context {sym}: {e}')
             if cand and not open_now and not i:
                 store.add_candidate(cand, trade, today, now.isoformat(timespec='seconds'), taken=False)
         except Exception as e:
@@ -3197,7 +3159,7 @@ def open_idea(look: dict, now: datetime = None):
     sent = bool(_opt_alerts_on() and not paused('options') and notify.send(idea_message(i)))
     notice_entry('options', f"options:{i['id']}", sym, {**i, 'opt_side': i['side']}, i['created_at'])
     f = dict((cand or {}).get('f') or {'bias': abs(i['bias']), 'move_pct': abs(i['move_pct'])})
-    if sym not in options.INDICES:            # a stock's news; an index has none of its own
+    if sym not in options.INDICES and 'sm' not in f:     # a stock's news (the candidate's, when it has it)
         try:
             f.update(news_context(sym, at))
             f.update(smart_context(sym, at))

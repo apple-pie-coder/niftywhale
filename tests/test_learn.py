@@ -173,6 +173,66 @@ class Autopilot(unittest.TestCase):
         self.assertIsNone(autopilot.resume_due([trade('2026-01-01', 1)] * 3))
 
 
+def tr(day, sym, r, side='long', hhmm='10:00'):
+    return {'symbol': sym, 'side': side, 'entry_time': f'{day}T{hhmm}:00+05:30', 'exit_time': f'{day}T11:00:00+05:30',
+            'status': 'won' if r > 0 else 'lost', 'r': r, 'f': {}}
+
+
+class ByTheDay(unittest.TestCase):
+    """Options evidence judged by the day: a dozen ideas on one turn of the market are one observation."""
+    pol = autopilot.policy({})
+
+    def test_the_lower_bound_by_the_day(self):
+        ts = [tr('2026-10-01', 'A', 1.0), tr('2026-10-01', 'B', 1.0), tr('2026-10-02', 'A', -1.0), tr('2026-10-02', 'B', -1.0)]
+        s = perf.summary(ts)
+        self.assertEqual((s['days'], s['lcb'], s['lcb_day']), (2, -0.577, -1.0))      # two days, not four trades
+        spread = [tr(f'2026-10-0{d}', 'A', r) for d, r in ((1, 1.0), (2, 1.0), (3, -1.0), (5, -1.0))]
+        self.assertEqual(perf.summary(spread)['lcb_day'], perf.summary(spread)['lcb'])   # one a day: the same
+        self.assertEqual(autopilot.objective(ts, 4, by_day=True), -1.0)
+        self.assertEqual(autopilot.objective(ts, 4), -0.577)
+
+    def test_days_better_and_what_a_change_does(self):
+        old = [tr('2026-10-01', 'A', -1.0), tr('2026-10-01', 'B', 2.0), tr('2026-10-02', 'C', -1.0), tr('2026-10-03', 'D', 1.0)]
+        new = [tr('2026-10-01', 'B', 2.0), tr('2026-10-02', 'C', -0.5), tr('2026-10-03', 'D', 1.0), tr('2026-10-03', 'E', 0.5)]
+        self.assertEqual(autopilot.days_better(new, old), {'better': 3, 'worse': 0, 'same': 0})
+        w = autopilot.explain(new, old)
+        self.assertEqual((w['added'], w['dropped'], w['changed']), ({'n': 1, 'r': 0.5}, {'n': 1, 'r': -1.0}, {'n': 1, 'r': 0.5}))
+        self.assertEqual(w['examples']['dropped'], [{'at': '2026-10-01T10:00', 'symbol': 'A', 'side': 'long', 'r': -1.0}])
+        self.assertEqual(autopilot.why_text(w), 'adds 1 trade (+0.5R), drops 1 (-1.0R), exits 1 otherwise (+0.5R); '
+                                                'better on 3 days, worse on 0')
+
+    def test_shadow_waits_for_differing_trades_on_enough_days(self):
+        champ = [tr('2026-10-01', f'S{i}', -1.0) for i in range(12)]
+        self.assertEqual(autopilot.differing([], champ, days=True), {'2026-10-01'})
+        verdict, why = autopilot.shadow_decision([], champ, 25, self.pol, 'options')
+        self.assertEqual(verdict, 'wait')                           # 12 differ, but all on one day
+        self.assertIn('on 1 days (need 5)', why)
+        spread = [tr(f'2026-10-{d:02d}', f'S{i}', -1.0) for i, d in enumerate((1, 1, 2, 2, 5, 5, 6, 6, 7, 7, 8, 8))]
+        self.assertEqual(autopilot.shadow_decision([], spread, 25, self.pol, 'options')[0], 'promote')
+        self.assertEqual(autopilot.shadow_decision([], champ, 25, self.pol, 'swing')[0], 'promote')     # swing: trades only
+
+    def test_options_walk_forward_checks_days_and_months(self):
+        rnd = random.Random(3)
+        pool, d = [], date(2026, 1, 1)
+        while d < date(2026, 6, 1):
+            if d.weekday() < 5:
+                for q in range(6):                                   # stronger looks (q) do better, every day
+                    pool.append({**tr(d.isoformat(), f'U{q}', round(rnd.gauss(0.5 if q >= 3 else -0.4, 0.8), 3)), 'q': q})
+            d += timedelta(days=1)
+        spec = {'q_min': {'step': 1, 'min': 0, 'max': 5}}
+        wf = autopilot.walk_forward(lambda thr: [t for t in pool if t['q'] >= thr['q_min']], {'q_min': 0}, spec, self.pol,
+                                    'options', date(2026, 1, 1), date(2026, 5, 29))
+        keys = {c['key']: c for c in wf['checks']}
+        self.assertTrue({'days', 'days_better', 'months'} <= set(keys))
+        self.assertTrue(keys['days']['ok'] and keys['days_better']['ok'] and keys['months']['ok'])
+        self.assertGreater(keys['days_better']['value'], keys['days_better']['need'])
+        self.assertEqual(wf['proposal'], {'q_min': 2})             # two steps from 0
+        # Swing keeps its checks as they were.
+        sw = autopilot.walk_forward(lambda thr: [t for t in pool if t['q'] >= thr['q_min']], {'q_min': 0}, spec, self.pol,
+                                    'swing', date(2026, 1, 1), date(2026, 5, 29))
+        self.assertFalse({'days', 'days_better', 'months'} & {c['key'] for c in sw['checks']})
+
+
 class FakeData:
     def sessions(self, symbol, a, b):
         return pd.DataFrame({'Close': [1.0]})
@@ -549,6 +609,40 @@ class OptionsMarketRules(unittest.TestCase):
         self.assertIn('one_direction', sp)
         self.assertEqual(lab.describe({'market_band_pct': 0.3, 'one_direction': 1}, {'market_band_pct': 2.0, 'one_direction': 0}),
                          'market_band_pct off → 0.3, one_direction off → 1')
+
+    def test_earlier_candidates_get_their_context_and_crowding(self):
+        store.init()
+        with store.connect() as c:
+            c.execute('DELETE FROM oc_candidates')
+            c.execute('DELETE FROM oc_snapshots')
+            c.execute('DELETE FROM oc_daily')
+        store.save_daily('NIFTY', '2026-10-13', 100.2, None, None, None)      # the session before's last read
+        for sym, rows in (('NIFTY', (('09:15', 100.0), ('10:00', 100.4))), ('SBIN', (('09:20', 950.0), ('10:00', 960.0)))):
+            for t, spot in rows:
+                store.add_snapshot(sym, '2026-10-20', f'2026-10-14T{t}:00+05:30', '2026-10-14', spot, {}, None)
+        cand = lambda sym: {'symbol': sym, 'direction': 'long', 'side': 'CE', 'strike': 950.0, 'entry': 14.0, 'level': None,   # noqa: E731
+                            'f': {'bias': 0.5, 'mkt_move': 0.4}}
+        a = store.add_candidate(cand('SBIN'), '2026-10-27', '2026-10-14', '2026-10-14T10:01:00+05:30', False)
+        b = store.add_candidate(cand('NIFTY'), '2026-10-27', '2026-10-14', '2026-10-14T10:01:30+05:30', False)
+        other = store.add_candidate({**cand('ITC'), 'direction': 'short'}, '2026-10-27', '2026-10-14', '2026-10-14T10:01:40+05:30', False)
+        idx = pd.bdate_range(end='2026-10-13', periods=60)
+        market = pd.DataFrame({'nifty': [95.0] * 59 + [99.0], 'vix': 14.0}, index=idx)
+        with mock.patch.object(lab.history, 'load_market', return_value=market):
+            self.assertEqual(lab.candidate_context(lambda m: None), 3)
+        got = {c['id']: c['f'] for c in store.option_candidates()}
+        f = got[a]
+        self.assertEqual((f['ctx'], f['mkt_move'], f['nifty_gap_pct'], f['vix'], f['und_move'], f['und_vs_nifty']),
+                         (1, 0.4, -0.2, 14.0, 1.053, 0.653))       # the gap against the app's own close
+        self.assertEqual(f['sm'], 1)                                  # a stock: its smart money, as an idea's
+        self.assertNotIn('sm', got[b])                                # an index has none
+        self.assertEqual((got[a]['crowd'], got[b]['crowd'], got[other]['crowd']), (2, 2, 1))   # two long looks in the pass
+        self.assertEqual(lab.candidate_context(lambda m: None), 0)  # done once
+        # No reads of the session before: the lab's daily file's close.
+        with store.connect() as c:
+            c.execute('DELETE FROM oc_daily')
+        from niftywhale import context
+        self.assertEqual(context.market_day(market, date(2026, 10, 14), store.day_spots('NIFTY', '2026-10-14'),
+                                            datetime(2026, 10, 14, 10, 1, tzinfo=IST))['nifty_gap_pct'], 1.01)
 
     def test_earlier_candidates_get_the_market_move(self):
         store.init()

@@ -305,6 +305,11 @@ class MarketGate(unittest.TestCase):
         self.assertEqual(why, '')                                               # off by default
         cand = options.candidate('NIFTY', c, s, hist, NOW, on, market=0.4, swing={'off_low': 0.9, 'off_high': 0.7})
         self.assertEqual((cand['f']['mkt_off_low'], cand['f']['mkt_off_high']), (0.9, 0.7))
+        # The option itself: its delta, what a lot costs, and its premium against yesterday's (the same here).
+        cand = options.candidate('NIFTY', c, {**s, 'lot': 65}, hist, NOW, on)
+        self.assertEqual((cand['f']['opt_delta'], cand['f']['premium_lot'], cand['f']['opt_day_pct']), (0.5, 260.0, 0.0))
+        self.assertEqual(options.market_gap(self.spots(('09:15', 101.0), ('10:00', 101.5)), self.at('10:01'), 100.0), 1.0)
+        self.assertIsNone(options.market_gap(self.spots(('09:15', 101.0)), self.at('09:20'), None))
 
     def test_market_gate_band(self):
         self.assertIsNone(options.market_gate('long', 0.1, 0.3))                # flat: both sides pass

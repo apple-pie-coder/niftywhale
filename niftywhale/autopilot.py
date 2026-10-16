@@ -37,6 +37,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from niftywhale import perf
 
 MODES = ('swing', 'intraday', 'options')
+# Modes judged by the day: their trades of one day stand or fall together (a dozen option ideas on one turn of the
+# market), so the tuner scores the by-day lower bound (perf lcb_day) and a change needs its evidence spread over
+# days and months, not just trades.
+DAY_MODES = ('options',)
 
 DEFAULT_POLICY: Dict[str, Any] = {
     'mode': 'auto',                 # auto: promote by itself | approve: wait for a click | off
@@ -51,10 +55,12 @@ DEFAULT_POLICY: Dict[str, Any] = {
     # rule set must keep a real sample, in training and out of sample, to count.
     'min_oos_trades': {'swing': 40, 'intraday': 60, 'options': 40},
     'min_train_trades': {'swing': 60, 'intraday': 60, 'options': 40},
+    'min_oos_days': {'swing': 0, 'intraday': 0, 'options': 15},          # trading days those trades come from
     'min_gain_r': 0.05,             # out-of-sample R per trade the proposal must add
     'shadow_days': 20,
     'shadow_max_days': 60,
     'shadow_min_trades': {'swing': 4, 'intraday': 15, 'options': 10},
+    'shadow_min_days': {'swing': 0, 'intraday': 0, 'options': 5},        # days the differing trades fall on
     'cooldown_days': 14,
     'rollback_r': {'swing': 4.0, 'intraday': 6.0, 'options': 6.0},
     'pause_r': {'swing': 6.0, 'intraday': 10.0, 'options': 8.0},
@@ -74,6 +80,7 @@ POLICY_RANGES: Dict[str, Tuple[float, float]] = {
 }
 POLICY_MODE_RANGES: Dict[str, Tuple[float, float]] = {
     'min_oos_trades': (20, 2000), 'min_train_trades': (20, 5000), 'shadow_min_trades': (1, 200),
+    'min_oos_days': (0, 500), 'shadow_min_days': (0, 120),
     'rollback_r': (1.0, 50.0), 'pause_r': (1.0, 50.0),
 }
 
@@ -160,9 +167,9 @@ def clamp_steps(proposal: Dict[str, float], current: Dict[str, float], specs: Di
     return out
 
 
-def objective(trades: List[Dict[str, Any]], min_n: int) -> float:
+def objective(trades: List[Dict[str, Any]], min_n: int, by_day: bool = False) -> float:
     s = perf.summary(trades)
-    return s['lcb'] if s.get('trades', 0) >= min_n else -math.inf
+    return (s['lcb_day'] if by_day else s['lcb']) if s.get('trades', 0) >= min_n else -math.inf
 
 
 def tune(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], current: Dict[str, float],
@@ -172,9 +179,9 @@ def tune(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], current: 
     (ISO dates, end exclusive). Returns the best thresholds and their score."""
     since, until = window
     pick = lambda ts: [t for t in ts if (not since or t['entry_time'][:10] >= since) and (not until or t['entry_time'][:10] < until)]
-    min_n = pol['min_train_trades'][mode]
+    min_n, by_day = pol['min_train_trades'][mode], mode in DAY_MODES
     best = dict(current)
-    best_score = objective(pick(evaluate(best)), min_n)
+    best_score = objective(pick(evaluate(best)), min_n, by_day)
     for _ in range(rounds):
         improved = False
         for p in specs:
@@ -182,12 +189,63 @@ def tune(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], current: 
                 if v == best[p]:
                     continue
                 cand = {**best, p: v}
-                sc = objective(pick(evaluate(cand)), min_n)
+                sc = objective(pick(evaluate(cand)), min_n, by_day)
                 if sc > best_score + 1e-9:
                     best, best_score, improved = cand, sc, True
         if not improved:
             break
     return best, best_score
+
+
+def day_totals(trades: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Closed trades' R summed by entry day."""
+    out: Dict[str, float] = {}
+    for t in perf.closed(trades):
+        d = (t.get('entry_time') or '')[:10]
+        out[d] = out.get(d, 0.0) + float(t['r'])
+    return out
+
+
+def days_better(new: List[Dict[str, Any]], old: List[Dict[str, Any]]) -> Dict[str, int]:
+    """On how many days `new` made more R than `old`, fewer, and the same (a day either traded on counts; one
+    with no trade is 0R for that side)."""
+    a, b = day_totals(new), day_totals(old)
+    diff = [round(a.get(d, 0.0) - b.get(d, 0.0), 6) for d in set(a) | set(b)]
+    return {'better': sum(x > 0 for x in diff), 'worse': sum(x < 0 for x in diff), 'same': sum(x == 0 for x in diff)}
+
+
+def explain(new: List[Dict[str, Any]], old: List[Dict[str, Any]], limit: int = 6) -> Dict[str, Any]:
+    """What a change does, trade by trade: the trades it adds, the ones it drops and the ones it exits otherwise,
+    with their R, the days it does better and worse on, and the biggest of each (`limit`), for the proposal's why."""
+    key = lambda t: (t.get('symbol'), t.get('side'), t.get('entry_time'))      # noqa: E731
+    a, b = ({key(t): t for t in perf.closed(x)} for x in (new, old))
+    added = [a[k] for k in a if k not in b]
+    dropped = [b[k] for k in b if k not in a]
+    changed = [(b[k], a[k]) for k in a if k in b and round(float(a[k]['r']), 4) != round(float(b[k]['r']), 4)]
+    row = lambda t, r=None: {'at': (t.get('entry_time') or '')[:16], 'symbol': t.get('symbol'), 'side': t.get('side'),      # noqa: E731
+                             'r': round(float(t['r']) if r is None else r, 2)}
+    big = lambda ts: sorted(ts, key=lambda t: -abs(float(t['r'])))[:limit]      # noqa: E731
+    return {'added': {'n': len(added), 'r': round(sum(float(t['r']) for t in added), 2)},
+            'dropped': {'n': len(dropped), 'r': round(sum(float(t['r']) for t in dropped), 2)},
+            'changed': {'n': len(changed), 'r': round(sum(float(n['r']) - float(o['r']) for o, n in changed), 2)},
+            'days': days_better(new, old),
+            'examples': {'added': [row(t) for t in big(added)], 'dropped': [row(t) for t in big(dropped)]}}
+
+
+def why_text(w: Optional[Dict[str, Any]]) -> str:
+    """explain() in one line: 'adds 12 trades (+3.4R), drops 9 (-4.2R); better on 6 days, worse on 2'."""
+    if not w:
+        return ''
+    sg = lambda v: f'{v:+.1f}R'                                                  # noqa: E731
+    parts = []
+    if w['added']['n']:
+        parts.append(f"adds {w['added']['n']} trade{'s' if w['added']['n'] != 1 else ''} ({sg(w['added']['r'])})")
+    if w['dropped']['n']:
+        parts.append(f"drops {w['dropped']['n']} ({sg(w['dropped']['r'])})")
+    if w['changed']['n']:
+        parts.append(f"exits {w['changed']['n']} otherwise ({sg(w['changed']['r'])})")
+    d = w['days']
+    return (', '.join(parts) or 'the same trades') + f"; better on {d['better']} day{'s' if d['better'] != 1 else ''}, worse on {d['worse']}"
 
 
 HOLDOUT_MIN_TRADES = 10        # fewer in the holdout (both rule sets) and it cannot judge: the check passes, said so
@@ -251,6 +309,19 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
         {'key': 'drawdown', 'label': 'Drawdown not much deeper', 'value': st.get('max_drawdown'), 'need': dd_bar,
          'ok': not st.get('trades') or (st.get('max_drawdown') or 0) >= dd_bar},
     ]
+    if mode in DAY_MODES:
+        # The same out-of-sample trades by the day and by the month: a gain that is one lucky day, or one month,
+        # is not one to act on.
+        db = days_better(oos_tuned, oos_current)
+        held = sum((r['tuned'].get('total_r') or 0) >= (r['current'].get('total_r') or 0) for r in rows)
+        checks += [
+            {'key': 'days', 'label': 'Out-of-sample trading days', 'value': st.get('days', 0), 'need': pol['min_oos_days'][mode],
+             'ok': st.get('days', 0) >= pol['min_oos_days'][mode]},
+            {'key': 'days_better', 'label': 'Days better than the current rules', 'value': db['better'], 'need': db['worse'],
+             'ok': db['better'] > db['worse']},
+            {'key': 'months', 'label': 'Test months not worse', 'value': held, 'need': len(rows),
+             'ok': bool(rows) and 2 * held >= len(rows)},
+        ]
     reasons = []
     if not rows:
         reasons.append(f'not enough history for walk-forward ({len(fs)} folds of {months} month(s))')
@@ -260,6 +331,11 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
         reasons.append(f'tuning added {gain:+.3f}R per trade out of sample (need +{pol["min_gain_r"]})')
     if st.get('trades') and (st.get('total_r') or 0) <= (sc.get('total_r') or 0):
         reasons.append(f"total {st.get('total_r')}R out of sample, not more than the current rules' {sc.get('total_r') or 0}R")
+    for ch in checks:
+        if mode in DAY_MODES and not ch['ok'] and ch['key'] in ('days', 'days_better', 'months') and rows:
+            reasons.append({'days': f"out-of-sample trades on {ch['value']} days (need {ch['need']})",
+                            'days_better': f"better on {ch['value']} days, worse on {ch['need']}",
+                            'months': f"not worse in {ch['value']} of {ch['need']} test months (need half)"}[ch['key']])
     if st.get('trades') and (st.get('max_drawdown') or 0) < dd_bar:
         reasons.append(f"drawdown {st.get('max_drawdown')}R out of sample, past {dd_bar}R (the current rules' "
                        f"{sc.get('max_drawdown') or 0}R)")
@@ -292,13 +368,16 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
 
 
 # ---------------------------------------------------------------- shadow, rollback, pause
-def differing(challenger: List[Dict[str, Any]], champion: List[Dict[str, Any]]) -> int:
+def differing(challenger: List[Dict[str, Any]], champion: List[Dict[str, Any]], days: bool = False):
     """Closed trades the two rule sets disagree on: taken by one only, or the same entry with another result
     (an options exit). Both filter the same setups, so a trade both take adds the same R to each side and
-    says nothing about which is better; only these decide the comparison."""
+    says nothing about which is better; only these decide the comparison. With `days`, the set of entry
+    days they fall on instead."""
     key = lambda t: (t.get('symbol'), t.get('side'), t.get('entry_time'))
     ca, cb = (Counter((key(t), round(float(t['r']), 4)) for t in perf.closed(x)) for x in (challenger, champion))
     only_a, only_b = ca - cb, cb - ca
+    if days:
+        return {(k[2] or '')[:10] for (k, _) in list(only_a) + list(only_b)}
     ka, kb = (Counter(k for (k, _) in c.elements()) for c in (only_a, only_b))
     changed = sum(min(n, kb[k]) for k, n in ka.items())          # one trade with two results counts once
     return sum(only_a.values()) + sum(only_b.values()) - changed
@@ -311,12 +390,14 @@ def shadow_decision(challenger: List[Dict[str, Any]], champion: List[Dict[str, A
     a, b = perf.summary(challenger), perf.summary(champion)
     na, nb = a.get('trades', 0), b.get('trades', 0)
     ta, tb = a.get('total_r', 0) or 0, b.get('total_r', 0) or 0
-    need = pol['shadow_min_trades'][mode]
-    nd = differing(challenger, champion)
+    need, need_days = pol['shadow_min_trades'][mode], pol.get('shadow_min_days', {}).get(mode, 0)
+    nd, dd = differing(challenger, champion), len(differing(challenger, champion, days=True))
     if nd >= need and ta < tb - 3:
         return 'drop', f'{ta:+.1f}R in shadow against {tb:+.1f}R for the current rules'
-    if days < pol['shadow_days'] or (nd < need and days < pol['shadow_max_days']):
-        return 'wait', f'{days}/{pol["shadow_days"]} sessions · {na} trades vs {nb}, {nd} of them differ (need {need})'
+    short = nd < need or dd < need_days                     # too few differing trades, or all on a day or two
+    if days < pol['shadow_days'] or (short and days < pol['shadow_max_days']):
+        on = f' on {dd} days (need {need_days})' if need_days else ''
+        return 'wait', f'{days}/{pol["shadow_days"]} sessions · {na} trades vs {nb}, {nd} of them differ (need {need}){on}'
     if ta >= tb - 0.5:
         return 'promote', f'{ta:+.1f}R in {days} shadow sessions against {tb:+.1f}R for the current rules'
     return 'drop', f'{ta:+.1f}R in shadow against {tb:+.1f}R for the current rules'

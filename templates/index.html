@@ -8865,6 +8865,7 @@ function renderAutopilot() {
         const sh = prop.shadow;
         html += `<div class="ap-card" data-tone="accent"><b>${a.awaiting ? 'Waiting for your approval' : 'In shadow'}: ${esc(prop.change)}</b>
             <span>${esc(prop.evidence || '')}</span>
+            ${prop.why ? `<div>${whyHtml(prop.why)}</div>` : ''}
             ${sh ? `<span>Shadow so far: ${esc(sh.why)}</span>` : `<span>Started ${esc(prop.since)}; runs ${pol.shadow_days} sessions alongside the current rules.</span>`}
             ${thr(prop.params, a.current)}
             <div style="display:flex;gap:8px">${a.awaiting || pol.mode !== 'off' ? `<button class="btn btn-primary" type="button" data-ap="approve">Apply now</button>` : ''}
@@ -8996,6 +8997,22 @@ function noteLines(n) {
     return parts.map((x, i) => (i === 0 && m ? `${m[1]}: ` : '') + x.charAt(0).toUpperCase() + x.slice(1));
 }
 
+// What a proposal does, trade by trade (autopilot.explain): the trades it adds and drops with their R, the days
+// it does better and worse on, and the biggest of each.
+function whyHtml(w) {
+    if (!w) return '';
+    const parts = [];
+    if (w.added.n) parts.push(`adds ${w.added.n} trade${w.added.n === 1 ? '' : 's'} (${sgnR(w.added.r, 1)})`);
+    if (w.dropped.n) parts.push(`drops ${w.dropped.n} (${sgnR(w.dropped.r, 1)})`);
+    if (w.changed.n) parts.push(`exits ${w.changed.n} otherwise (${sgnR(w.changed.r, 1)})`);
+    const d = w.days || {};
+    const line = `${parts.join(', ') || 'the same trades'}; better on ${d.better || 0} day${d.better === 1 ? '' : 's'}, worse on ${d.worse || 0}`;
+    const ex = (k, label) => (w.examples && w.examples[k] || []).length ? `<div class="muted">${label}: ${w.examples[k].map((t) =>
+        `${esc(t.at.slice(5, 10))} ${esc(t.symbol)} ${t.side === 'short' ? '▼' : '▲'} ${sgnR(t.r, 1)}`).join(' · ')}</div>` : '';
+    return `<div class="tc-sub">What it changes, over the history</div><div>${esc(line.charAt(0).toUpperCase() + line.slice(1))}</div>
+        ${ex('dropped', 'Biggest dropped')}${ex('added', 'Biggest added')}`;
+}
+
 // One mode's tuning, readable: the verdict, the tuned rules against the current ones out of sample, each
 // check with its bar, and what would change.
 function tuneCard(r) {
@@ -9022,6 +9039,8 @@ function tuneCard(r) {
     const show = (ch) => ch.key === 'gain' ? sgnR(ch.value, 3) + ` <span class="muted">(need ${sgnR(ch.need, 2)})</span>`
         : ch.key === 'total' ? `${sgnR(ch.value, 1)} <span class="muted">vs ${sgnR(ch.need, 1)}</span>`
         : ch.key === 'drawdown' ? `${dd(ch.value)} <span class="muted">(limit ${dd(ch.need)})</span>`
+        : ch.key === 'days_better' ? `${n(ch.value)} <span class="muted">vs ${n(ch.need)} worse</span>`
+        : ch.key === 'months' ? `${n(ch.value)} <span class="muted">of ${n(ch.need)}</span>`
         : ch.key === 'holdout' ? `${sgnR(ch.value, 1)} <span class="muted">${typeof ch.need === 'number' ? 'vs ' + sgnR(ch.need, 1) : esc(ch.need == null ? 'vs —' : ch.need)}</span>`
         : `${n(ch.value)} <span class="muted">(need ${n(ch.need)})</span>`;
     const checks = (r.checks || []).length ? `<ul class="tc-checks">${r.checks.map((ch) => `<li data-ok="${ch.ok ? 1 : 0}">
@@ -9033,7 +9052,7 @@ function tuneCard(r) {
     const span = r.span ? `${r.folds} test periods · ${esc(r.span[0])} to ${esc(r.span[1])}` : '';
     return `<div class="tc" data-tone="${verdict.tone}"><div class="tc-head"><b>${verdict.head}</b><span>${verdict.sub}</span></div>
         <div class="tc-sub">Out of sample${span ? ` <span class="muted">· ${span}</span>` : ''}</div>${table}
-        <div class="tc-sub">Checks</div>${checks}${chg}</div>`;
+        <div class="tc-sub">Checks</div>${checks}${chg}${whyHtml(r.why)}</div>`;
 }
 
 function jobDetail(j) {
