@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import autopilot, backfill, backtest, config, costs, data, dhan, execution, history, intraday, notify, options, perf, smc, store, universe
+from niftywhale import autopilot, backfill, backtest, config, costs, data, demo, dhan, execution, history, intraday, notify, options, perf, smc, store, universe
 
 logger = logging.getLogger('niftywhale.lab')
 
@@ -62,7 +62,9 @@ def specs(mode: str) -> Dict[str, Dict[str, Any]]:
            for k in options.LEARN_FILTERS}
     out.update({k: {'values': list(v), 'step': 5, 'min': min(v), 'max': max(v)} for k, v in options.EXIT_GRID.items()})
     out.update({k: {'values': list(v), 'step': options.TUNABLE[k][3], 'min': min(v), 'max': max(v)}
-                for k, v in options.MARKET_GRID.items()})
+                for k, v in {**options.MARKET_GRID, **options.BOOK_GRID}.items()})
+    for k in options.CHOICE_RULES:
+        out[k]['choice'] = True
     for k, off in options.OFF.items():      # the value at which a rule does nothing, as the swing gates have
         if k in out:
             out[k]['off'] = off
@@ -226,8 +228,9 @@ class Bench:
     """Everything needed to simulate one mode, loaded once, with a memo shared by all
     the rule sets tried (most of them see the same zones)."""
 
-    def __init__(self, mode: str):
+    def __init__(self, mode: str, account: Optional[Dict[str, Any]] = None):
         self.mode = mode
+        self.account = account if mode == 'options' else None     # options: only what this account would take
         self.rules = current_rules(mode)
         self.memo: Dict = {}
         self.cache: Dict = {}
@@ -258,7 +261,7 @@ class Bench:
         fp = tuple(sorted((k, round(v, 6)) for k, v in thr.items()))
         if fp not in self.cache:
             if self.mode == 'options':
-                trades = options.simulate_candidates(self.cands, thr)
+                trades = options.simulate_candidates(self.cands, thr, self.account)
             else:
                 trades = backtest.simulate(self.mode, list(self.records), thr, self.rules, self.memo, self.d15,
                                            self.d5, self.records, self.market, self.dailies, nse=self.nse)
@@ -293,6 +296,32 @@ def live_costs(mode: str, bench: 'Bench', thr: Dict[str, Any], trades: List[Dict
     since = (data.now_ist() - timedelta(days=91)).strftime('%Y-%m-%d')
     return {'account': acct['label'], 'trades': s.get('trades') or 0, 'avg_r': s.get('avg_r'), 'total_r': s.get('total_r'),
             'hold_r': execution.hold_r(perf.equity(live), since)}
+
+
+def account_limits() -> Optional[Dict[str, Any]]:
+    """The account the option ideas go to, for the autopilot's options replay: live trading's when it takes them,
+    else the demo's, with its positions open at once and entries a day (0: no limit). None: neither takes them,
+    and the autopilot judges every idea."""
+    st = store.settings()
+    try:
+        live = execution.settings_from(json.loads(st.get('exec') or '{}'))
+        dm = demo.settings_from(json.loads(st.get('demo') or '{}'))
+    except ValueError:
+        return None
+    if st.get('exec_since') and live['options'] != 'off':
+        return {'label': 'live trading', 'max_open': live['max_open'], 'max_per_day': live['max_per_day']}
+    if st.get('demo_since') and dm['options']:
+        return {'label': 'demo', 'max_open': dm['max_open'], 'max_per_day': dm['max_per_day']}
+    return None
+
+
+def account_note(acct: Optional[Dict[str, Any]]) -> str:
+    """' for the demo account (3 open at once, no daily limit)', or '' for none."""
+    if not acct:
+        return ''
+    parts = [f"{acct['max_open']} open at once" if acct['max_open'] else 'no limit on open positions',
+             f"{acct['max_per_day']} a day" if acct['max_per_day'] else 'no daily limit']
+    return f" for the {acct['label']} account ({', '.join(parts)})"
 
 
 def baseline(mode: str, bench: Optional['Bench'] = None) -> Optional[Dict[str, Any]]:
@@ -418,6 +447,8 @@ def revert_change(mode: str, lc: Dict[str, Any]) -> Dict[str, Any]:
 def describe(thr: Dict[str, float], base: Dict[str, float]) -> str:
     def show(k, v):                     # a context gate at its 'off' value reads as off
         off = smc.TUNABLE[k]['off'] if k in smc.GATES else options.OFF.get(k)
+        if k in options.CHOICE_RULES:
+            return options.RANK_LABEL.get(int(v), f'{v:g}')
         return 'off' if off is not None and v == off else f'{v:g}'
     parts = [f'{k} {show(k, base[k])} → {show(k, v)}' for k, v in thr.items()
              if base.get(k) is not None and abs(v - base[k]) > 1e-9]
@@ -434,12 +465,13 @@ def tune(mode: str, progress: Callable[[str], None]) -> Dict[str, Any]:
         return {'skipped': f'a change was made on {last[:10]}; next tuning after {pol["cooldown_days"]} days'}
     if st.get('challenger') or st.get('awaiting'):
         return {'skipped': 'a proposal is already in shadow or awaiting approval'}
-    bench = Bench(mode)
+    acct = account_limits() if mode == 'options' else None
+    bench = Bench(mode, account=acct)
     if not bench.ready():
         return {'skipped': 'no backtest data yet'}
     first, lastday = bench.span()
     current = current_thresholds(mode)
-    progress(f'{mode}: walk-forward tuning over {first} – {lastday}')
+    progress(f'{mode}: walk-forward tuning over {first} – {lastday}{account_note(acct)}')
     sp = specs(mode)
     # Each fold as it starts: "swing: walk-forward 3/11 (testing 2024-07 to 2024-10)", which the job's
     # progress bar and time left read (step_of).
@@ -646,16 +678,21 @@ def _from_minutes(c: Dict[str, Any]) -> bool:
 
 
 def candidate_market(progress: Callable[[str], None]) -> int:
-    """The market's move at each candidate's time (options.market_move, kept as mkt_move), for candidates recorded
-    before the app measured it, from the session's Nifty snapshots: the market gate can then be backtested over
-    them. One that cannot be measured keeps None (no gate), as live."""
-    todo = [c for c in store.option_candidates() if 'mkt_move' not in (c.get('f') or {})]
+    """The market's move at each candidate's time (options.market_move, kept as mkt_move) and how far it was back
+    off its day's low and high (options.market_swing, as mkt_off_low and mkt_off_high), for candidates recorded
+    before the app measured them, from the session's Nifty snapshots: the market and bounce gates can then be
+    backtested over them. The snapshots are kept OC_KEEP_SUMMARY_DAYS: older candidates keep None (no gate), as
+    one that cannot be measured does live. A value the app recorded is kept."""
+    todo = [c for c in store.option_candidates() if not {'mkt_move', 'mkt_off_low'} <= set(c.get('f') or {})]
     spots: Dict[str, List] = {}
     for c in todo:
         if c['session'] not in spots:
             spots[c['session']] = store.day_spots(options.MARKET, c['session'])
-        store.set_candidate_features(c['id'], {**c['f'], 'mkt_move': options.market_move(spots[c['session']],
-                                                                                         datetime.fromisoformat(c['ts']))})
+        at = datetime.fromisoformat(c['ts'])
+        swing = options.market_swing(spots[c['session']], at)
+        got = {'mkt_move': options.market_move(spots[c['session']], at),
+               'mkt_off_low': swing['off_low'], 'mkt_off_high': swing['off_high']}
+        store.set_candidate_features(c['id'], {**got, **c['f']})
     if todo:
         progress(f'options: market move for {len(todo)} earlier candidates')
     return len(todo)
@@ -991,8 +1028,8 @@ def run_job(job: Dict[str, Any]) -> str:
                 b = baseline('options', bench)
                 if b:
                     progress.link_run(b['run_id'])
-                if kind == 'nightly':
-                    for n in shadow_and_guards('options', bench):
+                if kind == 'nightly':          # the autopilot judges what the account would have taken
+                    for n in shadow_and_guards('options', Bench('options', account=account_limits())):
                         say(f'options: {n}')
         elif kind == 'tune':
             for mode in job['args'].get('modes', ['swing', 'intraday', 'options']):

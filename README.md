@@ -1558,19 +1558,37 @@ An idea is an **at-the-money option buy** on the nearest expiry that isn't today
 | Option's bid-ask spread | ≤ 3 % of its price | ≤ 3 % of its price |
 | Per underlying | one open idea, at most 2 a day | one open idea, at most 2 a day |
 | Nifty since its open (when the band is on) | not down past the band | not up past the band |
+| Nifty off its day's extreme (when the bounce limit is on) | not down off its high past the limit | not up off its low past the limit |
 | Same underlying today (when one direction is on) | not traded bearish | not traded bullish |
+| Every underlying (when the book limit is on) | fewer bullish ideas open than the limit | fewer bearish ideas open than the limit |
 
-Three rules guard against fighting the market, and all three start off:
+Four rules guard against fighting the market, and all four start off:
 
 - **Nifty band:** once Nifty is further from its open than the band (say 0.3 %), only trades on the side it moved to
   are taken. Inside the band the market counts as flat and both sides pass, so 0.1 % of noise is not read as a trend.
   Nifty's open is its first read of the day, and it must come by 09:30 and the latest within 15 minutes, or the band
   does not apply. 2 % is off.
+- **Nifty off its low / high:** no put once Nifty is back up off its day's low by more than the limit (say 0.5 %),
+  no call once it is back down off its high by more. The band reads only how far Nifty is from its open: a day that
+  falls 0.5 % and then climbs back above its open reads as flat, and puts bought on the way up bet the turn fails.
+  The low and high are of the reads (one a pass, every 3 minutes), with the band's checks on the open and the latest
+  read. 2 % is off.
 - **Last entry hour:** no new idea after it (13.5 = 13:30). 14.5 keeps the 14:30 window.
 - **One direction a day:** an underlying traded one way today is not traded the other.
 
-Every candidate keeps Nifty's move at its time, so the backtests and the autopilot can judge these rules like any other
-threshold (candidates from before Nifty's move was recorded have it filled in from the day's Nifty reads).
+Every candidate keeps Nifty's move at its time and how far it was back off its low and high, so the backtests and the
+autopilot can judge these rules like any other threshold. Candidates from before these were recorded have them filled
+in each night from the day's Nifty reads, which are kept 30 days; older ones have none, and pass.
+
+Two rules look at the book as a whole:
+
+- **Ideas open each way** (off by default; 50 is off): the most ideas open at once in one direction, over every stock
+  and index. A dozen puts in the first minutes of a day are one bet that Nifty falls; when it turns, they are a dozen
+  stops. An idea over the limit is not opened, and its look is kept as a candidate not taken.
+- **Pass order:** a pass collects the ideas it finds and opens them at its end, best first: in the order it read them
+  (indices first, the default), lowest ATM IV first, strongest OI bias first, or smallest 30-minute move first. The
+  limit above, and the demo or live account taking trades in entry order, then take the best of a pass, not the first
+  read. An idea is entered when it opens, up to a pass (about a minute) after its look at the chain.
 
 - **Entry** is the option's ask, the price you would pay.
 - **Stop** is 25 % below the entry premium and **target** 50 % above it (1:2).
@@ -1637,7 +1655,7 @@ The **chain panel** (click any row) shows:
 | Idea alerts | on | Telegram for each idea and its result (needs Telegram, section 9) |
 | Level alerts | off | Telegram when an index's OI support or resistance moves, and holds for two reads |
 | Stocks | 30 | Which F&O stocks to read besides the indices |
-| Idea rules | | Minimum OI bias, 30-minute move, IV percentile cap, spread, stop %, target %, trail after the target (off, 10, 20, 30 %), ideas per day, Nifty band, last entry hour, one direction a day |
+| Idea rules | | Minimum OI bias, 30-minute move, IV percentile cap, spread, stop %, target %, trail after the target (off, 10, 20, 30 %), ideas per day, Nifty band, Nifty off its low / high, last entry hour, one direction a day, ideas open each way, pass order |
 
 Storage:
 
@@ -1816,7 +1834,13 @@ what may change it:
 |---|---|
 | Swing | Min volume, min ATR %, discount ≤, provisional R:R, final R:R, and the three context gates: max Nifty 20-day run, min zone age, max R:R (§11) |
 | Intraday | The same five |
-| Options | Min OI bias, min 30-minute move, max IV percentile, max spread %, stop %, target %, trail after the target, Nifty band, last entry hour, one direction a day |
+| Options | Min OI bias, min 30-minute move, max IV percentile, max spread %, stop %, target %, trail after the target, Nifty band, Nifty off its low / high, last entry hour, one direction a day, ideas open each way, pass order |
+
+For options, the autopilot judges the trades the account would have taken, not every idea. When live trading takes
+option ideas, its limits apply, else the demo's when it does: positions open at once and entries a day, applied to
+the replayed ideas in the order they open. The account's cash and its positions in other modes are not counted, so
+set its positions open at once low enough to bind before the cash does. With neither account taking options, every
+idea counts.
 
 **How a change happens:**
 
@@ -3041,13 +3065,16 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
   "rules": {
     "last_entry_hour": 14.5,
     "market_band_pct": 2.0,
+    "max_bounce_pct": 2.0,
     "max_iv_pct": 80.0,
     "max_per_day": 2,
     "max_spread_pct": 3.0,
     "min_bias": 0.35,
     "min_move_pct": 0.15,
     "no_entry_after": "14:30",
+    "max_open_side": 50,
     "one_direction": 0,
+    "rank_by": 0,
     "square_off": "15:15",
     "start": "09:45",
     "stop_pct": 25.0,

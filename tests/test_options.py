@@ -278,6 +278,34 @@ class MarketGate(unittest.TestCase):
         self.assertIsNone(options.market_move([], self.at('10:30')))
         self.assertIsNone(options.market_move(self.spots(('09:15', 0.0)), self.at('09:20')))
 
+    def test_market_swing_and_the_bounce_gate(self):
+        # 16 Oct: down 0.5 % by 09:33, back above the open by 10:18.
+        sp = self.spots(('09:15', 23058.35), ('09:33', 22942.2), ('09:45', 22957.9), ('10:18', 23130.65), ('10:36', 23144.35))
+        early, late = options.market_swing(sp, self.at('09:46')), options.market_swing(sp, self.at('10:40'))
+        self.assertEqual((early['off_low'], early['off_high']), (0.068, 0.436))
+        self.assertEqual((late['off_low'], late['off_high']), (0.881, 0.0))
+        self.assertEqual(options.market_swing(sp[3:], self.at('10:40')), {'off_low': None, 'off_high': None})   # no open
+        self.assertIsNone(options.bounce_gate('short', early['off_low'], early['off_high'], 0.5))   # the first puts
+        self.assertIn('0.88% up off its low', options.bounce_gate('short', late['off_low'], late['off_high'], 0.5))
+        self.assertIsNone(options.bounce_gate('long', late['off_low'], late['off_high'], 0.5))     # calls with the turn
+        self.assertIn('down off its high', options.bounce_gate('long', 0.1, 0.6, 0.5))
+        self.assertIsNone(options.bounce_gate('short', 0.88, 0.0, 2.0))         # off
+        self.assertIsNone(options.bounce_gate('short', None, None, 0.5))        # unknown passes
+
+    def test_idea_skips_into_the_turn(self):
+        c, s = bullish()
+        hist = [{'ts': (NOW - timedelta(minutes=30)).isoformat(), 'spot': 100.0}]
+        on = options.rules_from({'max_bounce_pct': 0.5})
+        i, why = options.idea('NIFTY', c, s, hist, on, NOW, 0, False, swing={'off_low': 0.9, 'off_high': 0.7})
+        self.assertIsNone(i)
+        self.assertIn('no bullish trade into the turn', why)
+        i, why = options.idea('NIFTY', c, s, hist, on, NOW, 0, False, swing={'off_low': 0.9, 'off_high': 0.2})
+        self.assertEqual(why, '')
+        i, why = options.idea('NIFTY', c, s, hist, options.rules_from({}), NOW, 0, False, swing={'off_low': 0.9, 'off_high': 0.7})
+        self.assertEqual(why, '')                                               # off by default
+        cand = options.candidate('NIFTY', c, s, hist, NOW, on, market=0.4, swing={'off_low': 0.9, 'off_high': 0.7})
+        self.assertEqual((cand['f']['mkt_off_low'], cand['f']['mkt_off_high']), (0.9, 0.7))
+
     def test_market_gate_band(self):
         self.assertIsNone(options.market_gate('long', 0.1, 0.3))                # flat: both sides pass
         self.assertIsNone(options.market_gate('short', 0.1, 0.3))
@@ -318,6 +346,49 @@ class MarketGate(unittest.TestCase):
         self.assertEqual(why, '')
         i, why = options.idea('NIFTY', c, s, hist, options.rules_from({'last_entry_hour': 10.75}), NOW, 0, False)
         self.assertIn('outside the entry window', why)
+
+
+class Book(unittest.TestCase):
+    """Ideas open at once in one direction, and the order a pass opens its ideas in."""
+
+    def test_side_gate_rank_and_pass(self):
+        self.assertIsNone(options.side_gate('short', 3, 50))                   # off: no limit
+        self.assertIsNone(options.side_gate('short', 1, 2))
+        self.assertIn('2 bearish ideas open', options.side_gate('short', 2, 2))
+        f = [{'atm_iv': 20, 'bias': 0.4, 'move_pct': 0.2}, {'atm_iv': 12, 'bias': 1.0, 'move_pct': 0.9}, {'bias': 0.6}]
+        order = lambda rank: sorted(range(3), key=lambda i: options.rank_key(rank, f[i]))      # noqa: E731
+        self.assertEqual((order(0), order(1), order(2), order(3)), ([0, 1, 2], [1, 0, 2], [1, 2, 0], [0, 1, 2]))
+        self.assertEqual(options.pass_of('2026-10-16T09:47:59+05:30'), '2026-10-16T09:45')
+        self.assertEqual(options.pass_of('2026-10-16T09:48:05+05:30'), '2026-10-16T09:48')
+        self.assertEqual(options.rules_from({})['max_open_side'], options.OFF['max_open_side'])
+
+    def test_a_pass_opens_its_best_ideas_first(self):
+        store.init()
+        _reset_options()
+        with store.connect() as c:
+            c.execute('DELETE FROM oc_candidates')
+        store.set_settings({'options_rules': {'max_open_side': 2, 'rank_by': 1}})
+        at = NOW.replace(hour=9, minute=45, second=10)
+
+        def look(sym, iv):
+            i = {'symbol': sym, 'side': 'PE', 'direction': 'short', 'strike': 100.0, 'entry': 10.0, 'stop': 7.5,
+                 'target': 15.0, 'spot': 100.0, 'level': 105.0, 'bias': -0.6, 'move_pct': -0.3, 'reason': 'test',
+                 'trail_pct': 0.0, 'expiry': '2026-10-27', 'session': '2026-10-07', 'lot': 65}
+            cand = {'symbol': sym, 'direction': 'short', 'side': 'PE', 'strike': 100.0, 'entry': 10.0, 'level': 105.0,
+                    'f': {'bias': 0.6, 'move_pct': 0.3, 'atm_iv': iv}}
+            return {'symbol': sym, 'idea': i, 'cand': cand, 'at': at, 'trade': '2026-10-27', 'today': '2026-10-07',
+                    'rank': cand['f']}
+        pending = [look('NIFTY', 20.0), look('BANKNIFTY', 12.0), look('FINNIFTY', 15.0)]     # in the order read
+        with mock.patch.object(app.data, 'now_ist', lambda: at.replace(second=50)):
+            self.assertEqual(app.open_ideas(pending), 2)
+        self.assertEqual([t['symbol'] for t in store.live_trades('options')], ['BANKNIFTY', 'FINNIFTY'])   # lowest IV first
+        self.assertIn('the most at once is 2', app.OPT_WHY['NIFTY'])
+        taken = {c['symbol']: c['taken'] for c in store.option_candidates()}
+        self.assertEqual(taken, {'BANKNIFTY': 1, 'FINNIFTY': 1, 'NIFTY': 0})
+        # One opened straight away (not in a pass) is entered at its look's time, as before.
+        store.set_settings({'options_rules': {}})
+        self.assertIsNotNone(app.open_idea(look('MIDCPNIFTY', 18.0)))
+        self.assertEqual(store.ideas(symbol='MIDCPNIFTY')[0]['created_at'], at.isoformat(timespec='seconds'))
 
 
 class Follow(unittest.TestCase):

@@ -475,11 +475,72 @@ class OptionsMarketRules(unittest.TestCase):
         self.assertFalse(options.candidate_passes(self.cand('2026-10-14T13:00:00'), self.thr(last_entry_hour=13.0)))
         self.assertTrue(options.candidate_passes(self.cand('2026-10-14T12:45:00'), self.thr(last_entry_hour=13.0)))
 
+    def test_the_bounce_in_the_simulation(self):
+        c = self.cand('2026-10-14T10:40:00', 'short')
+        c['f'].update(mkt_off_low=0.88, mkt_off_high=0.0)
+        self.assertTrue(options.candidate_passes(c, self.thr()))                          # off
+        self.assertFalse(options.candidate_passes(c, self.thr(max_bounce_pct=0.5)))
+        self.assertTrue(options.candidate_passes(c, self.thr(max_bounce_pct=1.0)))
+        old = self.cand('2026-10-14T10:40:00', 'short')                                    # before it was recorded
+        self.assertTrue(options.candidate_passes(old, self.thr(max_bounce_pct=0.5)))
+        sp = lab.specs('options')
+        self.assertEqual((sp['max_bounce_pct']['values'], sp['max_bounce_pct']['off']), (list(options.MARKET_GRID['max_bounce_pct']), 2.0))
+
     def test_one_direction_in_the_simulation(self):
         cs = [self.cand('2026-10-14T10:00:00', 'long'), self.cand('2026-10-14T11:00:00', 'short')]
         self.assertEqual(len(options.simulate_candidates(cs, self.thr())), 2)
         out = options.simulate_candidates(cs, self.thr(one_direction=1))
         self.assertEqual([t['side'] for t in out], ['long'])
+
+    def test_ideas_open_one_way_and_the_pass_order(self):
+        def look(ts, sym, iv=None, direction='short'):
+            c = self.cand(ts, direction, sym)
+            c['f']['atm_iv'] = iv
+            return c
+        one = [look('2026-10-14T10:00:10', 'NIFTY', 20.0), look('2026-10-14T10:00:20', 'SBIN', 15.0),
+               look('2026-10-14T10:00:30', 'ITC', 12.0)]
+        syms = lambda cs, **kw: [t['symbol'] for t in options.simulate_candidates(cs, self.thr(**kw))]     # noqa: E731
+        self.assertEqual(syms(one), ['NIFTY', 'SBIN', 'ITC'])                       # off
+        self.assertEqual(syms(one, max_open_side=2), ['NIFTY', 'SBIN'])             # in the order read
+        self.assertEqual(syms(one, max_open_side=2, rank_by=1), ['SBIN', 'ITC'])    # the lowest IV, in entry order
+        # The other way is not counted, and a slot frees when an idea closes (they exit 5 minutes on).
+        later = [look('2026-10-14T10:03:10', 'TCS', direction='long'), look('2026-10-14T10:03:20', 'INFY'),
+                 look('2026-10-14T10:06:10', 'LT')]
+        self.assertEqual(syms(one + later, max_open_side=2), ['NIFTY', 'SBIN', 'TCS', 'LT'])
+
+    def test_the_account_takes_what_its_limits_allow(self):
+        cs = [self.cand(f'2026-10-14T10:00:{s}', 'long', sym) for s, sym in (('10', 'NIFTY'), ('20', 'SBIN'), ('30', 'ITC'))]
+        cs.append(self.cand('2026-10-14T11:00:00', 'long', 'TCS'))
+        run = lambda acct: [t['symbol'] for t in options.simulate_candidates(cs, self.thr(), acct)]       # noqa: E731
+        self.assertEqual(run(None), ['NIFTY', 'SBIN', 'ITC', 'TCS'])
+        self.assertEqual(run({'max_open': 2, 'max_per_day': 0}), ['NIFTY', 'SBIN', 'TCS'])     # 2 at once; TCS after
+        self.assertEqual(run({'max_open': 0, 'max_per_day': 2}), ['NIFTY', 'SBIN'])
+        self.assertEqual(run({'max_open': 0, 'max_per_day': 0}), ['NIFTY', 'SBIN', 'ITC', 'TCS'])
+
+    def test_the_account_the_autopilot_tunes_for(self):
+        store.init()
+        with store.connect() as c:
+            c.execute("DELETE FROM settings WHERE key IN ('demo', 'demo_since', 'exec', 'exec_since')")
+        self.assertIsNone(lab.account_limits())
+        store.set_settings({'demo_since': '2026-10-09T09:15:00+05:30', 'demo': {'options': True, 'max_open': 3, 'max_per_day': 0}})
+        acct = lab.account_limits()
+        self.assertEqual((acct['label'], acct['max_open'], acct['max_per_day']), ('demo', 3, 0))
+        self.assertEqual(lab.account_note(acct), ' for the demo account (3 open at once, no daily limit)')
+        store.set_settings({'exec_since': '2026-10-11T20:27:16+05:30', 'exec': {'options': 'shadow', 'max_open': 4, 'max_per_day': 6}})
+        self.assertEqual(lab.account_limits()['label'], 'live trading')         # live trading's limits win
+        with store.connect() as c:
+            c.execute("DELETE FROM settings WHERE key IN ('demo', 'demo_since', 'exec', 'exec_since')")
+
+    def test_autopilot_searches_the_book(self):
+        sp = lab.specs('options')
+        self.assertEqual(sp['max_open_side']['values'], list(options.BOOK_GRID['max_open_side']))
+        self.assertEqual(sp['max_open_side']['off'], 50)
+        self.assertTrue(sp['rank_by']['choice'])
+        # From off, one change moves the limit two steps; the order is a choice, picked outright.
+        out = autopilot.clamp_steps({'max_open_side': 1, 'rank_by': 3}, {'max_open_side': 50, 'rank_by': 0}, sp, 2)
+        self.assertEqual(out, {'max_open_side': 6, 'rank_by': 3})
+        self.assertEqual(lab.describe({'max_open_side': 3, 'rank_by': 1}, {'max_open_side': 50, 'rank_by': 0}),
+                         'max_open_side off → 3, rank_by Scan order → Lowest IV first')
 
     def test_autopilot_searches_the_band_on_its_grid(self):
         sp = lab.specs('options')
@@ -500,10 +561,14 @@ class OptionsMarketRules(unittest.TestCase):
                 'f': {'bias': 0.5}}
         cid = store.add_candidate(cand, '2026-10-27', '2026-10-14', '2026-10-14T10:01:00+05:30', False)
         late = store.add_candidate(cand, '2026-10-27', '2026-10-14', '2026-10-14T11:00:00+05:30', False)
-        self.assertEqual(lab.candidate_market(lambda m: None), 2)
+        kept = store.add_candidate({**cand, 'f': {'bias': 0.5, 'mkt_move': 0.9}}, '2026-10-27', '2026-10-14',
+                                   '2026-10-14T10:02:00+05:30', False)
+        self.assertEqual(lab.candidate_market(lambda m: None), 3)
         got = {c['id']: c['f'] for c in store.option_candidates()}
-        self.assertEqual(got[cid], {'bias': 0.5, 'mkt_move': 0.4})
+        self.assertEqual(got[cid], {'bias': 0.5, 'mkt_move': 0.4, 'mkt_off_low': 0.4, 'mkt_off_high': 0.0})
         self.assertIsNone(got[late]['mkt_move'])                  # Nifty's last read an hour old: unknown
+        self.assertIsNone(got[late]['mkt_off_low'])
+        self.assertEqual((got[kept]['mkt_move'], got[kept]['mkt_off_low']), (0.9, 0.4))   # what the app recorded stays
         self.assertEqual(lab.candidate_market(lambda m: None), 0)  # done once
 
 

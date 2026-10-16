@@ -22,6 +22,7 @@ Reading a chain
   hold); fresh call writing is bearish. That balance is the `bias` here.
 """
 import math
+from itertools import groupby
 from datetime import datetime, time as dtime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -364,10 +365,21 @@ TUNABLE = {
     'market_band_pct': (2.0, 0.1, 2.0, 0.05, 'Nifty band: no trade against Nifty once past (%)'),
     'last_entry_hour': (14.5, 10.0, 14.5, 0.25, 'Last new idea at (hour)'),
     'one_direction': (0, 0, 1, 1, 'One direction per underlying a day'),
+    # How far Nifty has come back off its day's low (for a put) or high (for a call): a bearish idea after Nifty has
+    # bounced off its low bets the bounce fails. Off at its top, as the band.
+    'max_bounce_pct': (2.0, 0.1, 2.0, 0.05, 'Nifty back off its low (puts) or high (calls): no idea once past (%)'),
+    # The book as a whole: ideas in one direction across underlyings are one bet on the market (a dozen puts in the
+    # first minutes of a day that turns are a dozen stops), and the ideas a pass finds open best first (rank_key),
+    # so that limit, and an account short of slots or cash, take the best of them, not the first read.
+    'max_open_side': (50, 1, 50, 1, 'Ideas open at once in one direction, all underlyings'),
+    'rank_by': (0, 0, 3, 1, 'Which ideas of a pass open first'),
 }
 TIMES = {'start': '09:45', 'no_entry_after': '14:30', 'square_off': '15:15'}
 # A rule at this value does nothing (the autopilot's proposals say "off").
-OFF = {'market_band_pct': 2.0, 'one_direction': 0, 'trail_pct': 0.0}
+# max_open_side at 50, its top, is no limit (side_gate), as the band is off at its top.
+OFF = {'market_band_pct': 2.0, 'one_direction': 0, 'trail_pct': 0.0, 'max_open_side': 50, 'max_bounce_pct': 2.0}
+RANK_LABEL = {0: 'Scan order', 1: 'Lowest IV first', 2: 'Strongest OI bias first', 3: 'Smallest 30-min move first'}
+CYCLE_MIN = 3                       # a pass every 3 minutes in the session (the app's options_loop); one takes about a minute
 MARKET = 'NIFTY'                    # the index whose day the market gate reads
 MARKET_OPEN_BY = dtime(9, 30)       # its first read of the day must be this early to stand for the open
 MARKET_MAX_AGE_MIN = 15             # and its latest read this fresh, or the market's move is unknown
@@ -392,11 +404,9 @@ def _clock(hour: float) -> str:
     return f'{m // 60:02d}:{m % 60:02d}'
 
 
-def market_move(spots: List[Tuple[str, float]], now: datetime) -> Optional[float]:
-    """The market's move since its open, in %: from the day's first read at or after 09:15 to the last one at or
-    before `now`. `spots`: [(iso time, spot)] for one session, any order. None, so no gate, when it cannot be
-    trusted: no read by MARKET_OPEN_BY (the app started late, so the first read is not the open), or the
-    latest older than MARKET_MAX_AGE_MIN minutes (the index's chain stopped coming)."""
+def _market_reads(spots: List[Tuple[str, float]], now: datetime) -> Optional[List[Tuple[datetime, float]]]:
+    """The session's reads at or after 09:15 and at or before `now`, oldest first, or None when they cannot be
+    trusted (market_move)."""
     reads = []
     for ts, spot in spots:
         if not spot or spot <= 0:
@@ -411,10 +421,45 @@ def market_move(spots: List[Tuple[str, float]], now: datetime) -> Optional[float
     if not reads:
         return None
     reads.sort()
-    (first_at, first), (last_at, last) = reads[0], reads[-1]
-    if first_at.time() > MARKET_OPEN_BY or now - last_at > timedelta(minutes=MARKET_MAX_AGE_MIN):
+    if reads[0][0].time() > MARKET_OPEN_BY or now - reads[-1][0] > timedelta(minutes=MARKET_MAX_AGE_MIN):
         return None
+    return reads
+
+
+def market_move(spots: List[Tuple[str, float]], now: datetime) -> Optional[float]:
+    """The market's move since its open, in %: from the day's first read at or after 09:15 to the last one at or
+    before `now`. `spots`: [(iso time, spot)] for one session, any order. None, so no gate, when it cannot be
+    trusted: no read by MARKET_OPEN_BY (the app started late, so the first read is not the open), or the
+    latest older than MARKET_MAX_AGE_MIN minutes (the index's chain stopped coming)."""
+    reads = _market_reads(spots, now)
+    if not reads:
+        return None
+    first, last = reads[0][1], reads[-1][1]
     return round((last - first) / first * 100, 3)
+
+
+def market_swing(spots: List[Tuple[str, float]], now: datetime) -> Dict[str, Optional[float]]:
+    """How far the market has come back off its extremes so far today, in %: {'off_low': up from the day's
+    lowest read, 'off_high': down from its highest}. The same reads as market_move; both None when it is None.
+    The reads are one a pass, so a low between two passes is not seen (live and in the backtests alike)."""
+    reads = _market_reads(spots, now)
+    if not reads:
+        return {'off_low': None, 'off_high': None}
+    px = [p for _, p in reads]
+    lo, hi, last = min(px), max(px), px[-1]
+    return {'off_low': round((last - lo) / lo * 100, 3), 'off_high': round((hi - last) / hi * 100, 3)}
+
+
+def bounce_gate(direction: str, off_low: Optional[float], off_high: Optional[float], limit: float) -> Optional[str]:
+    """Why a trade bets against the market's turn, or None: a bearish idea once the market is back more than
+    `limit` % off its day's low, a bullish one off its high. Unknown, or the limit at its off value, passes."""
+    if limit >= OFF['max_bounce_pct']:
+        return None
+    back = off_low if direction == 'short' else off_high
+    if back is None or back <= limit:
+        return None
+    return (f"{MARKET} is {back:.2f}% {'up off its low' if direction == 'short' else 'down off its high'}: "
+            f"no {'bearish' if direction == 'short' else 'bullish'} trade into the turn")
 
 
 def market_gate(direction: str, move: Optional[float], band: float) -> Optional[str]:
@@ -437,6 +482,32 @@ def flip_gate(direction: str, traded: Any, on: bool) -> Optional[str]:
     return None
 
 
+def side_gate(direction: str, open_side: int, cap: int) -> Optional[str]:
+    """Why an idea waits for one of its direction to close, or None: `open_side` ideas that way are open, on any
+    underlying, and `cap` (max_open_side; at its off value, no limit) is the most at once."""
+    if cap and cap < OFF['max_open_side'] and open_side >= cap:
+        return f"{open_side} {'bullish' if direction == 'long' else 'bearish'} ideas open: the most at once is {cap}"
+    return None
+
+
+def rank_key(rank_by: int, f: Optional[Dict[str, Any]]) -> float:
+    """Where an idea goes among those one pass found, lowest first, on its numbers `f` (a candidate's): rank_by 0 keeps
+    the order the pass read them (indices first); 1 the lowest ATM IV (the cheapest options); 2 the strongest OI bias;
+    3 the smallest 30-minute move (the least chased). A number not recorded goes last; ties keep the pass's order."""
+    f = f or {}
+    rank = int(rank_by or 0)
+    if rank == 0:
+        return 0.0
+    v = {1: f.get('atm_iv'), 2: -abs(f['bias']) if f.get('bias') is not None else None, 3: f.get('move_pct')}.get(rank)
+    return math.inf if v is None else float(v)
+
+
+def pass_of(ts: str) -> str:
+    """The pass a look at the chains at `ts` (ISO, IST) was part of: one starts every CYCLE_MIN minutes, 5 s past."""
+    m = int(ts[14:16])
+    return f'{ts[:14]}{m - m % CYCLE_MIN:02d}'
+
+
 def _hhmm(s: str) -> dtime:
     return datetime.strptime(s, '%H:%M').time()
 
@@ -452,7 +523,8 @@ def pick_expiry(expiries: List[str], today: str, for_trade: bool) -> Optional[st
 
 def idea(symbol: str, chain: Dict[str, Any], summary: Dict[str, Any], history: List[Dict[str, Any]],
          rules: Dict[str, Any], now: datetime, taken_today: int, open_now: bool,
-         market: Optional[float] = None, traded: Any = ()) -> Tuple[Optional[Dict[str, Any]], str]:
+         market: Optional[float] = None, traded: Any = (),
+         swing: Optional[Dict[str, Optional[float]]] = None) -> Tuple[Optional[Dict[str, Any]], str]:
     """
     An option-buying idea, or (None, why not). Bullish: net put writing near the money
     (bias >= min_bias), the underlying up at least min_move_pct over the last 30 minutes,
@@ -460,7 +532,8 @@ def idea(symbol: str, chain: Dict[str, Any], summary: Dict[str, Any], history: L
     with the put. Skipped when IV is high next to its own history, the option's spread is
     wide, outside the entry window, the underlying already has an open idea / its quota,
     the trade fights the market's day (`market`: market_move's %, market_gate), or it turns
-    the underlying around (`traded`: the directions it was traded in today, flip_gate).
+    the underlying around (`traded`: the directions it was traded in today, flip_gate), or it bets against the
+    market's turn (`swing`: market_swing's, bounce_gate).
     `history` is today's earlier summaries for this symbol and expiry, oldest first, each
     with its 'ts'.
     """
@@ -478,7 +551,9 @@ def idea(symbol: str, chain: Dict[str, Any], summary: Dict[str, Any], history: L
     if not direction:
         return None, f'OI bias {b:+.2f} is inside ±{rules["min_bias"]}'
     why = flip_gate(direction, traded, bool(rules.get('one_direction'))) \
-        or market_gate(direction, market, rules.get('market_band_pct', OFF['market_band_pct']))
+        or market_gate(direction, market, rules.get('market_band_pct', OFF['market_band_pct'])) \
+        or bounce_gate(direction, (swing or {}).get('off_low'), (swing or {}).get('off_high'),
+                       rules.get('max_bounce_pct', OFF['max_bounce_pct']))
     if why:
         return None, why
     past = [h for h in history if h.get('ts') and (now - datetime.fromisoformat(h['ts'])).total_seconds() >= 25 * 60]
@@ -594,16 +669,21 @@ def exit_grid() -> List[Tuple[float, float, float]]:
     """Every (stop, target, trail) the learning works out an outcome for."""
     return [(sp, tp, tr) for sp in EXIT_GRID['stop_pct'] for tp in EXIT_GRID['target_pct'] for tr in EXIT_GRID['trail_pct']]
 # Searched on these values, not in steps: off (2) is too far from a useful band (0.2-0.5) for the tuner's steps.
-MARKET_GRID = {'market_band_pct': (0.2, 0.3, 0.5, 0.75, 1.0, 2.0)}
+MARKET_GRID = {'market_band_pct': (0.2, 0.3, 0.5, 0.75, 1.0, 2.0), 'max_bounce_pct': (0.3, 0.5, 0.75, 1.0, 1.5, 2.0)}
+# The book's limit from the tightest to off, and the pass orders: choices, not steps.
+BOOK_GRID = {'max_open_side': (1, 2, 3, 4, 6, 8, 50), 'rank_by': (0, 1, 2, 3)}
+CHOICE_RULES = ('rank_by',)
 CANDIDATE_MIN_BIAS = 0.15
 
 
 def candidate(symbol: str, chain: Dict[str, Any], summary: Dict[str, Any], history: List[Dict[str, Any]],
-              now: datetime, rules: Dict[str, Any], market: Optional[float] = None) -> Optional[Dict[str, Any]]:
+              now: datetime, rules: Dict[str, Any], market: Optional[float] = None,
+              swing: Optional[Dict[str, Optional[float]]] = None) -> Optional[Dict[str, Any]]:
     """The numbers an idea is judged on, measured whatever the thresholds: inside the
     widest entry window (TIMES, so a later cutoff can be learned), with a clear bias
     (|bias| >= 0.15), 30 minutes of history, the underlying not moving against the bias,
-    and a price at the money. None otherwise. `market`: market_move's %, kept as mkt_move."""
+    and a price at the money. None otherwise. `market`: market_move's %, kept as mkt_move; `swing`:
+    market_swing's, kept as mkt_off_low and mkt_off_high."""
     t = now.time()
     if t < _hhmm(rules['start']) or t >= _hhmm(TIMES['no_entry_after']):
         return None
@@ -633,7 +713,8 @@ def candidate(symbol: str, chain: Dict[str, Any], summary: Dict[str, Any], histo
                   'iv_pct': summary.get('iv_pct'), 'atm_iv': summary.get('atm_iv'),
                   'spread_pct': round(spread, 2) if spread is not None else None,
                   'entry_minute': t.hour * 60 + t.minute, 'dte': summary.get('dte'),
-                  'index': is_index(symbol), 'mkt_move': market}}
+                  'index': is_index(symbol), 'mkt_move': market,
+                  'mkt_off_low': (swing or {}).get('off_low'), 'mkt_off_high': (swing or {}).get('off_high')}}
 
 
 def candidate_passes(c: Dict[str, Any], thr: Dict[str, float]) -> bool:
@@ -646,6 +727,9 @@ def candidate_passes(c: Dict[str, Any], thr: Dict[str, float]) -> bool:
     if last is not None and f.get('entry_minute') is not None and f['entry_minute'] >= round(last * 60):
         return False
     if market_gate(c.get('direction', 'long'), f.get('mkt_move'), thr.get('market_band_pct', OFF['market_band_pct'])):
+        return False
+    if bounce_gate(c.get('direction', 'long'), f.get('mkt_off_low'), f.get('mkt_off_high'),
+                   thr.get('max_bounce_pct', OFF['max_bounce_pct'])):
         return False
     if f['bias'] < thr['min_bias'] - 1e-9 or f['move_pct'] < thr['min_move_pct'] - 1e-9:
         return False
@@ -739,28 +823,50 @@ def bars_outcome(bars: List[Tuple[str, float, float, float, float, Optional[floa
     return {'status': 'closed', 'exit': entry, 'exit_time': None, 'r': 0.0, 'source': '1m'}
 
 
-def simulate_candidates(cands: List[Dict[str, Any]], thr: Dict[str, float]) -> List[Dict[str, Any]]:
+def simulate_candidates(cands: List[Dict[str, Any]], thr: Dict[str, float],
+                        account: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """The ideas a rule set would have taken from the candidates, with the live
     limits (one open idea per underlying, `max_per_day` a day, with `one_direction` one
-    direction a day) and its exit pair."""
+    direction a day, `max_open_side` open in one direction) and its exit pair. The looks of one
+    pass (pass_of) are taken in its `rank_by` order, as the app opens them.
+    `account` ({max_open, max_per_day}, 0: no limit): only the ideas an account with those limits would
+    have taken, in the order they opened. Its cash, and its positions in other modes, are not counted."""
     key = exit_key(thr['stop_pct'], thr['target_pct'], thr.get('trail_pct', 0.0))
+    rank, cap = int(thr.get('rank_by') or 0), int(thr.get('max_open_side') or OFF['max_open_side'])
+    slots, day_cap = (int((account or {}).get(k) or 0) for k in ('max_open', 'max_per_day'))
     trades = []
     busy: Dict[str, str] = {}             # symbol -> exit time of its open idea
     count: Dict[Tuple[str, str], int] = {}
     dirs: Dict[Tuple[str, str], set] = {}
-    for c in sorted(cands, key=lambda c: c['ts']):
-        o = (c.get('outcomes') or {}).get(key)
-        if o is None or not candidate_passes(c, thr):
-            continue
-        day = c['ts'][:10]
-        if busy.get(c['symbol'], '') > c['ts'] or count.get((c['symbol'], day), 0) >= thr.get('max_per_day', 2):
-            continue
-        if flip_gate(c['direction'], dirs.get((c['symbol'], day)), bool(thr.get('one_direction'))):
-            continue
-        busy[c['symbol']] = o.get('exit_time') or c['ts']
-        count[(c['symbol'], day)] = count.get((c['symbol'], day), 0) + 1
-        dirs.setdefault((c['symbol'], day), set()).add(c['direction'])
-        trades.append({'mode': 'options', 'symbol': c['symbol'], 'side': c['direction'], 'entry_time': c['ts'],
-                       'entry': c['entry'], 'status': o['status'], 'exit': o.get('exit'), 'exit_time': o.get('exit_time'),
-                       'r': o['r'], 'f': {**c['f'], 'rr': thr['target_pct'] / thr['stop_pct']}})
-    return trades
+    side_open: Dict[str, List[str]] = {'long': [], 'short': []}    # exit times of the open ideas each way
+    held: List[str] = []                                            # the account's, likewise
+    entered: Dict[str, int] = {}                                    # the account's entries a day
+    ordered = sorted(cands, key=lambda c: c['ts'])
+    for _, look in groupby(ordered, key=lambda c: pass_of(c['ts'])):
+        for c in sorted(look, key=lambda c: rank_key(rank, c['f'])):
+            o = (c.get('outcomes') or {}).get(key)
+            if o is None or not candidate_passes(c, thr):
+                continue
+            day = c['ts'][:10]
+            if busy.get(c['symbol'], '') > c['ts'] or count.get((c['symbol'], day), 0) >= thr.get('max_per_day', 2):
+                continue
+            if flip_gate(c['direction'], dirs.get((c['symbol'], day)), bool(thr.get('one_direction'))):
+                continue
+            ways = side_open[c['direction']] = [x for x in side_open[c['direction']] if x > c['ts']]
+            if side_gate(c['direction'], len(ways), cap):
+                continue
+            ends = o.get('exit_time') or '9'          # no exit time: open the rest of the day
+            busy[c['symbol']] = o.get('exit_time') or c['ts']
+            count[(c['symbol'], day)] = count.get((c['symbol'], day), 0) + 1
+            dirs.setdefault((c['symbol'], day), set()).add(c['direction'])
+            ways.append(ends)
+            if account is not None:
+                held = [x for x in held if x > c['ts']]
+                if (slots and len(held) >= slots) or (day_cap and entered.get(day, 0) >= day_cap):
+                    continue                          # an idea all the same, but not the account's
+                held.append(ends)
+                entered[day] = entered.get(day, 0) + 1
+            trades.append({'mode': 'options', 'symbol': c['symbol'], 'side': c['direction'], 'entry_time': c['ts'],
+                           'entry': c['entry'], 'status': o['status'], 'exit': o.get('exit'), 'exit_time': o.get('exit_time'),
+                           'r': o['r'], 'f': {**c['f'], 'rr': thr['target_pct'] / thr['stop_pct']}})
+    return sorted(trades, key=lambda t: t['entry_time'])

@@ -2933,7 +2933,7 @@ def intraday_state(skips: dict = None) -> dict:
 # ---------------------------------------------------------------------------
 # Options (niftywhale/options.py)
 # ---------------------------------------------------------------------------
-OPT_CYCLE_MIN = 3               # a pass every 3 minutes in the session
+OPT_CYCLE_MIN = options.CYCLE_MIN   # a pass every 3 minutes in the session
 OPT_STOCKS_PER_CYCLE = 10       # stocks rotate: 30 of them are each seen every ~9 minutes
 OPT_LOCK = threading.Lock()     # one pass at a time (the loop, the dashboard's refresh)
 OPT_WHY: dict = {}              # symbol -> why the last look made no idea (for the dashboard)
@@ -2949,7 +2949,7 @@ def saved_opt_overrides() -> dict:
 
 
 # Rules set from a few choices: the market band, and the trail (the learning has outcomes for these trails only).
-OPT_CHOICES = {**options.MARKET_GRID, 'trail_pct': options.EXIT_GRID['trail_pct']}
+OPT_CHOICES = {**options.MARKET_GRID, **options.BOOK_GRID, 'trail_pct': options.EXIT_GRID['trail_pct']}
 
 
 def orules() -> dict:
@@ -3100,10 +3100,11 @@ def _level_alert(sym: str, summary: dict, series: list, st: dict) -> None:
                     + f"\nPCR {summary.get('pcr') or 0:.2f} · max pain {summary.get('max_pain') or 0:g}")
 
 
-def fetch_options(sym: str, now: datetime = None, allow_ideas: bool = True) -> dict:
+def fetch_options(sym: str, now: datetime = None, allow_ideas: bool = True, pending: list = None) -> dict:
     """Fetch, analyse and store one underlying: its nearest expiry, plus the next one on
     an expiry day (ideas never use a same-day expiry). Then follow its open ideas and
-    maybe start one. Returns {'expiries': [...], 'idea': id or None}."""
+    maybe start one (open_idea), or with `pending` (a pass's list) leave it there for
+    open_ideas at the end of the pass. Returns {'expiries': [...], 'idea': id or None}."""
     now = now or data.now_ist()
     st = store.settings()
     today = now.date().isoformat()
@@ -3147,34 +3148,77 @@ def fetch_options(sym: str, now: datetime = None, allow_ideas: bool = True) -> d
         past = [{'ts': s['ts'], **s['summary'], 'spot': s['spot']} for s in series[:-1]]
         open_now = bool(store.ideas(status='open', symbol=sym))
         today_ideas = store.ideas(session=today, symbol=sym)
-        # The market's day so far (Nifty is read first in every pass), for the market gate and the candidate.
-        market = options.market_move(store.day_spots(options.MARKET, today), now)
+        # The market's day so far (Nifty is read first in every pass), for the market and bounce gates and the candidate.
+        spots = store.day_spots(options.MARKET, today)
+        market, swing = options.market_move(spots, now), options.market_swing(spots, now)
         i, why = options.idea(sym, chain, summary, past, orules(), now, len(today_ideas), open_now,
-                              market=market, traded={x['direction'] for x in today_ideas})
+                              market=market, traded={x['direction'] for x in today_ideas}, swing=swing)
         OPT_WHY[sym] = why
         # Every look that came near an idea is kept for the autopilot (options.candidate).
         cand = None
         try:
-            cand = options.candidate(sym, chain, summary, past, now, orules(), market=market)
-            if cand and not open_now:
-                store.add_candidate(cand, trade, today, now.isoformat(timespec='seconds'), taken=bool(i))
+            cand = options.candidate(sym, chain, summary, past, now, orules(), market=market, swing=swing)
+            if cand and not open_now and not i:
+                store.add_candidate(cand, trade, today, now.isoformat(timespec='seconds'), taken=False)
         except Exception as e:
             logger.warning(f'Options candidate {sym}: {e}')
         if i:
-            i.update(expiry=trade, created_at=now.isoformat(timespec='seconds'), session=today, status='open',
-                     lot=summary.get('lot'), last=i['entry'], r_open=0.0)
-            i['id'] = made = store.add_idea(i)
-            sent = bool(tg and not paused('options') and notify.send(idea_message(i)))
-            notice_entry('options', f"options:{i['id']}", sym, {**i, 'opt_side': i['side']}, i['created_at'])
-            f = dict((cand or {}).get('f') or {'bias': abs(i['bias']), 'move_pct': abs(i['move_pct'])})
-            if sym not in options.INDICES:            # a stock's news; an index has none of its own
-                try:
-                    f.update(news_context(sym, now.isoformat(timespec='seconds')))
-                    f.update(smart_context(sym, now.isoformat(timespec='seconds')))
-                except Exception as e:
-                    logger.warning(f'News / smart-money context {sym}: {e}')
-            store.update_idea(i['id'], sent=int(sent), features=json.dumps(f))
-            logger.info(f"Option idea {sym} {i['strike']:g} {i['side']} at {i['entry']} ({i['reason']})")
+            i.update(expiry=trade, session=today, lot=summary.get('lot'))
+            look = {'symbol': sym, 'idea': i, 'cand': cand, 'at': now, 'trade': trade, 'today': today,
+                    'rank': (cand or {}).get('f') or {'bias': abs(i['bias']), 'move_pct': abs(i['move_pct']),
+                                                      'atm_iv': summary.get('atm_iv')}}
+            if pending is None:
+                made = open_idea(look)
+            else:
+                pending.append(look)
+    return {'expiries': list(got), 'idea': made}
+
+
+def open_idea(look: dict, now: datetime = None):
+    """Open an idea fetch_options found, unless max_open_side ideas are open its way already (side_gate). Its look
+    at the chain is kept as a candidate either way, marked taken or not. `now`: when it opens (else the look's
+    time). Returns the idea's id, or None."""
+    i, sym, cand = look['idea'], look['symbol'], look['cand']
+    open_side = sum(1 for x in store.ideas(status='open') if x['direction'] == i['direction'])
+    why = options.side_gate(i['direction'], open_side, orules()['max_open_side'])
+    if cand:
+        try:
+            store.add_candidate(cand, look['trade'], look['today'], look['at'].isoformat(timespec='seconds'), taken=not why)
+        except Exception as e:
+            logger.warning(f'Options candidate {sym}: {e}')
+    if why:
+        OPT_WHY[sym] = why
+        return None
+    # Entered when it opens, so the ideas of a pass are in the order open_ideas put them: the demo and live trading
+    # take trades in entry order, and with too few slots or too little cash they take the first.
+    at = (now or look['at']).isoformat(timespec='seconds')
+    i.update(created_at=at, status='open', last=i['entry'], r_open=0.0)
+    i['id'] = store.add_idea(i)
+    sent = bool(_opt_alerts_on() and not paused('options') and notify.send(idea_message(i)))
+    notice_entry('options', f"options:{i['id']}", sym, {**i, 'opt_side': i['side']}, i['created_at'])
+    f = dict((cand or {}).get('f') or {'bias': abs(i['bias']), 'move_pct': abs(i['move_pct'])})
+    if sym not in options.INDICES:            # a stock's news; an index has none of its own
+        try:
+            f.update(news_context(sym, at))
+            f.update(smart_context(sym, at))
+        except Exception as e:
+            logger.warning(f'News / smart-money context {sym}: {e}')
+    store.update_idea(i['id'], sent=int(sent), features=json.dumps(f))
+    logger.info(f"Option idea {sym} {i['strike']:g} {i['side']} at {i['entry']} ({i['reason']})")
+    return i['id']
+
+
+def open_ideas(pending: list) -> int:
+    """The ideas one pass found, opened best first (the rules' rank_by: options.rank_key; ties in the order the
+    pass read them), so the limit of ideas open one way, and an account short of slots or cash, take the best."""
+    rank = orules()['rank_by']
+    made = 0
+    for look in sorted(pending, key=lambda x: options.rank_key(rank, x['rank'])):
+        try:
+            made += bool(open_idea(look, data.now_ist()))
+        except Exception as e:                         # one bad idea never stops the rest
+            logger.warning(f"Option idea {look['symbol']}: {e}")
+    return made
     return {'expiries': list(got), 'idea': made}
 
 
@@ -3196,16 +3240,17 @@ def run_options_cycle(origin: str = 'schedule', symbols: list = None, everything
             open_syms = [i['symbol'] for i in store.ideas(status='open')]
             symbols = list(dict.fromkeys(list(options.INDICES) + open_syms + batch))
         st.update(running=True, done=0, total=len(symbols), errors={})
-        made = 0
+        made, pending = 0, []
         for sym in symbols:
             try:
-                made += bool(fetch_options(sym, allow_ideas=origin != 'close')['idea'])
+                made += bool(fetch_options(sym, allow_ideas=origin != 'close', pending=pending)['idea'])
             except Exception as e:                     # one bad underlying never stops the pass
                 st['errors'][sym] = dhan._redact(e)[:160]
                 logger.warning(f'Options: {sym} failed: {st["errors"][sym]}')
                 if dhan._state.get('rejected'):
                     break
             st['done'] += 1
+        made += open_ideas(pending)
         st.update(last_run=data.now_ist().isoformat(timespec='seconds'), origin=origin,
                   message=f"{st['done'] - len(st['errors'])}/{len(symbols)} chains" + (f' · {made} new idea(s)' if made else '')
                   + (f" · {len(st['errors'])} failed" if st['errors'] else ''))
@@ -5726,6 +5771,8 @@ def tg_rules(args):
         label = sp.get('label') or (options.TUNABLE[k][4] if mode == 'options' and k in options.TUNABLE else k)
         off = sp.get('off', options.OFF.get(k) if mode == 'options' else None)
         val = 'off' if off is not None and v == off else f'{v:g}'
+        if mode == 'options' and k in options.CHOICE_RULES:
+            val = options.RANK_LABEL.get(int(v), val)
         lines.append(f"{'* ' if k in saved else ''}{h(label)}: {val}")
     return '\n'.join(lines)
 

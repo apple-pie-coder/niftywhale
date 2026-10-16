@@ -145,6 +145,9 @@ def clamp_steps(proposal: Dict[str, float], current: Dict[str, float], specs: Di
     for k, v in proposal.items():
         if k not in specs:
             continue
+        if specs[k].get('choice'):          # an order to pick ideas by, not an amount: no step is smaller than another
+            out[k] = v
+            continue
         if specs[k].get('values'):
             vals = list(specs[k]['values'])
             i = min(range(len(vals)), key=lambda j: abs(vals[j] - current[k]))

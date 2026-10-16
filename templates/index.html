@@ -8195,7 +8195,8 @@ function openOptStocks() {
 // stepper for a count and a clock for the last entry. A card turns amber when it differs from the saved rule, with a
 // button to put it back; Defaults only fills the defaults in, and nothing is saved until Save.
 const OPT_GROUPS = [['Signal', ['min_bias', 'min_move_pct', 'max_iv_pct', 'max_spread_pct']], ['Exits', ['stop_pct', 'target_pct', 'trail_pct']],
-    ['Market and timing', ['market_band_pct', 'last_entry_hour', 'one_direction', 'max_per_day']]];
+    ['Market and timing', ['market_band_pct', 'max_bounce_pct', 'last_entry_hour', 'one_direction', 'max_per_day']],
+    ['The book', ['max_open_side', 'rank_by']]];
 const OPT_HELP = {
     min_bias: 'Near-the-money writing since the open: puts written lean bullish, calls written bearish',
     min_move_pct: "The underlying's move the idea's way over the last 30 minutes",
@@ -8204,12 +8205,17 @@ const OPT_HELP = {
     stop_pct: 'Exit when the premium falls this far', target_pct: 'Exit when the premium rises this far (with a trail: start trailing)',
     trail_pct: 'Off: sell at the target. On: the target starts a stop this far under the best premium since, never below halfway to the target, so a big move runs on',
     market_band_pct: 'Past this distance from its open, only trades on the side Nifty moved to. Inside it the market is flat: both sides',
+    max_bounce_pct: 'No put once Nifty is back this far up off its day\'s low, no call once it is this far down off its high: a turn has begun',
     last_entry_hour: 'No new idea after this; open ones run to the square-off',
     one_direction: 'A stock or index traded one way today is not traded the other way',
-    max_per_day: 'Ideas on one underlying in a day' };
+    max_per_day: 'Ideas on one underlying in a day',
+    max_open_side: 'Ideas open at once in one direction, over every stock and index: a dozen puts at once are one bet that Nifty falls',
+    rank_by: 'The order the ideas of one pass open in, so the limit above and an account short of slots or cash take the best, not the first read' };
+const RANK_NAME = ['Scan order', 'Lowest IV', 'Strongest bias', 'Smallest move'];
 const clockOf = (h) => { const m = Math.round(h * 60); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 const OPT_FMT = { min_bias: (v) => (+v).toFixed(2), max_iv_pct: (v) => `${+v}th pct`, max_per_day: (v) => `${+v} a day`,
-    market_band_pct: (v) => `±${+v}%`, last_entry_hour: clockOf, one_direction: (v) => (+v ? 'On' : 'Off') };
+    market_band_pct: (v) => `±${+v}%`, max_bounce_pct: (v) => `${+v}% back`, last_entry_hour: clockOf, one_direction: (v) => (+v ? 'On' : 'Off'),
+    max_open_side: (v) => `${+v} each way`, rank_by: (v) => RANK_NAME[+v] || `${+v}` };
 const optFmt = (k, v) => { const t = O.tunable[k]; return t.off != null && +v === +t.off ? 'Off' : (OPT_FMT[k] || ((x) => `${+x}%`))(v); };
 const optKind = (k, t) => t.values ? 'chips' : t.min === 0 && t.max === 1 && t.step === 1 ? 'switch'
     : k.endsWith('_hour') ? 'clock' : Number.isInteger(t.default) ? 'stepper' : 'slider';
@@ -8520,6 +8526,7 @@ const PARAM_LABEL = { min_avg_volume: 'Min volume', min_atr_pct: 'Min ATR %', ma
     min_rr: 'Final R:R', min_bias: 'Min OI bias', min_move_pct: 'Min 30-min move %', max_iv_pct: 'Max IV pct',
     max_spread_pct: 'Max spread %', stop_pct: 'Stop %', target_pct: 'Target %', trail_pct: 'Trail after target %',
     market_band_pct: 'Nifty band %', last_entry_hour: 'Last entry hour', one_direction: 'One direction a day',
+    max_open_side: 'Ideas open each way', rank_by: 'Pass order', max_bounce_pct: 'Nifty off its low / high %',
     max_market_run: 'Max Nifty 20-day run %', min_zone_age: 'Min zone age (days)', max_rr: 'Max R:R',
     min_breadth: 'Min breadth %', weekly_align: 'Weekly trend agrees', min_rs_nifty: 'Min strength vs Nifty',
     min_rs_sector: 'Min strength vs sector', min_choch_rvol: 'Min CHoCH volume ×', min_close_loc: 'Min CHoCH close',

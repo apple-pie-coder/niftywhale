@@ -1802,7 +1802,7 @@ def live_trades(mode: str) -> List[Dict[str, Any]]:
                         'f': f, 'ref': f"{mode}:{z['id']}", 'last': t.get('last'), 'name': z.get('name'),
                         'manual': t.get('by') == 'you'})
     elif mode == 'options':
-        for i in ideas(limit=5000):
+        for i in reversed(ideas(limit=5000)):          # oldest first: ideas opened in one second keep their order
             f = json.loads(i['features']) if i.get('features') else {}
             out.append({'mode': 'options', 'symbol': i['symbol'], 'side': i['direction'], 'entry_time': i['created_at'],
                         'entry': i['entry'], 'stop': i['stop'], 'target': i['target'], 'status': i['status'],
