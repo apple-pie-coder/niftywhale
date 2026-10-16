@@ -1799,7 +1799,8 @@ Backtests run in a second container, `niftywhale-lab`, built from the same image
 
 4. **Context** (`niftywhale/features.py`, the same functions as a live entry). Each simulated entry gets what a live one
    records, as of the session before it:
-   - from the history on disk: market breadth (% of the lab's stocks above their 50-day), strength against Nifty and against
+   - from the history on disk: market breadth (% of the lab's stocks above their 50-day: every stock with daily candles on
+     disk, all kept current, so the count does not change when a universe does), strength against Nifty and against
      the stock's sector over 20 sessions, the weekly trend (swing), and the CHoCH candle's relative volume and where it closed;
    - from NSE's dated files (below): the delivery read, FII index-futures positioning, the stock's futures buildup (OI and
      price over 5 sessions: long / short buildup, short covering, long unwinding) and days to and from results.
@@ -1836,7 +1837,7 @@ Use backtests to compare rules, not as a forecast.
 | When | What |
 |---|---|
 | First start | Bootstrap: download the history and build the records. About 30 minutes of downloads and 1–2 hours of replay, outside market hours. |
-| Weekdays 20:30 | Nightly: top up history and records, backtest the current rules, run the shadow, rollback and pause checks; fill in options candidates' context and crowding, and work out their outcomes. |
+| Weekdays 20:30 | Nightly: top up history and records (Nifty and VIX up to today's close), put right the market context recorded in the last 10 days, backtest the current rules, run the shadow, rollback and pause checks; fill in options candidates' context and crowding, and work out their outcomes. |
 | Saturday 06:00 | Walk-forward tuning for each mode. |
 | Saturday 09:00 | Weekly Telegram report. |
 
@@ -5045,9 +5046,11 @@ changes for the long; the short follows. Intraday-only logic (target pools, the 
   similar phrases are the thresholds in section 11. Tune them against charts you trust.
 - **Orders only through Live trading.** NiftyWhale places, modifies or cancels orders at Dhan only from Live trading
   (4.18), at the levels you set there; otherwise it is analysis and paper trades. Nothing it shows is investment advice.
-- **Market context is a day behind.** India VIX, Nifty's trend and breadth come from the lab's daily file, and Dhan
-  adds a day's close only the day after: a trade on Friday reads Wednesday's close. The options' Nifty gap at the open
-  uses the app's own Nifty close instead.
+- **The market context is as fresh as the last nightly.** India VIX, Nifty's trend and breadth are the lab's, written
+  each weekday at 20:30: Dhan's daily history adds a session only the next day, so that day's Nifty and VIX closes come
+  from its minute candles (replaced by the daily candle the night after). A missed nightly leaves the next day reading
+  the session before (the lab's log says so) for its gates too, but each nightly then works the market's part of the
+  last 10 days' recorded contexts out again (trades, option ideas and candidates), so the records are put right.
 
 ---
 

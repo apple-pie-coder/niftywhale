@@ -4,12 +4,13 @@ was known at its time, recorded with it so results can be broken down by it and 
 on it. The app records them live; the lab fills them in for candidates recorded before they existed, from
 the same tables (news kept 45 days, the option snapshots 30).
 """
-from datetime import date, datetime
+import json
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import features, options, smart, store
+from niftywhale import features, history, options, smart, store, universe
 
 
 def news_context(symbol: str, at) -> dict:
@@ -57,11 +58,10 @@ def smart_context(symbol: str, at) -> dict:
 
 
 def market_day(market: Optional[pd.DataFrame], day: date, nifty: List[Tuple[str, float]], at: datetime) -> Dict[str, Any]:
-    """The market's day for an option look at `at`: as of the last close in the lab's daily file before `day`
-    (features.market_context: India VIX, Nifty's trend and its distance from its 20 and 50-day averages, breadth;
-    Dhan adds a day's close the day after, so this is often the close two sessions back) and Nifty's gap at the
-    open (`nifty_gap_pct`) against the previous session's last read (store.prev_close), else the file's close.
-    None when its open was not read."""
+    """The market's day for an option look at `at`: as of the close before `day` in the lab's daily file
+    (features.market_context: India VIX, Nifty's trend and its distance from its 20 and 50-day averages, breadth)
+    and Nifty's gap at the open (`nifty_gap_pct`) against the previous session's last read (store.prev_close), else
+    the file's close. None when its open was not read."""
     out = features.market_context(market, day)
     prev = store.prev_close(options.MARKET, day.isoformat())
     if prev is None and market is not None and not market.empty and 'nifty' in market:
@@ -100,3 +100,58 @@ def crowding(cands: List[Dict[str, Any]]) -> Dict[int, int]:
         k = (options.pass_of(c['ts']), c['direction'])
         count[k] = count.get(k, 0) + 1
     return {c['id']: count[(options.pass_of(c['ts']), c['direction'])] for c in cands}
+
+
+# What the market's daily closes decide in a recorded context (features.market_context, relative_context).
+MARKET_KEYS = ('nifty_vs_ma50', 'nifty_vs_ma20', 'nifty_ret20', 'market_trend', 'vix', 'breadth50', 'rs_nifty20', 'rs_sector20')
+
+
+def _market_part(market: Optional[pd.DataFrame], symbol: str, day: date) -> Dict[str, Any]:
+    out = features.market_context(market, day)
+    if symbol not in options.INDICES:
+        out.update(features.relative_context(history.load('1d', symbol), market, universe.sectors().get(symbol), day))
+    return {k: v for k, v in out.items() if k in MARKET_KEYS}
+
+
+def refresh_market_context(market: Optional[pd.DataFrame], days: int = 10) -> Dict[str, int]:
+    """The market's part of the context recorded with each entry and option look of the last `days`, worked out
+    again from `market` (history.load_market) as of the close before its day. The live app reads the lab's daily
+    file, which can be a session behind when it records (a nightly that missed its close); once the close is in,
+    this puts the record right, so the breakdowns and the autopilot read what was known at the entry. Only those
+    keys change, and only where the market gives them. Returns how many rows changed in each table."""
+    if market is None or market.empty:
+        return {}
+    since = (datetime.now(store.IST).date() - timedelta(days=days)).isoformat()
+    done = {'zones': 0, 'ideas': 0, 'candidates': 0}
+
+    def fixed(f: Dict[str, Any], symbol: str, day: date) -> Optional[Dict[str, Any]]:
+        new = _market_part(market, symbol, day)
+        merged = {**f, **new}
+        return merged if merged != f else None
+
+    with store.connect() as c:
+        zones = [dict(r) for r in c.execute("SELECT id, symbol, trigger, ctx FROM zones WHERE ctx IS NOT NULL AND ctx != '{}'")]
+        ideas = [dict(r) for r in c.execute('SELECT id, symbol, created_at, features FROM oc_ideas WHERE session >= ? '
+                                            'AND features IS NOT NULL', (since,))]
+    for z in zones:
+        t = json.loads(z['trigger']) if z.get('trigger') else {}
+        at = t.get('choch_time') or ''
+        if at[:10] < since:
+            continue
+        f = fixed(json.loads(z['ctx']), z['symbol'], pd.Timestamp(at).date())
+        if f is not None:
+            store.update_zone(z['id'], ctx=json.dumps(f))
+            done['zones'] += 1
+    for i in ideas:
+        f = fixed(json.loads(i['features']), i['symbol'], pd.Timestamp(i['created_at']).date())
+        if f is not None:
+            store.update_idea(i['id'], features=json.dumps(f))
+            done['ideas'] += 1
+    for cnd in store.option_candidates(since=since):
+        if not (cnd.get('f') or {}).get('ctx'):
+            continue                                   # not filled in yet: candidate_context does it whole
+        f = fixed(cnd['f'], cnd['symbol'], pd.Timestamp(cnd['ts']).date())
+        if f is not None:
+            store.set_candidate_features(cnd['id'], f)
+            done['candidates'] += 1
+    return done

@@ -121,6 +121,11 @@ def update_intraday(symbol: str, interval: int, years: float, should_stop: Calla
     return len(merged) - (len(old) if old is not None else 0)
 
 
+def held(interval: str) -> List[str]:
+    """The symbols with `interval` candles on disk."""
+    return sorted(p.name[:-len('.pkl.gz')] for p in (LAB_DIR / 'history' / interval).glob('*.pkl.gz'))
+
+
 def update_daily(symbols: List[str], years: float) -> int:
     """Daily candles from yfinance, as the live scan reads them (unadjusted)."""
     import yfinance as yf
@@ -149,7 +154,10 @@ def update_daily(symbols: List[str], years: float) -> int:
 
 
 def update_market(years: float = 8) -> Optional[pd.DataFrame]:
-    """Nifty 50 and India VIX daily closes, the market context of every trade."""
+    """Nifty 50 and India VIX daily closes, the market context of every trade. Dhan's daily history adds a
+    session only the next day, so once the market has closed, today's close is taken from today's 1-minute
+    candles (session_close) when the daily history has not got it yet; the next night's download replaces it.
+    Without that, every trade the next day would read the market as of two sessions back."""
     frames = {}
     for sid, name in ((NIFTY_ID, 'nifty'), (VIX_ID, 'vix')):
         time.sleep(PACE_S)
@@ -163,8 +171,29 @@ def update_market(years: float = 8) -> Optional[pd.DataFrame]:
         frames[name] = pd.Series(d['close'], index=idx)
     m = pd.DataFrame(frames).sort_index()
     m = m[~m.index.duplicated(keep='last')]
+    now = data.now_ist()
+    day = pd.Timestamp(now.date())
+    if now.weekday() < 5 and now.hour * 60 + now.minute >= 15 * 60 + 30 and (m.empty or m.index[-1] < day):
+        today = {}
+        for sid, name in ((NIFTY_ID, 'nifty'), (VIX_ID, 'vix')):
+            try:
+                today[name] = session_close(sid, now.date())
+            except Exception as e:                       # the daily history alone, a day behind, as before
+                logger.warning(f'{name}: today\'s close from minute candles failed: {dhan._redact(e)}')
+        if today.get('nifty') is not None:                # no Nifty candles today: a holiday, nothing to add
+            m = pd.concat([m, pd.DataFrame([today], index=[day])]).sort_index()
+    if not m.empty and now.weekday() < 5 and now.hour >= 16 and m.index[-1] < day:
+        logger.warning(f"Nifty / VIX daily closes end {m.index[-1].date()}: today's close is not in yet")
     save('market', 'NIFTY_VIX', m)
     return m
+
+
+def session_close(sid: int, day: date) -> Optional[float]:
+    """An index's close on `day` from its 1-minute candles: the last candle of that day (after the close Dhan
+    adds one with the closing value). None when it has no candles that day."""
+    f = dhan.chart_candles(str(sid), 'IDX_I', 'INDEX', 1, 1)
+    f = f[f.index.date == day] if len(f) else f
+    return round(float(f['Close'].iloc[-1]), 2) if len(f) else None
 
 
 CONTEXT = 'CONTEXT'          # breadth and sector series, built from the daily candles held (update_context)
@@ -173,7 +202,7 @@ BREADTH_MIN_STOCKS = 50      # fewer stocks with a 50-day average that day, and 
 
 def update_context() -> Optional[pd.DataFrame]:
     """The market's breadth and each sector's own index, day by day, from every stock's daily candles
-    held (the live universes, five years): `breadth50`, the share of stocks closing above their 50-day
+    held (every stock ever in a lab universe, all topped up nightly: lab.update_history): `breadth50`, the share of stocks closing above their 50-day
     average (%), and `sec_<index>`, an equal-weighted index of the sector's members (100 at the start).
     Built by the lab after the daily candles; the live app and the backtester read the same file, so a
     trade's breadth and sector strength mean the same in both."""

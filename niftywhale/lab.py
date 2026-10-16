@@ -140,7 +140,10 @@ def update_history(job: Dict[str, Any], progress: Callable[[str], None]) -> Dict
     intra = [m['symbol'] for m in universe_for('intraday')]
     progress('market context (Nifty, VIX)')
     history.update_market()
-    allsym = sorted(set(swing) | set(intra))
+    # Every stock with daily candles on disk, not only today's universes: breadth and the sector series are worked
+    # out over all of them, and a stock left behind would drop out of their latest days (breadth's population
+    # halved when a universe shrank).
+    allsym = sorted(set(swing) | set(intra) | set(history.held('1d')))
     progress(f'daily candles for {len(allsym)} stocks')
     history.update_daily(allsym, max(years('swing'), years('intraday')) + 1.2)
     try:
@@ -1036,6 +1039,9 @@ def run_job(job: Dict[str, Any]) -> str:
                 try:
                     h = update_history(job, progress)
                     say(f"history: {h['new_bars']:,} new candles")
+                    fixed = context.refresh_market_context(history.load_market())
+                    if any(fixed.values()):
+                        say('market context put right for ' + ', '.join(f'{n} {k}' for k, n in fixed.items() if n))
                 except Exception as e:             # Dhan down: carry on with the history already on disk
                     logger.warning(f'history update failed: {dhan._redact(e)}')
                     say(f'history not updated ({dhan._redact(e)[:120]})')

@@ -57,6 +57,108 @@ class Series(unittest.TestCase):
             self.assertEqual(features.market_context(m, m.index[-1].date() + timedelta(days=1))['breadth50'], 75.0)
 
 
+class MarketCloses(unittest.TestCase):
+    """Nifty and VIX up to today's close: Dhan's daily history adds a session only the next day."""
+    DAYS = ('2026-10-13', '2026-10-14', '2026-10-15')
+
+    def setUp(self):
+        _store.init()
+        self.lab = tempfile.mkdtemp()
+        self.minute_calls = []
+        patches = [mock.patch.object(history, 'LAB_DIR', history.Path(self.lab)),
+                   mock.patch.object(history.time, 'sleep', lambda s: None),
+                   mock.patch.object(history.dhan, '_headers', lambda: {}),
+                   mock.patch.object(history.requests, 'post', self.daily)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def daily(self, url, headers=None, timeout=None, json=None):
+        base = 22000.0 if json['securityId'] == '13' else 14.0
+        r = mock.Mock()
+        r.raise_for_status = lambda: None
+        r.json = lambda: {'timestamp': [int(pd.Timestamp(d, tz=IST).timestamp()) for d in self.DAYS],
+                          'close': [base + i for i in range(len(self.DAYS))]}
+        return r
+
+    def minutes(self, today_bars=True, fail_vix=False):
+        def f(sid, seg, inst, interval, days):
+            self.minute_calls.append(sid)
+            if fail_vix and sid == '21':
+                raise RuntimeError('Dhan is down')
+            idx = pd.DatetimeIndex(['2026-10-15 15:29', '2026-10-16 15:29', '2026-10-16 17:44']).tz_localize(IST)
+            close = [1.0, 2.0, 23146.15 if sid == '13' else 14.06]
+            f = pd.DataFrame({'Close': close}, index=idx)
+            return f if today_bars else f.iloc[:1]
+        return mock.patch.object(history.dhan, 'chart_candles', f)
+
+    def at(self, hh, mm=0):
+        return mock.patch.object(history.data, 'now_ist', lambda: datetime(2026, 10, 16, hh, mm, tzinfo=history.dhan.IST))
+
+    def test_todays_close_from_minute_candles_after_the_close(self):
+        with self.minutes(), self.at(20, 30):
+            m = history.update_market(years=0.1)
+        self.assertEqual(str(m.index[-1].date()), '2026-10-16')
+        self.assertEqual((m['nifty'].iloc[-1], m['vix'].iloc[-1]), (23146.15, 14.06))   # the day's last candle
+        self.assertEqual(float(history.load_market()['nifty'].iloc[-2]), 22002.0)       # the daily history kept
+
+    def test_not_during_the_session_and_not_when_the_daily_has_it(self):
+        with self.minutes(), self.at(14, 0):
+            self.assertEqual(str(history.update_market(years=0.1).index[-1].date()), '2026-10-15')
+        self.DAYS = ('2026-10-14', '2026-10-15', '2026-10-16')
+        with self.minutes(), self.at(20, 30):
+            self.assertEqual(float(history.update_market(years=0.1)['nifty'].iloc[-1]), 22002.0)   # Dhan's own candle
+        self.assertEqual(self.minute_calls, [])
+
+    def test_a_holiday_or_a_failure(self):
+        with self.minutes(today_bars=False), self.at(20, 30):
+            self.assertEqual(str(history.update_market(years=0.1).index[-1].date()), '2026-10-15')   # no session today
+        with self.minutes(fail_vix=True), self.at(20, 30):
+            m = history.update_market(years=0.1)
+        self.assertEqual(m['nifty'].iloc[-1], 23146.15)
+        self.assertTrue(np.isnan(m['vix'].iloc[-1]))                                       # unknown, not made up
+
+    def test_recorded_context_put_right_once_the_close_is_in(self):
+        import json
+        from niftywhale import context
+        with _store.connect() as c:
+            for t in ('zones', 'oc_ideas', 'oc_candidates'):
+                c.execute(f'DELETE FROM {t}')
+            c.execute("INSERT INTO zones (symbol, status, created_at, trigger, ctx) VALUES ('SBIN', 'won', '2026-10-15', ?, ?)",
+                      (json.dumps({'choch_time': '2026-10-16T10:30:00+05:30', 'entry': 1}),
+                       json.dumps({'vix': 13.0, 'market_trend': 'down', 'rr': 3.0})))
+        iid = _store.add_idea({'symbol': 'NIFTY', 'created_at': '2026-10-16T09:45:00+05:30', 'session': '2026-10-16'})
+        _store.update_idea(iid, features=json.dumps({'vix': 13.0, 'bias': 0.5}))
+        cid = _store.add_candidate({'symbol': 'NIFTY', 'direction': 'long', 'side': 'CE', 'strike': 1.0, 'entry': 1.0,
+                                    'level': None, 'f': {'vix': 13.0, 'ctx': 1}}, '2026-10-27', '2026-10-16',
+                                   '2026-10-16T09:45:00+05:30', False)
+        idx = pd.bdate_range(end='2026-10-15', periods=80)
+        market = pd.DataFrame({'nifty': np.linspace(20000, 22000, 80), 'vix': [14.0] * 79 + [14.63]}, index=idx)
+        self.assertEqual(context.refresh_market_context(market, days=3650), {'zones': 1, 'ideas': 1, 'candidates': 1})
+        with _store.connect() as c:
+            z = json.loads(c.execute('SELECT ctx FROM zones').fetchone()[0])
+        self.assertEqual((z['vix'], z['market_trend'], z['rr']), (14.63, 'up', 3.0))      # the 15th's close; the rest kept
+        self.assertEqual(json.loads(_store.ideas()[0]['features'])['vix'], 14.63)
+        self.assertEqual(next(c for c in _store.option_candidates() if c['id'] == cid)['f']['vix'], 14.63)
+        self.assertEqual(context.refresh_market_context(market, days=3650), {'zones': 0, 'ideas': 0, 'candidates': 0})
+
+    def test_every_held_stock_stays_in_the_daily_update(self):
+        from niftywhale import lab
+        history.save('1d', 'OLDSTOCK', daily([100.0] * 60))
+        history.save('1d', 'SBIN', daily([100.0] * 60))
+        self.assertEqual(history.held('1d'), ['OLDSTOCK', 'SBIN'])
+        got = {}
+        with mock.patch.object(lab.dhan, 'available', lambda: True), \
+                mock.patch.object(lab, 'universe_for', lambda m: [{'symbol': 'SBIN'}, {'symbol': 'TCS'}]), \
+                mock.patch.object(lab.history, 'update_market', lambda: None), \
+                mock.patch.object(lab.history, 'update_daily', lambda syms, yrs: got.setdefault('syms', syms)), \
+                mock.patch.object(lab.history, 'update_context', lambda: None), \
+                mock.patch.object(lab.history, 'update_intraday', lambda *a: 0), \
+                mock.patch.object(lab, 'wait_for_close', lambda job: None):
+            lab.update_history(None, lambda m: None)
+        self.assertEqual(got['syms'], ['OLDSTOCK', 'SBIN', 'TCS'])          # breadth keeps its population
+
+
 class Features(unittest.TestCase):
     def test_relative_strength_against_nifty_and_sector(self):
         stock = daily(np.r_[np.full(80, 100.0), np.linspace(100, 110, 21)])           # +10 % over 20 days
