@@ -1557,10 +1557,18 @@ def delivery_history(symbols: List[str], sessions: int = 26, until: Optional[str
 
 def prune_smart(keep_days: int = 120) -> None:
     """Delivery rows are the bulk (every stock, every session): keep four months. Deals, flows and
-    positioning are small and kept."""
+    positioning are small and kept. The lab's stocks keep theirs as far back as its backfill reaches
+    (backfill.run): pruned, every night's backfill would fetch and write years of them again."""
     cutoff = (now_local() - timedelta(days=keep_days)).date().isoformat()
+    lab = get_json('backfill:delivery_keep') or {}
+    syms = list(lab.get('symbols') or [])
     with connect() as c:
-        c.execute('DELETE FROM sm_delivery WHERE day < ?', (cutoff,))
+        if not syms:
+            c.execute('DELETE FROM sm_delivery WHERE day < ?', (cutoff,))
+            return
+        marks = ','.join('?' * len(syms))
+        c.execute(f'DELETE FROM sm_delivery WHERE day < ? AND (symbol NOT IN ({marks}) OR day < ?)',
+                  [cutoff] + syms + [lab.get('since') or cutoff])
 
 
 # ---------------------------------------------------------------- demo funds

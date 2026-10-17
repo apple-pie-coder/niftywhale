@@ -66,6 +66,7 @@ class History(unittest.TestCase):
         with store.connect() as c:
             for t in ('sm_delivery', 'sm_futoi', 'sm_poi', 'sm_events'):
                 c.execute(f'DELETE FROM {t}')
+        self.addCleanup(store.set_json, 'backfill:delivery_keep', {})
 
     def test_the_backtester_reads_what_a_live_entry_does(self):
         days = [date(2026, 9, 1) + timedelta(days=k) for k in range(25)]
@@ -102,6 +103,86 @@ class History(unittest.TestCase):
         self.assertEqual((again['delivery'], again['positioning'], again['futures']), (0, 0, 0))
         f.bhav.assert_not_called()
         self.assertEqual(store.results_dates(['ABC']), {'ABC': ['2026-10-20']})
+
+    def test_the_live_prune_leaves_the_lab_its_years(self):
+        # The live app's prune once took the backfilled rows too, so each night's backfill fetched and wrote
+        # years of delivery files again, holding the database long enough to lock out the app.
+        old, older, recent = '2025-01-06', '2023-01-02', store.now_local().date().isoformat()
+        store.set_json('backfill:delivery_keep', {'since': '2024-01-01', 'symbols': ['ABC']})
+        for d in (old, older, recent):
+            store.add_delivery(d, {'ABC': {'qty': 1}, 'ZZZ': {'qty': 1}})
+        store.prune_smart()
+        with store.connect() as c:
+            left = {(r[0], r[1]) for r in c.execute('SELECT day, symbol FROM sm_delivery')}
+        self.assertEqual(left, {(old, 'ABC'), (recent, 'ABC'), (recent, 'ZZZ')})
+        store.set_json('backfill:delivery_keep', {})
+        store.prune_smart()                                              # no lab yet: four months for every stock
+        with store.connect() as c:
+            self.assertEqual({r[0] for r in c.execute('SELECT DISTINCT day FROM sm_delivery')}, {recent})
+
+    def test_run_tells_the_prune_what_to_keep(self):
+        f = mock.Mock(bhav=mock.Mock(return_value=None), participant_oi=mock.Mock(return_value=None),
+                      fo_bhav=mock.Mock(return_value=None), events=mock.Mock(return_value=[]))
+        with mock.patch.object(backfill, 'trading_days', return_value=[date(2024, 3, 1)]), \
+                mock.patch.object(backfill.smart, 'Fetcher', return_value=f):
+            backfill.run(lambda text: None, 1, symbols=['XYZ', 'ABC'])
+        self.assertEqual(store.get_json('backfill:delivery_keep'),
+                         {'since': '2024-03-01', 'symbols': ['ABC', 'XYZ'], 'filled': ['ABC', 'XYZ']})
+
+    def test_a_stock_new_to_the_lab_gets_its_history(self):
+        days = [date(2026, 10, 5), date(2026, 10, 6)]
+        f = mock.Mock()
+        f.bhav.return_value = {'ABC': {'qty': 1}, 'NEW': {'qty': 1}}
+        f.participant_oi.return_value = {'FII': {}}
+        f.fo_bhav.return_value = {'ABC': {'oi': 5, 'oi_chg': 1, 'close': 2.0}}
+        f.events.return_value = []
+        with mock.patch.object(backfill, 'trading_days', return_value=days), mock.patch.object(backfill.smart, 'Fetcher', return_value=f):
+            backfill.run(lambda text: None, 1, symbols=['ABC'])
+            f.reset_mock()
+            backfill.run(lambda text: None, 1, symbols=['ABC', 'NEW'], stop=lambda: True)   # stopped: not filled yet
+            self.assertEqual(store.get_json('backfill:delivery_keep')['filled'], ['ABC'])
+            got = backfill.run(lambda text: None, 1, symbols=['ABC', 'NEW'])
+            self.assertEqual(got['delivery'], 2)
+            self.assertEqual(set(store.series('sm_delivery', ['ABC', 'NEW'], 'qty')['NEW'][i]['day'] for i in (0, 1)),
+                             {d.isoformat() for d in days})
+            f.reset_mock()
+            self.assertEqual(backfill.run(lambda text: None, 1, symbols=['ABC', 'NEW'])['delivery'], 0)
+        f.bhav.assert_not_called()
+
+
+class BusyDatabase(unittest.TestCase):
+    """A lab job's bookkeeping with the database locked by another process's long write."""
+
+    def setUp(self):
+        from niftywhale import lab
+        self.lab = lab
+        store.init()
+        with store.connect() as c:
+            c.execute('DELETE FROM lab_jobs')
+        self.addCleanup(lambda: store.connect().execute('DELETE FROM lab_jobs').connection.commit())
+        self.jid = store.add_job('backfill')
+        store.next_job()
+
+    def test_progress_while_locked_does_not_fail_the_job(self):
+        log = self.lab.JobLog({'id': self.jid, 'kind': 'backfill'})
+        with mock.patch.object(self.lab.store, 'update_job', side_effect=self.lab.sqlite3.OperationalError('database is locked')):
+            log('NSE files 1/2 (2026-10-05)')
+            log.note('a note')
+            log.close(error=True)
+
+    def test_the_outcome_is_written_once_the_lock_clears(self):
+        real, calls = store.update_job, []
+
+        def flaky(jid, **fields):
+            calls.append(fields)
+            if len(calls) < 3:
+                raise self.lab.sqlite3.OperationalError('database is locked')
+            real(jid, **fields)
+        with mock.patch.object(self.lab.store, 'update_job', side_effect=flaky), mock.patch.object(self.lab.time, 'sleep'):
+            self.lab.finish_job({'id': self.jid, 'kind': 'backfill'}, status='error', message='x')
+        job = next(j for j in store.jobs() if j['id'] == self.jid)
+        self.assertEqual((job['status'], job['message']), ('error', 'x'))
+        self.assertNotEqual(store.add_job('backfill'), self.jid)        # a finished job no longer blocks the next
 
 
 class Gates(unittest.TestCase):

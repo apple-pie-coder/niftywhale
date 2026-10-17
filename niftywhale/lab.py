@@ -20,6 +20,7 @@ import multiprocessing as mp
 import os
 import re
 import signal
+import sqlite3
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor
@@ -881,7 +882,11 @@ class JobLog:
         self.job, self.steps, self.cur = job, {}, None
 
     def _save(self, **fields) -> None:
-        store.update_job(self.job['id'], steps=json.dumps(self.steps), **fields)
+        # Progress only: the database busy past its timeout (a long write in the app) must not fail the job.
+        try:
+            store.update_job(self.job['id'], steps=json.dumps(self.steps), **fields)
+        except sqlite3.OperationalError as e:
+            logger.warning(f"[{self.job['kind']}] progress not saved: {e}")
 
     def __call__(self, text: str) -> None:
         key, n, total = step_of(text)
@@ -1021,6 +1026,19 @@ def nse_history(progress: Callable[[str], None], say: Callable[[str], None]) -> 
     except Exception as e:
         logger.warning(f'NSE history: {e}')
         say(f'NSE history not updated ({str(e)[:120]})')
+
+
+def finish_job(job: Dict[str, Any], **fields) -> None:
+    """A job's outcome, written however busy the database is: left 'running', it would show as running
+    until the lab restarts, and no other job of its kind could be queued."""
+    for attempt in range(20):
+        try:
+            store.update_job(job['id'], finished=store.now_local().isoformat(timespec='seconds'), progress='', **fields)
+            return
+        except sqlite3.OperationalError as e:
+            logger.warning(f"job {job['kind']}: outcome not saved yet ({e}); trying again")
+            time.sleep(min(60, 5 * (attempt + 1)))
+    logger.error(f"job {job['kind']}: outcome never saved; the lab's next start puts it back in the queue")
 
 
 def run_job(job: Dict[str, Any]) -> str:
@@ -1332,13 +1350,11 @@ def main() -> None:
                 job_alert(job, 'start')
                 try:
                     msg = run_job(job)
-                    store.update_job(job['id'], status='done', finished=store.now_local().isoformat(timespec='seconds'),
-                                     message=msg, progress='')
+                    finish_job(job, status='done', message=msg)
                     job_alert(job, 'done', msg, time.time() - began)
                 except Exception as e:
                     logger.error(f"job {job['kind']} failed: {traceback.format_exc()}")
-                    store.update_job(job['id'], status='error', finished=store.now_local().isoformat(timespec='seconds'),
-                                     message=dhan._redact(e)[:500], progress='')
+                    finish_job(job, status='error', message=dhan._redact(e)[:500])
                     job_alert(job, 'error', dhan._redact(e), time.time() - began)
                 continue
         except Exception:

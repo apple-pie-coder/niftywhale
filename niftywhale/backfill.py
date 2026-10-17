@@ -42,7 +42,15 @@ def run(progress: Callable[[str], None], years: float, stop: Callable[[], bool] 
     today = store.now_local().date()
     days = trading_days(today - timedelta(days=int(365 * years)), today)
     keep = set(symbols or [])
+    # What the live app's prune_smart leaves alone, and which stocks have their delivery history in full:
+    # a stock new to the lab (its universe changed) has none, so every delivery day is read again, once.
+    filled = set((store.get_json('backfill:delivery_keep') or {}).get('filled') or []) & keep
+    record = {'since': days[0].isoformat() if days else today.isoformat(), 'symbols': sorted(keep)}
+    if keep:
+        store.set_json('backfill:delivery_keep', {**record, 'filled': sorted(filled)})
     held = {t: set(store.smart_days(t)) for t in ('sm_delivery', 'sm_poi', 'sm_futoi')}
+    if keep - filled:
+        held['sm_delivery'] = set()
     todo = [d for d in days if any(d.isoformat() not in held[t] for t in held)]
     f = smart.Fetcher()
     added = {'delivery': 0, 'positioning': 0, 'futures': 0, 'events': 0}
@@ -75,6 +83,9 @@ def run(progress: Callable[[str], None], years: float, stop: Callable[[], bool] 
             if errors >= MAX_ERRORS:
                 logger.warning(f'NSE refused {MAX_ERRORS} days in a row: the rest waits for the next run')
                 break
+    else:
+        if keep:                                     # a day that failed is missing by date: the next run reads it
+            store.set_json('backfill:delivery_keep', {**record, 'filled': sorted(keep)})
     added['events'] = events(f, days[0] if days else today, today, progress)
     return added
 
