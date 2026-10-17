@@ -136,6 +136,7 @@ def build(previous: Optional[Dict] = None) -> Dict[str, object]:
 
     stocks: Dict[str, Dict] = {}
     failed: List[str] = []
+    trusts: set = set()                      # REITs seen in a list: left out, also when an index falls back
 
     def entry(sym: str, name: str, industry: str = '') -> Dict:
         e = stocks.get(sym)
@@ -154,16 +155,22 @@ def build(previous: Optional[Dict] = None) -> Dict[str, object]:
             for r in rows:
                 if is_placeholder(r['Symbol']):
                     continue
+                if is_trust(r):
+                    trusts.add(r['Symbol'].strip().upper())
+                    continue
                 e = entry(r['Symbol'].strip().upper(), (r.get('Company Name') or '').strip(),
                           (r.get('Industry') or '').strip())
                 e['indices'].append(slug)
         except (requests.RequestException, ValueError) as ex:
             failed.append(slug)
             logger.warning(f'Universe: {slug} not refreshed ({ex}); keeping its previous members')
-            for sym in old_members.get(slug, []):
-                o = old_by_symbol.get(sym, {})
-                entry(sym, o.get('name', sym), o.get('industry', ''))['indices'].append(slug)
         time.sleep(0.3)                      # niftyindices.com rate-limits bursts
+    for slug in failed:                      # after every list, so a REIT any of them showed stays out
+        for sym in old_members.get(slug, []):
+            if sym in trusts:
+                continue
+            o = old_by_symbol.get(sym, {})
+            entry(sym, o.get('name', sym), o.get('industry', ''))['indices'].append(slug)
 
     for e in stocks.values():
         e['nifty100'] = 'nifty100' in e['indices']
@@ -199,6 +206,13 @@ def is_placeholder(symbol: str) -> bool:
     """NSE pads some index files with dummy rows (DUMMYHEG in the Smallcap 250 list): no
     such stock trades, so every scan would only fail to download it."""
     return symbol.strip().upper().startswith('DUMMY')
+
+
+def is_trust(row: Dict[str, str]) -> bool:
+    """A REIT (NSE's RR series, e.g. EMBASSY, BIRET, BAGMANE): the broad indices now list them, but they
+    are income units that barely move, Dhan's instrument list (EQ / BE only) has no id for them and
+    Yahoo files them under SYMBOL-RR.NS, so a scan would only fail to download them."""
+    return (row.get('Series') or '').strip().upper() == 'RR'
 
 
 def load(path: Path = None) -> Dict[str, object]:

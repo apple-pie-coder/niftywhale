@@ -82,3 +82,25 @@ class Placeholders(unittest.TestCase):
         self.assertEqual([x['symbol'] for x in u.load(path)['stocks']], ['RELIANCE'])
         self.assertTrue(u.is_placeholder('dummyabc'))
         self.assertFalse(u.is_placeholder('DUMMIES'[:0] + 'DLF'))
+
+
+class Trusts(unittest.TestCase):
+    def test_reits_are_left_out_of_a_build(self):
+        from unittest import mock
+        big = [{'Symbol': f'S{k}', 'Series': 'EQ', 'Company Name': f'S{k}', 'Industry': ''} for k in range(100)]
+        reit = {'Symbol': 'EMBASSY', 'Series': 'RR', 'Company Name': 'Embassy Office Parks REIT', 'Industry': 'Realty'}
+
+        def rows(slug):
+            if slug == 'nifty500':
+                raise ValueError('down')                             # falls back to its previous members
+            return big + [reit] if slug in ('nifty100', 'niftysmallcap250') else big[:5]
+        previous = {'stocks': [{'symbol': 'EMBASSY', 'indices': ['nifty500']}, {'symbol': 'S1', 'indices': ['nifty500']}]}
+        with mock.patch.object(universe, '_index_rows', side_effect=rows), \
+                mock.patch.object(universe, '_get', return_value='name,symbol\n'), mock.patch.object(universe.time, 'sleep'):
+            u = universe.build(previous)
+        syms = {s['symbol']: s for s in u['stocks']}
+        self.assertNotIn('EMBASSY', syms)
+        self.assertIn('nifty500', syms['S1']['indices'])
+        self.assertEqual(u['failed'], ['nifty500'])
+        self.assertTrue(universe.is_trust({'Series': 'RR'}))
+        self.assertFalse(universe.is_trust({'Series': 'BE'}))

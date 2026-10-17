@@ -4333,6 +4333,7 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/dhan
 #### `POST /api/universe/refresh`
 
 Re-downloads every NSE list (28 indices + F&O) now; it answers when done (up to a minute). An index that fails keeps its previous members.
+REITs (NSE's RR series, such as EMBASSY, BIRET and BAGMANE) are left out: the broad indices list them, but they are income units with no Dhan id.
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/universe/refresh
