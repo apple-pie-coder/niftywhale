@@ -398,6 +398,8 @@ def apply_thresholds(mode: str, thr: Dict[str, float], why: str, by: str = 'auto
     Only the thresholds that differ from `base` (the rules the proposal was tuned against)
     are written, so a threshold you changed by hand since is left alone. Returns the
     changes as {threshold: [before, after]}."""
+    if store.rules_locked():                    # the rules are frozen: nothing changes them (the routes say so first)
+        return {}
     key = SETTING_KEYS[mode]
     try:
         saved = json.loads(store.settings().get(key) or '{}')
@@ -438,6 +440,8 @@ def revert_change(mode: str, lc: Dict[str, Any]) -> Dict[str, Any]:
         saved = json.loads(store.settings().get(key) or '{}')
     except ValueError:
         saved = {}
+    if store.rules_locked():
+        return saved
     for k, (before, after) in (lc.get('changed') or {}).items():
         if saved.get(k) == after:
             if before is None:
@@ -537,6 +541,9 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
     notes = []
     st = state(mode)
     today = data.now_ist().date()
+    # Rules locked: a proposal that passes its shadow run waits for you (as in approve mode), and nothing is rolled back.
+    locked = store.rules_locked()
+    ask = pol['mode'] == 'approve' or locked
     ch = st.get('challenger')
     if ch and pol['mode'] != 'off' and bench.ready():
         since = date.fromisoformat(ch['since'])
@@ -555,7 +562,7 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
                 return                                   # rejected, approved or replaced meanwhile
             live['shadow'] = shadow
             claimed['ok'] = True
-            if verdict == 'promote' and pol['mode'] == 'approve':
+            if verdict == 'promote' and ask:
                 s['awaiting'] = live
                 s.pop('challenger', None)
             elif verdict == 'drop':
@@ -563,10 +570,10 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
             # promote in auto mode: apply_thresholds clears it as it records the change
         update_state(mode, decide)
         if claimed and verdict == 'promote':
-            if pol['mode'] == 'approve':
-                store.log_autopilot(mode, 'awaiting', current, ch['params'], why)
+            if ask:
+                store.log_autopilot(mode, 'awaiting', current, ch['params'], why + ('; the rules are locked' if locked else ''))
                 tg(f"🐋 <b>Autopilot · {mode}</b>: {esc(ch['change'])} passed its shadow run ({esc(why)}). "
-                   'Approve it on the Performance tab.')
+                   + ('The rules are locked: unlock them in the app to approve it.' if locked else 'Approve it on the Performance tab.'))
             elif apply_thresholds(mode, ch['params'], f"{ch['evidence']}; shadow: {why}", base=ch.get('base')):
                 tg(f"🐋 <b>Autopilot · {mode}</b>: changed {esc(ch['change'])}.\nWhy: {esc(ch['evidence'])}; shadow run: {esc(why)}.\n"
                    'Undo it on the Performance tab if you disagree.')
@@ -580,7 +587,7 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
 
     # Rollback: live trades since the last change lost, and the old rules would have done better.
     lc = st.get('last_change')
-    if lc and pol['mode'] != 'off' and not lc.get('reverted') and bench.ready():
+    if lc and pol['mode'] != 'off' and not locked and not lc.get('reverted') and bench.ready():
         live = [t for t in store.live_trades(mode) if (t['entry_time'] or '')[:10] >= lc['session'] and not t.get('manual')]
         prev = {**current_thresholds(mode), **{k: float(b) for k, (b, _) in (lc.get('changed') or {}).items() if b is not None}}
         newr = [t for t in bench.run(current_thresholds(mode)) if t['entry_time'][:10] >= lc['session']]

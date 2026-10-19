@@ -97,6 +97,10 @@
     /* Long inline code (a command, a path) wraps instead of pushing a phone's page sideways. */
     article :not(pre) > code { overflow-wrap: anywhere; }
     article td code { overflow-wrap: normal; }
+    /* Screenshots fit the column (they are 760 to 1440px wide); a tap opens one at full size. */
+    article img { display: block; max-width: 100%; height: auto; margin: 12px 0;
+                  border: 1px solid var(--line); border-radius: var(--r-md); }
+    article a.shot { display: block; width: fit-content; max-width: 100%; }
     /* The API reference: one block per endpoint; on a wide screen the answer sits beside the request. */
     .api-ep { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 18px; }
     .api-ep h4 { margin: 14px 0 8px; font-size: 15px; }
@@ -153,6 +157,18 @@ document.getElementById('theme-ctl').appendChild(NWTheme.styleControl({ compact:
         w.className = 'table-wrap';
         t.parentNode.insertBefore(w, t);
         w.appendChild(t);
+    });
+
+    // Each screenshot links to itself, so a phone can open it full size and zoom in.
+    document.querySelectorAll('#doc img').forEach((img) => {
+        if (img.closest('a')) return;
+        const a = document.createElement('a');
+        a.className = 'shot';
+        a.href = img.getAttribute('src');
+        a.target = '_blank';
+        a.rel = 'noopener';
+        img.parentNode.insertBefore(a, img);
+        a.appendChild(img);
     });
 
     // Highlight the section being read in the contents.

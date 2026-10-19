@@ -504,9 +504,10 @@ def still_valid(info: Optional[Dict[str, Any]]) -> bool:
     return True
 
 
-def _need_session(fresh: bool = False):
+def _need_session(fresh: bool = False, strict: bool = False):
     """For the account routes: a signed-in browser (not a token); with `fresh`, signed in within FRESH_S
-    or the current password in the body."""
+    or the current password in the body. With `strict` a recent sign-in is not enough: the password in the body,
+    or a passkey confirmed for this request (within CONFIRM_S), every time."""
     if not ENABLED:
         return None
     s = _session()
@@ -515,9 +516,10 @@ def _need_session(fresh: bool = False):
     if request.method == 'POST' and not _same_origin():
         return jsonify({'error': 'cross-site request refused'}), 403
     g.auth = {'via': 'session', 'session': s}
-    if fresh:
-        recent = time.time() - datetime.fromisoformat(s['created']).timestamp() < FRESH_S \
-            or time.time() - float(s.get('confirmed') or 0) < FRESH_S
+    if fresh or strict:
+        recent = time.time() - float(s.get('confirmed') or 0) < CONFIRM_S if strict else (
+            time.time() - datetime.fromisoformat(s['created']).timestamp() < FRESH_S
+            or time.time() - float(s.get('confirmed') or 0) < FRESH_S)
         if recent:
             return None
         pw = (request.get_json(silent=True) or {}).get('password')

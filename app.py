@@ -39,8 +39,8 @@ from flask import Flask, g, jsonify, redirect, render_template, request, send_fr
 from flask_sock import Sock  # noqa: E402
 
 from niftywhale import (auth, autopilot, broker, charts, config, costs, data, demo, dhan, execution, features, glossary,  # noqa: E402
-                        history, hub, indicators, intraday, news, notify, options, patterns, perf, session, smart, smc, store, telebot,
-                        ticker, universe)
+                        history, hub, indicators, intraday, news, notify, options, patterns, perf, session, smart, smc, store, studies,
+                        telebot, ticker, universe)
 from niftywhale.context import candidate_context, news_context, smart_context  # noqa: E402
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
@@ -668,17 +668,22 @@ NEWS_WHY = ('trade', 'tapped', 'board', 'intraday', 'options', 'setup')     # mo
 NEWS_HOURLY = ('options', 'setup')      # followed on the hourly pass only
 
 
-def news_watch() -> list:
+def news_watch(symbol: str = None) -> list:
     """The stocks the desk follows, each with why (NEWS_WHY): open paper trades, zones price
-    is in, the rest of the board, today's intraday zones, and the latest scans' setups."""
+    is in, the rest of the board, today's intraday zones, and the latest scans' setups.
+    `symbol`: only that stock (its page), read from its own rows."""
     now = data.now_ist()
     out = {}
 
     def add(sym, name, why):
+        if symbol and sym != symbol:
+            return
         old = out.get(sym)
         if old is None or NEWS_WHY.index(why) < NEWS_WHY.index(old['why']):
             out[sym] = {'symbol': sym, 'name': (old or {}).get('name') or name or sym, 'why': why}
-    for z in store.recent_zones(200):
+    swing = ([z for z in store.symbol_zones(symbol, 60) if (z.get('mode') or 'swing') == 'swing'] if symbol
+             else store.recent_zones(200))
+    for z in swing:
         if _live_zone(z, now):
             add(z['symbol'], z.get('name'), 'trade' if z['status'] == 'triggered' and store.is_paper(z)
                 else 'tapped' if z['status'] == 'tapped' else 'board')
@@ -687,11 +692,14 @@ def news_watch() -> list:
             'tapped' if z['status'] == 'tapped' else 'intraday')
     for mode in ('swing', 'intraday'):
         scan = store.latest_scan(mode=mode)
-        for c in store.candidates(scan['id']) if scan else []:
-            add(c['symbol'], c.get('name'), 'setup')
+        if not scan:
+            continue
+        for c in ([store.candidate_for(scan['id'], symbol)] if symbol else store.candidate_names(scan['id'])):
+            if c:
+                add(c['symbol'], c.get('name'), 'setup')
     # Options mode: the stocks whose chains it reads (an index has no company news), and the
     # underlying of an open idea, which is a trade like any other.
-    for i in store.ideas(limit=200):
+    for i in store.ideas(symbol=symbol, limit=200):
         if i['status'] == 'open' and i['symbol'] not in options.INDICES:
             add(i['symbol'], None, 'trade')
     for sym in option_stocks():
@@ -1146,7 +1154,7 @@ def underlying_key(sym: str) -> str:
 
 
 LIVE_MAX = 250               # feed symbols one /api/live call may ask for
-LIVE_OPT_RE = re.compile(r'^OPT:(NSE|BSE)_FNO:\d{1,9}$')
+LIVE_OPT_RE = re.compile(r'^OPT:(NSE|BSE)_FNO:\d{1,9}\Z')
 
 
 def live_symbol_ok(s: str) -> bool:
@@ -1454,7 +1462,7 @@ def api_config():
     return jsonify(safe({'fields': v, 'dhan': dhan.status(), 'telegram_configured': notify.configured()}))
 
 
-SENSITIVE_CONFIG = {'telegram_token', 'telegram_chat_id', 'dhan_client_id', 'dhan_pin', 'dhan_totp'}
+SENSITIVE_CONFIG = {'telegram_token', 'telegram_chat_id', 'dhan_client_id', 'dhan_pin', 'dhan_totp', 'heartbeat_url'}
 
 
 @app.route('/api/config', methods=['POST'])
@@ -1937,7 +1945,12 @@ def demo_statement(positions: list = None, ledger: list = None) -> dict:
 # Place) or auto. exec_sync runs beside demo_sync every minute; reconcile follows what was sent at Dhan.
 EXEC_LOCK = threading.Lock()
 EXEC_OPEN = ('placing', 'placed', 'open')            # sent (or being sent) and not finished
-EXEC_PRODUCT = {'CNC': 'CNC', 'INTRADAY': 'MIS'}      # Dhan's product -> demo's ('MARGIN': OPT or FUT by mode)
+def exec_product(r: dict) -> str:
+    """A live row's Dhan product as the demo's: an option is OPT whichever it went as (INTRADAY now, MARGIN
+    before), a stock's INTRADAY is MIS and its MARGIN a future."""
+    if r.get('mode') == 'options':
+        return 'OPT'
+    return {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'FUT'}.get(r.get('product'), 'CNC')
 EXEC_STALE_S = 300                                     # an alert older than this is never sent
 _exec_cache: dict = {'funds': (0.0, None), 'ip': (0.0, None)}
 
@@ -2002,7 +2015,8 @@ def exec_evidence(mode: str) -> dict:
     paper = costs.apply(paper, mode, cost_settings_slip(), lots=lots, account=acct) if paper else []
     return {'bt': run.get('summary') or {}, 'rules_ok': _same_thresholds(run.get('params'), lab.current_thresholds(mode)),
             'live': ((run.get('extra') or {}).get('costs') or {}).get('live'), 'account': acct['label'],
-            'paper': {'trades': len(paper), 'total_r': round(sum(float(t['r']) for t in paper), 2) if paper else None, 'since': since}}
+            'paper': {'trades': len(paper), 'total_r': round(sum(float(t['r']) for t in paper), 2) if paper else None, 'since': since,
+                      'days': len({str(t.get('entry_time') or '')[:10] for t in paper}), 'day_t': execution.day_t(paper)}}
 
 
 def cost_settings_slip() -> float:
@@ -2022,7 +2036,7 @@ def exec_margin(r: dict, st: dict) -> float:
     """What a row ties up: the price times the quantity for delivery and an option's premium, a share of it for
     intraday (the leverage) and a future (the margin %)."""
     value = float(r.get('price') or (r.get('body') or {}).get('price') or 0) * (r.get('qty') or 0)
-    if r.get('product') == 'INTRADAY':
+    if r.get('product') == 'INTRADAY' and r.get('mode') != 'options':     # an option bought ties up its premium
         return value / st['intraday_leverage']
     if r.get('product') == 'MARGIN' and r.get('mode') != 'options':
         return value * st['futures_margin_pct'] / 100
@@ -2269,8 +2283,7 @@ def exec_send(oid: int) -> dict:
 
 def exec_settle_shadow(r: dict, t: dict, st: dict) -> None:
     """A shadow row whose trade closed: the rupees it would have made, after charges (demo.settle)."""
-    pos = {'mode': r['mode'], 'side': r['side'], 'product': {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if r['mode'] == 'options' else 'FUT'}
-           .get(r['product'], 'CNC'), 'qty': r['qty'], 'entry': float(t['entry']), 'entry_time': r['entry_time']}
+    pos = {'mode': r['mode'], 'side': r['side'], 'product': exec_product(r), 'qty': r['qty'], 'entry': float(t['entry']), 'entry_time': r['entry_time']}
     res = demo.settle(pos, float(t['exit']), True, t.get('exit_time') or r['entry_time'])
     store.update_exec_order(r['id'], only_if='shadow', status='shadow_closed', exit=float(t['exit']),
                             exit_time=t.get('exit_time'), gross=res['gross'], charges=res['charges'], net=res['net'],
@@ -2339,7 +2352,7 @@ def exec_close(r: dict, px, how: str) -> None:
     exit_px = px if px is not None else (float(t['exit']) if t.get('exit') is not None else r.get('last'))
     if exit_px is None:
         return
-    product = {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if r['mode'] == 'options' else 'FUT'}.get(r['product'], 'CNC')
+    product = exec_product(r)
     entry = float(r.get('fill') or r['price'])
     if px is None and product == 'FUT' and t.get('entry') is not None:
         # No exit price from Dhan: the fallback (the paper trade's exit, or the mark) is the share's price, and the fill
@@ -2390,6 +2403,35 @@ def html_escape(s) -> str:
     return str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
+def exec_fills(rows: list) -> dict:
+    """How real fills compare with the paper trades they copy: each filled order's entry (and exit, once closed)
+    against its paper twin's, in R (the price gap over the trade's risk a share), worse positive. Paper R is what the
+    evidence was made on, so a mode whose fills cost it much R a trade does not trade as its record says."""
+    paper = {t['ref']: t for m in execution.MODES for t in store.live_trades(m)}
+    out = {}
+    for r in rows:
+        t = paper.get(r.get('ref'))
+        if not t or r.get('fill') is None or t.get('entry') is None or t.get('stop') is None:
+            continue
+        entry, risk = float(t['entry']), abs(float(t['entry']) - float(t['stop']))
+        if not risk:
+            continue
+        buy = r['mode'] == 'options' or r.get('side') != 'short'
+        sign = 1 if buy else -1                              # a dearer buy, a cheaper sell: worse
+        # A future trades at its own price (the share's plus its basis): its fill against the limit sent, not the share.
+        fut = exec_product(r) == 'FUT'
+        ref_px = float(r.get('price') or r['fill']) if fut else entry
+        m = out.setdefault(r['mode'], {'orders': 0, 'entry_r': 0.0, 'closed': 0, 'exit_r': 0.0})
+        m['orders'] += 1
+        m['entry_r'] += sign * (float(r['fill']) - ref_px) / risk
+        if r.get('status') == 'closed' and r.get('exit') is not None and t.get('exit') is not None and not fut:
+            m['closed'] += 1
+            m['exit_r'] += sign * (float(t['exit']) - float(r['exit'])) / risk
+    return {k: {'orders': v['orders'], 'entry_r': round(v['entry_r'] / v['orders'], 3),
+                'closed': v['closed'], 'exit_r': round(v['exit_r'] / v['closed'], 3) if v['closed'] else None}
+            for k, v in out.items()}
+
+
 def exec_view() -> dict:
     st = exec_settings()
     rows = store.exec_orders(limit=300)
@@ -2404,6 +2446,7 @@ def exec_view() -> dict:
             'offers': [r for r in rows if r['status'] == 'offered'],
             'rows': rows,
             'totals': store.exec_totals(),
+            'fills': exec_fills(rows),
             'log': [{**l, 'answer': (l['answer'] or '')[:300]} for l in store.broker_log(500)]}
 
 
@@ -3623,6 +3666,7 @@ def api_state():
         'scan_state': STATE['scan'],
         'watch_state': {k: v for k, v in STATE['watch'].items() if not k.startswith('_')},
         'settings': store.settings(),
+        'rules_lock': rules_lock_view(),
         'indicator_specs': indicators.SETTINGS, 'indicator_settings': indicator_settings(),
         'telegram_configured': notify.configured(),
         'universe': uni,
@@ -3691,7 +3735,46 @@ def api_watch_check():
 
 
 OWN_ENDPOINT = {'rules', 'intraday_rules', 'options_rules', 'autopilot_policy', 'paused_swing', 'paused_intraday', 'exec', 'exec_since', 'exec_send', 'exec_halt',
-                'paused_options', 'demo', 'demo_since'}
+                'paused_options', 'demo', 'demo_since', 'rules_lock'}
+
+# The rules lock (store.rules_locked): the three tuners' rules and the autopilot's policy frozen, so a rule set builds
+# up a record of its own. Locking needs nothing; unlocking asks for the password or a passkey every time, and lasts
+# RULES_UNLOCK_S. Pausing a mode's alerts and rejecting a proposal stay open: neither changes a rule.
+RULES_UNLOCK_S = 900
+
+
+def rules_lock_view() -> dict:
+    lk = store.rules_lock()
+    until = lk['until'] if lk['until'] and lk['until'] > time.time() else None
+    return {'locked': lk['locked'], 'open': not store.rules_locked(), 'until': until, 'unlock_s': RULES_UNLOCK_S}
+
+
+def _rules_locked_refusal():
+    """The answer a rule change gets while the rules are locked (the page offers to unlock), or None."""
+    if not store.rules_locked():
+        return None
+    return jsonify({'error': 'The tuner rules are locked. Unlock them with the lock icon to change them.',
+                    'rules_locked': True, 'rules_lock': rules_lock_view()}), 423
+
+
+@app.route('/api/rules/lock', methods=['POST'])
+def api_rules_lock():
+    """{locked: true} locks the rules (and ends an unlock); {locked: false} unlocks them for RULES_UNLOCK_S,
+    confirmed with the password (in the body) or a passkey however recent the sign-in (auth strict)."""
+    lk = store.rules_lock()
+    if (request.get_json(silent=True) or {}).get('locked') is not False:
+        if not lk['locked'] or lk['until']:
+            store.set_settings({'rules_lock': {'locked': True, 'until': None}})
+            store.log_autopilot('all', 'lock', None, None, 'tuner rules and autopilot policy locked', 'you')
+        return jsonify(rules_lock_view())
+    if not lk['locked']:
+        return jsonify(rules_lock_view())
+    bad = auth._need_session(strict=True)
+    if bad:
+        return bad
+    store.set_settings({'rules_lock': {'locked': True, 'until': time.time() + RULES_UNLOCK_S}})
+    store.log_autopilot('all', 'unlock', None, None, f'unlocked for {RULES_UNLOCK_S // 60} minutes', 'you')
+    return jsonify(rules_lock_view())
 
 
 @app.route('/api/settings', methods=['POST'])
@@ -3799,6 +3882,220 @@ def api_stock(symbol):
                          'in_universe': member is not None, 'patterns': daily_patterns,
                          'bars': bars, 'offset': offset, 'analysis': analysis,
                          'ind': chart_indicators(full, len(tail))}))
+
+
+RETURN_SPANS = (('1W', 5), ('1M', 21), ('3M', 63), ('6M', 126))
+
+
+def price_stats(full, quote: dict) -> dict:
+    """What a year of daily candles says about a stock, read at `quote['last']`: its 52-week range,
+    returns over each span, moving averages, RSI, ATR, volatility, volume against normal, the
+    classic pivots from the last complete session, and each month's return."""
+    close, high, low, vol = full['Close'], full['High'], full['Low'], full['Volume']
+    last = quote['last']
+    hist = close.iloc[:-1] if quote.get('today_bar') else close    # sessions before the one being priced
+    out = {'sessions': len(full), 'from': str(full.index[0].date())}
+    # A live quote's day range counts too: the session can have traded past the candles' extremes and come back.
+    live = quote.get('live')
+    hi_c, lo_c = float(high.max()), float(low.min())
+    hi52 = max([hi_c, last] + ([quote['high']] if live and quote.get('high') else []))
+    lo52 = min([lo_c, last] + ([quote['low']] if live and quote.get('low') else []))
+    out['high_52w'], out['low_52w'] = hi52, lo52
+    # The session being priced set the extreme itself (live, past the candles'): its date.
+    out['high_52w_date'] = quote['session'] if hi52 > hi_c else str(high.idxmax().date())
+    out['low_52w_date'] = quote['session'] if lo52 < lo_c else str(low.idxmin().date())
+    out['from_high_pct'] = (last / hi52 - 1) * 100
+    out['from_low_pct'] = (last / lo52 - 1) * 100
+    out['range_pos'] = (last - lo52) / (hi52 - lo52) if hi52 > lo52 else None
+    ret = {'1D': quote.get('change_pct')}
+    for k, n in RETURN_SPANS:
+        ret[k] = (last / float(hist.iloc[-n]) - 1) * 100 if len(hist) >= n else None
+    year = data.now_ist().year
+    before = hist[[d.year < year for d in hist.index]]
+    ret['YTD'] = (last / float(before.iloc[-1]) - 1) * 100 if len(before) else None
+    ret['1Y'] = (last / float(hist.iloc[0]) - 1) * 100 if len(hist) >= 240 else None
+    out['returns'] = ret
+    series = pd.concat([hist, pd.Series([last])], ignore_index=True)
+    out['sma'] = {str(n): {'v': float(series.tail(n).mean()), 'dist_pct': (last / float(series.tail(n).mean()) - 1) * 100}
+                  for n in (20, 50, 200) if len(series) >= n}
+    out['ema'] = {str(n): float(series.ewm(span=n, adjust=False).mean().iloc[-1]) for n in (9, 21) if len(series) >= n}
+    delta = series.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+    out['rsi14'] = float(100 - 100 / (1 + gain.iloc[-1] / loss.iloc[-1])) if loss.iloc[-1] else 100.0
+    atr = smc.atr(full, 14)
+    out['atr14'] = float(atr.iloc[-1])
+    out['atr_pct'] = out['atr14'] / last * 100
+    logret = (series / series.shift(1)).apply(math.log).dropna()
+    out['volatility_20'] = float(logret.tail(20).std() * math.sqrt(252) * 100) if len(logret) >= 20 else None
+    past_vol = vol.iloc[:-1] if quote.get('today_bar') else vol
+    avg20 = float(past_vol.tail(20).mean()) if len(past_vol) else None
+    out['avg_volume_20'] = avg20
+    out['volume'] = float(vol.iloc[-1]) if quote.get('today_bar') else None
+    out['volume_ratio'] = out['volume'] / avg20 if out['volume'] and avg20 else None
+    out['avg_turnover_cr_20'] = float((close.iloc[:len(past_vol)] * past_vol).tail(20).mean() / 1e7) if avg20 else None
+    streak, ups = 0, None
+    for v in delta.dropna()[::-1]:
+        if v == 0 or (ups is not None and (v > 0) != ups):
+            break
+        ups = v > 0
+        streak += 1
+    out['streak'] = streak if ups else -streak
+    # Classic floor pivots from the last complete session.
+    done = full.iloc[:-1] if quote.get('today_bar') else full
+    if len(done):
+        h, lo_, c = float(done['High'].iloc[-1]), float(done['Low'].iloc[-1]), float(done['Close'].iloc[-1])
+        p = (h + lo_ + c) / 3
+        out['pivots'] = {'from': str(done.index[-1].date()), 'P': p, 'R1': 2 * p - lo_, 'S1': 2 * p - h,
+                         'R2': p + (h - lo_), 'S2': p - (h - lo_), 'R3': h + 2 * (p - lo_), 'S3': lo_ - 2 * (h - p)}
+    monthly = close.groupby([d.strftime('%Y-%m') for d in close.index]).last()
+    monthly[quote['session'][:7]] = last            # the priced session's month runs to the price being read
+    out['months'] = [{'m': m, 'r': (float(v) / float(monthly.iloc[i - 1]) - 1) * 100}
+                     for i, (m, v) in enumerate(monthly.items()) if i][-12:]
+    return out
+
+
+def _quote(full, sym: str) -> dict:
+    """The stock's price now: Dhan's real-time quote when connected, else the last daily candle
+    (today's while the session runs). `today_bar`: the frame's last candle is the session being priced."""
+    now = data.now_ist()
+    last_day = full.index[-1].date()
+    live = data.live_quotes([sym + '.NS']).get(sym + '.NS')
+    # The session a live price is from: today's while it trades, else the last one closed.
+    day = now.date() if data.market_open(now) else data.last_close(now).date()
+    # Without a live price, out of hours, the last candle is the session there is to show.
+    today_bar = last_day >= day or (not live and not data.market_open(now))
+    if not today_bar or len(full) < 2:
+        prev, row = float(full['Close'].iloc[-1]), None
+    else:
+        prev, row = float(full['Close'].iloc[-2]), full.iloc[-1]
+    q = {'last': float(full['Close'].iloc[-1]), 'prev_close': prev,
+         'session': str(day if live and not today_bar else last_day), 'today_bar': today_bar,
+         'open': float(row['Open']) if row is not None else None, 'high': float(row['High']) if row is not None else None,
+         'low': float(row['Low']) if row is not None else None, 'live': False, 'market_open': data.market_open(now)}
+    if row is None:              # a session that has no candle yet: yesterday's close, no move known
+        q['last'] = prev
+    if live:
+        q.update(last=live['last'], live=True, prev_close=live.get('prev_close') or q['prev_close'],
+                 open=live.get('open') or q['open'], high=live.get('high') or q['high'], low=live.get('low') or q['low'])
+    q['change'] = q['last'] - q['prev_close'] if q['prev_close'] else None
+    q['change_pct'] = q['change'] / q['prev_close'] * 100 if q['prev_close'] and (row is not None or live) else None
+    q['gap_pct'] = (q['open'] / q['prev_close'] - 1) * 100 if q.get('open') and q['prev_close'] else None
+    return q
+
+
+def _futures_read(rows: list) -> dict:
+    """The stock future's open interest over the last sessions, and what the latest one says:
+    price and OI up a long build-up, price down OI up a short build-up, price up OI down short
+    covering, both down long unwinding."""
+    rows = [r for r in rows if r.get('oi')]
+    if not rows:
+        return None
+    last = rows[-1]
+    prev_close = rows[-2]['close'] if len(rows) > 1 else None
+    up = last.get('close') is not None and prev_close is not None and last['close'] >= prev_close
+    oi_up = (last.get('oi_chg') or 0) >= 0
+    # No read without both moves known: a missing price or OI change is not a rise.
+    read = None if prev_close is None or last.get('close') is None or last.get('oi_chg') is None else (
+        'long build-up' if up and oi_up else 'short build-up' if oi_up else 'short covering' if up else 'long unwinding')
+    return {'day': last['day'], 'oi': last['oi'], 'oi_chg': last.get('oi_chg'),
+            'oi_chg_pct': last['oi_chg'] / (last['oi'] - last['oi_chg']) * 100
+            if last.get('oi_chg') and last['oi'] - last['oi_chg'] else None,
+            'close': last.get('close'), 'read': read, 'history': rows}
+
+
+@app.route('/api/stock/<symbol>/profile')
+def api_stock_profile(symbol):
+    """Everything the app knows about one stock, for its page: who it is, its price and the year's
+    numbers, the latest scans' verdicts, every zone, alert and trade it has had, its options,
+    futures OI, delivery, deals and events, and its industry's other stocks."""
+    sym = symbol.upper().split('.')[0]
+    if not SYMBOL_RE.match(sym):
+        return jsonify({'error': 'bad symbol'}), 400
+    ticker = sym + '.NS'
+    frame = data.daily([ticker]).get(ticker)
+    if frame is None or frame.empty:
+        return jsonify({'error': f'no data for {sym} on NSE'}), 404
+    full = smc.clean(frame)
+    stocks = universe.load().get('stocks', [])
+    member = next((m for m in stocks if m['symbol'] == sym), None) or {}
+    quote = _quote(full, sym)
+    out = {'symbol': sym, 'name': member.get('name'), 'in_universe': bool(member),
+           'industry': member.get('industry'), 'fo': bool(member.get('fo')), 'nifty100': bool(member.get('nifty100')),
+           'tag': universe.tag(member) if member else None,
+           'indices': [universe.INDICES[k][0] for k in member.get('indices', []) if k in universe.INDICES],
+           'quote': quote}
+    try:
+        out['stats'] = price_stats(full, quote)
+    except Exception as e:                        # the numbers never break the page
+        logger.warning(f'stats for {sym} failed: {e}')
+        out['stats'] = None
+
+    # The latest scans' verdicts on it.
+    scans = {}
+    for mode in ('swing', 'intraday'):
+        scan = store.latest_scan(mode=mode)
+        if not scan:
+            continue
+        res = store.result_for(scan['id'], sym)
+        cand = store.candidate_for(scan['id'], sym)
+        scans[mode] = {'scan_id': scan['id'], 'finished_at': scan['finished_at'], 'universe': scan['universe'],
+                       'result': res, 'candidate': {k: cand.get(k) for k in ('score', 'in_zone', 'close', 'zone_low', 'zone_high',
+                                                                            'stop', 'target', 'rr', 'position', 'side')} if cand else None}
+    out['scans'] = scans
+
+    zones = store.symbol_zones(sym, 60)
+    skips = demo_skips()
+    out['zones'] = [{k: z.get(k) for k in ('id', 'mode', 'status', 'side', 'source', 'zone_low', 'zone_high', 'target',
+                                            'created_at', 'last_checked', 'note')}
+                    | {'trigger': {k: (z.get('trigger') or {}).get(k) for k in ('entry', 'stop', 'target', 'rr', 'r', 'r_open',
+                                                                               'exit', 'exit_time', 'choch_time', 'paper', 'last')}
+                       if z.get('trigger') else None,
+                       'skipped': skips.get(f"{z.get('mode') or 'swing'}:{z['id']}")}
+                    for z in zones]
+    out['alerts'] = store.symbol_alerts(sym, 40)
+    out['signals'] = store.signals(20, symbol=sym)
+    out['ideas'] = [{k: v for k, v in live_idea(i).items() if k != 'features'} for i in store.ideas(symbol=sym, limit=20)]
+    out['demo'] = [{k: v for k, v in p.items() if k != 'charges_detail'} for p in store.demo_positions(symbol=sym, limit=40)]
+    out['orders'] = [{k: o.get(k) for k in ('id', 'ref', 'mode', 'instrument', 'side', 'status', 'qty', 'price', 'fill',
+                                             'stop', 'target', 'exit', 'net', 'entry_time', 'exit_time')}
+                     for o in store.exec_orders(limit=40, symbol=sym)]
+
+    # Options: the latest chain's reading, the sessions before it, the IV's rank in its year.
+    snap = store.latest_snapshot(sym)
+    days = store.oc_days(sym, 60)
+    if snap or days:
+        s = (snap or {}).get('summary') or {}
+        ivs = store.iv_history(sym, (snap or {}).get('session') or '9999', 250)
+        iv = s.get('atm_iv')
+        out['options'] = {'ts': (snap or {}).get('ts'), 'expiry': (snap or {}).get('expiry'), 'summary': s, 'days': days,
+                          # Against the past sessions' range: an IV beyond it is at 0 or 100, not outside the scale.
+                          'iv_rank': min(100.0, max(0.0, (iv - min(ivs)) / (max(ivs) - min(ivs)) * 100))
+                          if iv and len(ivs) >= 20 and max(ivs) > min(ivs) else None,
+                          'iv_pctile': sum(v < iv for v in ivs) / len(ivs) * 100 if iv and len(ivs) >= 20 else None,
+                          'iv_days': len(ivs)}
+    fut = store.series('sm_futoi', [sym], 'oi, oi_chg, close', sessions=30).get(sym, [])
+    out['futures'] = _futures_read(fut)
+    out['smart'] = smart_stock(sym)
+
+    today = data.now_ist().date().isoformat()
+    ev = store.symbol_events(sym, 40)
+    out['events'] = {'upcoming': sorted([e for e in ev if e['day'] >= today], key=lambda e: e['day']),
+                     'past': [e for e in ev if e['day'] < today][:10]}
+
+    # The industry's other stocks, with their last session's move from the bhavcopy.
+    peers = [m for m in stocks if member.get('industry') and m.get('industry') == member['industry'] and m['symbol'] != sym]
+    peers.sort(key=lambda m: (not m.get('nifty100'), not m.get('fo'), m['symbol']))
+    peers = peers[:16]
+    last_rows = store.delivery_history([p['symbol'] for p in peers] + [sym], 1)
+    out['peers'] = [{'symbol': p['symbol'], 'name': p.get('name'), 'tag': universe.tag(p),
+                     **({'day': r['day'], 'close': r['close'],
+                         'change_pct': (r['close'] / r['prev_close'] - 1) * 100 if r.get('prev_close') else None,
+                         'deliv_pct': r.get('deliv_pct'), 'turnover_cr': r.get('turnover_cr')}
+                        if (r := (last_rows.get(p['symbol']) or [None])[-1]) else {})}
+                    for p in peers]
+    out['followed'] = next((w['why'] for w in news_watch(sym)), None)
+    return jsonify(safe(out))
 
 
 def indicator_settings() -> dict:
@@ -4299,7 +4596,7 @@ def exec_place(row: dict) -> tuple:
     if not t or t['status'] != 'open':
         store.update_exec_order(oid, only_if='offered', status='expired', note='the trade is no longer open')
         return 'the trade has already closed', 409
-    inst = _exec_instrument(t, {'CNC': 'CNC', 'INTRADAY': 'MIS', 'MARGIN': 'OPT' if row['mode'] == 'options' else 'FUT'}.get(row['product'], 'CNC'))
+    inst = _exec_instrument(t, exec_product(row))
     others = [r for r in exec_rows() if r['id'] != oid]
     day = exec_day(st, others)
     why = ([f'live trading is halted: {exec_halted()}'] if exec_halted() else []) + ([broker.sending()] if broker.sending() else [])
@@ -4699,6 +4996,9 @@ def api_intraday_whatif():
 @app.route('/api/intraday/rules', methods=['POST'])
 def api_intraday_rules():
     """Save intraday tuner values ({} resets to .env). Used from the next scan and check."""
+    bad = _rules_locked_refusal()
+    if bad:
+        return bad
     body = request.get_json(silent=True) or {}
     overrides = (body.get('rules') if isinstance(body, dict) else None) or {}
     if not isinstance(overrides, dict):
@@ -4789,6 +5089,9 @@ def api_whatif():
 @app.route('/api/rules', methods=['POST'])
 def api_rules():
     """Save tuner values as the rules every scan and check uses ({} resets)."""
+    bad = _rules_locked_refusal()
+    if bad:
+        return bad
     body = request.get_json(silent=True) or {}
     overrides = (body.get('rules') if isinstance(body, dict) else None) or {}
     if not isinstance(overrides, dict):
@@ -4803,7 +5106,7 @@ def api_rules():
     return jsonify({'rules': current_rules().as_dict(), 'overrides': keep})
 
 
-SYMBOL_RE = re.compile(r'^[A-Z0-9][A-Z0-9&-]{0,19}$')      # NSE symbols: letters, digits, & and -
+SYMBOL_RE = re.compile(r'^[A-Z0-9][A-Z0-9&-]{0,19}\Z')      # NSE symbols: letters, digits, & and -
 
 
 @app.route('/api/zones', methods=['POST'])
@@ -4947,6 +5250,9 @@ def _ap_mode(body):
 @app.route('/api/autopilot/policy', methods=['POST'])
 def api_autopilot_policy():
     from niftywhale import lab
+    bad = _rules_locked_refusal()
+    if bad:
+        return bad
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify({'error': 'send the policy as a JSON object'}), 400
@@ -4969,6 +5275,8 @@ def autopilot_decide(mode: str, action: str, since: str, where: str = 'on the Pe
     from niftywhale import lab
     st = lab.state(mode)
     if action == 'approve':
+        if store.rules_locked():
+            return 'the tuner rules are locked: unlock them in the app (the lock icon) to apply a proposal'
         aw = next((p for p in (st.get('awaiting'), st.get('challenger')) if p and p.get('since') == since), None)
         if not aw:
             return 'that proposal is no longer open: reload to see the current one'
@@ -5015,6 +5323,10 @@ def api_autopilot_action(action):
         return jsonify({'error': 'mode must be swing, intraday or options'}), 400
     # Approve and reject name the proposal the page showed (`since`, the day it was made).
     since = str(body.get('since') or '')
+    if action in ('approve', 'undo'):
+        bad = _rules_locked_refusal()
+        if bad:
+            return bad
     if action in ('approve', 'reject'):
         if not since:
             return jsonify({'error': "send the proposal's since"}), 400
@@ -5052,7 +5364,8 @@ def _chart_layout(raw) -> list:
         except (AttributeError, TypeError, ValueError):
             continue
         if charts.known(sym) and tf in charts.TF_SECONDS:
-            out.append({'symbol': sym, 'tf': tf, 'levels': c.get('levels', True) is not False})
+            out.append({'symbol': sym, 'tf': tf, 'levels': c.get('levels', True) is not False,
+                        'studies': studies.clean(c.get('studies'))})
     return out[:CHART_MAX]
 
 
@@ -5060,8 +5373,7 @@ def _chart_layout(raw) -> list:
 # price so they show on every timeframe; one list per instrument, every device.
 DRAW_TYPES = ('trend', 'hline', 'rect')
 DRAW_MAX = 60
-DRAW_ID = re.compile(r'^[A-Za-z0-9_-]{1,24}$')
-DRAW_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
+DRAW_ID, DRAW_COLOR = studies.ID_RE, studies.COLOR_RE      # the same ids and colours as an indicator's
 
 
 def _point(raw):
@@ -5075,15 +5387,15 @@ def _point(raw):
 def _drawings(raw) -> list:
     out = []
     for d in raw if isinstance(raw, list) else []:
-        if not isinstance(d, dict) or d.get('type') not in DRAW_TYPES or not DRAW_ID.match(str(d.get('id', ''))):
+        if not isinstance(d, dict) or d.get('type') not in DRAW_TYPES or not DRAW_ID.fullmatch(str(d.get('id', ''))):
             continue
         p1, p2 = _point(d.get('p1') or {}), _point(d.get('p2') or {})
         if not p1 or (d['type'] != 'hline' and not p2):
             continue
-        item = {'id': d['id'], 'type': d['type'], 'p1': p1}
+        item = {'id': str(d['id']), 'type': d['type'], 'p1': p1}
         if d['type'] != 'hline':
             item['p2'] = p2
-        if isinstance(d.get('color'), str) and DRAW_COLOR.match(d['color']):
+        if isinstance(d.get('color'), str) and DRAW_COLOR.fullmatch(d['color']):
             item['color'] = d['color'].lower()
         out.append(item)
     return out[:DRAW_MAX]
@@ -5127,7 +5439,7 @@ def api_charts_config():
                          'layout': _chart_layout(saved) if saved is not None else CHART_DEFAULT,
                          'max': CHART_MAX, 'price': 'inr', 'tz': 'IST', 'shift': charts.SHIFT, 'day_shift': charts.SHIFT,
                          'market_open': data.market_open(), 'drawings': store.get_json('charts:drawings', {}) or {},
-                         **charts.live()}))
+                         'studies': studies.catalog(), **charts.live()}))
 
 
 @app.route('/api/charts/drawings', methods=['POST'])
@@ -5168,7 +5480,7 @@ def api_panel_candles(symbol):
     panels' shape ({bars, ind, tf, source}): from Dhan in real time when it is connected, else yfinance."""
     sym = symbol.upper()
     tf = request.args.get('tf', type=int)
-    if tf not in PANEL_TFS or not (SYMBOL_RE.match(sym) or re.match(r'^IDX:\d+$', sym)):
+    if tf not in PANEL_TFS or not (SYMBOL_RE.match(sym) or re.match(r'^IDX:\d+\Z', sym)):
         return jsonify({'error': 'unknown instrument or timeframe'}), 400
     hit = PANEL_CANDLES.get((sym, tf))
     if hit and time.time() - hit[0] < (10 if tf < 1440 else 60):
@@ -5241,7 +5553,7 @@ def api_options_chain_live(symbol):
     nothing live to give (market closed, no Dhan, the latest read is from another session)."""
     sym = symbol.upper()
     expiry = request.args.get('expiry')
-    if not SYMBOL_RE.match(sym) or (expiry and not re.match(r'^\d{4}-\d{2}-\d{2}$', expiry)):
+    if not SYMBOL_RE.match(sym) or (expiry and not re.match(r'^\d{4}-\d{2}-\d{2}\Z', expiry)):
         return jsonify({'error': 'bad symbol or expiry'}), 400
     try:
         out = chain_live(sym, expiry)
@@ -5256,7 +5568,7 @@ def api_options_chain(symbol):
     if not SYMBOL_RE.match(sym):
         return jsonify({'error': 'bad symbol'}), 400
     expiry = request.args.get('expiry')
-    if expiry and not re.match(r'^\d{4}-\d{2}-\d{2}$', expiry):
+    if expiry and not re.match(r'^\d{4}-\d{2}-\d{2}\Z', expiry):
         return jsonify({'error': 'expiry must be YYYY-MM-DD'}), 400
     view = options_chain_view(sym, expiry)
     if not view:
@@ -5283,6 +5595,9 @@ def api_options_refresh():
 
 @app.route('/api/options/rules', methods=['POST'])
 def api_options_rules():
+    bad = _rules_locked_refusal()
+    if bad:
+        return bad
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify({'error': 'send the rules as a JSON object'}), 400
@@ -5400,7 +5715,7 @@ def ws_demo(p: dict, mem: dict):
 
 def ws_chain(p: dict, mem: dict):
     sym, expiry = str(p.get('symbol') or '').upper(), p.get('expiry')
-    if not SYMBOL_RE.match(sym) or (expiry and not re.match(r'^\d{4}-\d{2}-\d{2}$', str(expiry))):
+    if not SYMBOL_RE.match(sym) or (expiry and not re.match(r'^\d{4}-\d{2}-\d{2}\Z', str(expiry))):
         raise hub.BadRequest('bad symbol or expiry')
     out = chain_live(sym, expiry)
     return {**out, 'symbol': sym} if out else None
@@ -5908,6 +6223,22 @@ def tg_handle(name: str, args: list) -> None:
         telebot.reply(out)
 
 
+HEARTBEAT_S = 60
+
+
+def heartbeat_loop() -> None:
+    """Ping the watchdog address (App settings → Telegram → Watchdog) every minute. When the pings stop (the Pi off,
+    its network down, the app stuck) the service outside alerts you, which the Pi's own alerts cannot."""
+    while True:
+        url = config.get('heartbeat_url')
+        if url:
+            try:
+                requests.get(url, timeout=10)
+            except requests.RequestException as e:
+                logger.debug(f'Watchdog ping failed: {e}')
+        time.sleep(HEARTBEAT_S)
+
+
 def telegram_loop() -> None:
     telebot.loop(tg_handle, TG_COMMANDS, lambda: store.settings().get('telegram_commands') == '1')
 
@@ -5939,6 +6270,7 @@ if os.getenv('NIFTYWHALE_SCHEDULER', '1') == '1':      # off for tests and secon
     threading.Thread(target=demo_loop, daemon=True, name='demo').start()
     threading.Thread(target=marks_loop, daemon=True, name='marks').start()
     threading.Thread(target=telegram_loop, daemon=True, name='telegram').start()
+    threading.Thread(target=heartbeat_loop, daemon=True, name='heartbeat').start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5058')))

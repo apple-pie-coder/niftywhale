@@ -80,6 +80,39 @@
 .ch-body[data-draw="1"]{cursor:crosshair;touch-action:none}
 .ch-body[data-grab="1"]{cursor:move}
 @media (pointer:coarse){.ch-tools button{width:36px;height:34px}}
+.ch-leg .sts{display:flex;flex-direction:column;align-items:flex-start;gap:1px;margin-top:3px}
+.ch-st{display:inline-flex;align-items:center;gap:6px;pointer-events:auto;max-width:100%;padding:0 4px;border-radius:4px;line-height:18px;
+  background:color-mix(in srgb,var(--surface) 78%,transparent)}
+.ch-st:hover{background:var(--surface)}
+.ch-st .nm{color:var(--ink-2);font-family:var(--font);font-size:11.5px;cursor:pointer}
+.ch-st .v{font-variant-numeric:tabular-nums}
+.ch-st .note{color:var(--ink-3);font-family:var(--font);font-size:11px}
+.ch-st[data-off="1"] .nm,.ch-st[data-off="1"] .v{opacity:.45}
+.ch-st button{border:0;background:none;color:var(--ink-3);width:18px;height:18px;padding:0;border-radius:4px;display:inline-grid;place-items:center;cursor:pointer;opacity:0}
+.ch-st:hover button,.ch-st:focus-within button{opacity:1}
+.ch-st button:hover{background:var(--sunk);color:var(--ink)}
+@media (pointer:coarse){.ch-st button{opacity:1;width:24px;height:24px}}
+.ch-pleg{position:absolute;left:8px;z-index:3;pointer-events:none;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);white-space:nowrap;max-width:calc(100% - 80px);overflow:hidden}
+.ch-pop{position:absolute;z-index:30;top:40px;right:6px;width:min(330px,calc(100% - 12px));max-height:calc(100% - 48px);overflow:auto;background:var(--surface);
+  border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:10px;font-size:13px;color:var(--ink)}
+.ch-pop[hidden]{display:none}
+.ch-pop h4{margin:0 0 8px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ch-pop input[type=search]{width:100%;box-sizing:border-box;font:inherit;font-size:13px;color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 9px;outline:0}
+.ch-pop .grp{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);margin:10px 4px 3px}
+.ch-pop .it{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:0;background:none;padding:6px 8px;border-radius:7px;cursor:pointer;text-align:left;font:inherit;font-size:13px;color:var(--ink)}
+.ch-pop .it:hover:not(:disabled){background:var(--sunk)}
+.ch-pop .it:disabled{opacity:.45;cursor:default}
+.ch-pop .it small{color:var(--ink-3);font-size:11.5px;flex:none}
+.ch-pop .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:7px 0;font-size:12.5px;color:var(--ink-2)}
+.ch-pop .row input[type=number],.ch-pop .row select{width:96px;font:inherit;font-size:12.5px;color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+.ch-pop .row input[type=color]{width:40px;height:24px;border:1px solid var(--line-strong);border-radius:6px;padding:0;background:none;cursor:pointer}
+.ch-pop .sub{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);margin:12px 0 2px}
+.ch-pop .foot{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:space-between;align-items:center;margin-top:12px;padding-top:8px;border-top:1px solid var(--line)}
+.ch-pop .lnk{border:0;background:none;color:var(--accent);font:inherit;font-size:12.5px;cursor:pointer;padding:0}
+.ch-pop .lnk:disabled{color:var(--ink-3);cursor:default}
+.ch-pop .empty{color:var(--ink-3);font-size:12.5px;padding:8px 4px}
+.ch-pop .x{border:0;background:none;color:var(--ink-3);cursor:pointer;width:22px;height:22px;border-radius:6px;display:inline-grid;place-items:center;padding:0}
+.ch-pop .x:hover{background:var(--sunk);color:var(--ink)}
 `;
     const IC = {
         camera: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M2 5.2c0-.7.5-1.2 1.2-1.2h1.6l1-1.5h4.4l1 1.5h1.6c.7 0 1.2.5 1.2 1.2v6.6c0 .7-.5 1.2-1.2 1.2H3.2C2.5 13 2 12.5 2 11.8z"/><circle cx="8" cy="8.3" r="2.4"/></svg>',
@@ -96,6 +129,10 @@
         magnet: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3.5 2.5v5.5a4.5 4.5 0 0 0 9 0V2.5"/><path d="M3.5 5.5h3M9.5 5.5h3"/></svg>',
         undo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5 2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/></svg>',
         redo: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a4 4 0 0 0 0 8H9"/></svg>',
+        ind: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 12c1.6-4.5 3-6.5 4.5-3.2S9 12.5 10.5 7.5 13.2 3 14.5 4"/><path d="M1.5 14.5h13" opacity=".45"/></svg>',
+        gear: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke-linecap="round"/></svg>',
+        eye: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>',
+        eyeOff: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" opacity=".5"/><path d="M2.5 13.5l11-11"/></svg>',
         trash: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.2h11M6.2 4.2V2.8h3.6v1.4M3.9 4.2l.7 9h6.8l.7-9"/></svg>',
     };
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -138,14 +175,16 @@
         };
         return {
             autoSize: true,
-            layout: { background: { type: 'solid', color: T.bg }, textColor: T.ink, fontFamily: T.font, fontSize: 11 },
             grid: { vertLines: { color: T.line }, horzLines: { color: T.line } },
-            rightPriceScale: { borderColor: T.line, scaleMargins: { top: 0.12, bottom: c.hasVol ? 0.22 : 0.08 } },
+            rightPriceScale: { borderColor: T.line },
+            layout: { background: { type: 'solid', color: T.bg }, textColor: T.ink, fontFamily: T.font, fontSize: 11,
+                      panes: { separatorColor: T.line, separatorHoverColor: T.strong } },
             timeScale: { borderColor: T.line, timeVisible: c.tf < 86400, secondsVisible: c.tf < 60, rightOffset: 4, barSpacing: 7, tickMarkFormatter: tickLabel },
             crosshair: { mode: 0 },
-            localization: { priceFormatter: (p) => fmt(p, c.dp), timeFormatter: when },
+            localization: { timeFormatter: when },                       // prices: each series' own format (priceFmt)
         };
     }
+    const priceFmt = (c, d = c.dp) => ({ type: 'custom', formatter: (p) => fmt(p, d), minMove: Math.pow(10, -d) });
     function levelColor(kind, T) { return kind === 'stop' ? T.bad : kind === 'target' ? T.good : kind === 'entry' ? T.accent : T.ob; }
 
     // ------------------------------------------------------------ drawings
@@ -232,6 +271,7 @@
         // drawing that runs on under them never takes a click, a drag or the grab cursor meant for them.
         const ts = c.chart.timeScale();
         if (x < 0 || y < 0 || x > ts.width() || y > r.height - ts.height()) return null;
+        if (y > c.chart.panes()[0].getHeight()) return null;                 // a pane below: an indicator's, not the candles'
         const l = ts.coordinateToLogical(x);
         let p = c.series.coordinateToPrice(y);
         if (l == null || p == null) return null;
@@ -434,7 +474,7 @@
         toolState(); redrawSym(sym); saveDrawings(sym);
     }
     function onPointerDown(c, e) {
-        if (e.button !== 0 || !c.bars.length) return;
+        if (e.button !== 0 || !c.bars.length || e.target.closest('.ch-st, .ch-pop')) return;
         const pt = pointAt(c, e);
         if (!pt) return;
         if (tool) {
@@ -535,43 +575,49 @@
         clearTimeout(saveT);
         saveT = setTimeout(() => {
             fetch(`${API}/layout`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layout: charts.map((c) => ({ symbol: c.symbol, tf: c.tf, levels: c.levels })) }) }).catch(() => {});
+                body: JSON.stringify({ layout: charts.map((c) => ({ symbol: c.symbol, tf: c.tf, levels: c.levels, studies: studyState(c) })) }) }).catch(() => {});
         }, 400);
     }
 
     // ------------------------------------------------------------ one chart
     function tfOptions(sel) { return cfg.tfs.map((t) => `<option value="${t.s}"${t.s === sel ? ' selected' : ''}>${esc(t.label)}</option>`).join(''); }
     function addChart(spec, persist = true) {
-        const c = { id: ++uid, symbol: spec.symbol, tf: spec.tf, levels: spec.levels !== false, bars: [], lines: [], dp: 2, hasVol: false, last: null };
+        const c = { id: ++uid, symbol: spec.symbol, tf: spec.tf, levels: spec.levels !== false, bars: [], lines: [], dp: 2, hasVol: false, last: null,
+                    studies: [], hover: null };
         const el = document.createElement('div');
         el.className = 'ch-p';
         el.innerHTML = `<div class="ch-head">
                 <input list="ch-syms" value="${esc(labelOf(spec.symbol))}" title="${esc((instOf(spec.symbol) || {}).name || '')}" aria-label="Instrument" spellcheck="false" autocomplete="off">
                 <select aria-label="Timeframe">${tfOptions(spec.tf)}</select>
                 <span class="ch-px">—</span><span class="ch-chg"></span><span class="ch-sp"></span>
+                <button type="button" class="ch-ib" data-a="ind" title="Indicators: moving averages, VWAP, Bollinger, RSI, MACD…" aria-label="Indicators"${cfg.studies.kinds.length ? '' : ' hidden'}>${IC.ind}</button>
                 <button type="button" class="ch-ib" data-a="shot" title="Save a picture of this chart as it shows" aria-label="Save a picture of this chart">${IC.camera}</button>
                 <button type="button" class="ch-ib" data-a="fit" title="Back to the latest candles">${IC.fit}</button>
                 <button type="button" class="ch-ib" data-a="lv" aria-pressed="${c.levels}" title="The app's zones, entries, stops and targets">${IC.lv}</button>
                 <button type="button" class="ch-ib" data-a="max" title="Enlarge (Esc to return)">${IC.max}</button>
                 <button type="button" class="ch-ib" data-a="x" title="Remove this chart">${IC.x}</button></div>
-            <div class="ch-body"><div class="ch-leg"></div><div class="ch-note"></div><div class="ch-msg">Loading…</div></div>`;
+            <div class="ch-body"><div class="ch-leg"><span class="ohlc"></span><div class="sts"></div></div><div class="ch-note"></div><div class="ch-msg">Loading…</div></div>
+            <div class="ch-pop" role="dialog" aria-label="Indicators" hidden></div>`;
         c.el = el;
         grid.appendChild(el);
         charts.push(c);
         const body = el.querySelector('.ch-body');
         const T = theme();
         c.chart = LightweightCharts.createChart(body, chartOptions(c, T));
-        c.series = c.chart.addCandlestickSeries({ upColor: T.up, downColor: T.down, wickUpColor: T.up, wickDownColor: T.down, borderVisible: false,
+        c.series = c.chart.addSeries(LightweightCharts.CandlestickSeries, { upColor: T.up, downColor: T.down, wickUpColor: T.up, wickDownColor: T.down, borderVisible: false,
+            priceFormat: priceFmt(c),
             priceLineVisible: true, lastValueVisible: true });
-        c.vol = c.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
+        c.vol = c.chart.addSeries(LightweightCharts.HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
         c.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
         c.chart.timeScale().subscribeVisibleLogicalRangeChange(() => { clearTimeout(c.viewT); c.viewT = setTimeout(() => saveView(c), 400); });
         c.chart.subscribeCrosshairMove((p) => {
             const d = p && p.time != null ? p.seriesData.get(c.series) : null;
             legend(c, d);
+            c.hover = p && p.time != null ? p : null;
+            if (c.studies.length) studyLegend(c, c.hover);
             // The magnet: the crosshair onto the nearest of the candle's open, high, low or close (set quietly; it raises
             // no move of its own, and the next pointer move moves it again).
-            if (magnet && d && p.point && p.sourceEvent && d.open != null) {
+            if (magnet && d && p.point && p.sourceEvent && d.open != null && !p.paneIndex) {
                 const near = [d.open, d.high, d.low, d.close].reduce((a, v) =>
                     (Math.abs((c.series.priceToCoordinate(v) ?? Infinity) - p.point.y) < Math.abs((c.series.priceToCoordinate(a) ?? Infinity) - p.point.y) ? v : a));
                 c.chart.setCrosshairPosition(near, p.time, c.series);
@@ -581,6 +627,10 @@
         c.draw = new DrawLayer(c);
         c.series.attachPrimitive(c.draw);
         body.addEventListener('pointerdown', (e) => onPointerDown(c, e), true);
+        el.addEventListener('click', (e) => onStudyClick(c, e));
+        // The panes take their new heights only once the chart has followed its box: place their legends after that.
+        c.ro = new ResizeObserver(() => requestAnimationFrame(() => placePaneLegends(c)));
+        c.ro.observe(body);
         body.addEventListener('pointermove', (e) => onPointerMove(c, e));
         if (tool) freeze(c, true);
         const inp = el.querySelector('input'), sel = el.querySelector('select');
@@ -606,12 +656,14 @@
             if (a === 'x') removeChart(c);
             else if (a === 'max') { maxed = maxed === c ? null : c; b.innerHTML = maxed ? IC.min : IC.max; relayout(); if (maxed) root.scrollIntoView({ block: 'start' }); }
             else if (a === 'fit') c.chart.timeScale().scrollToRealTime();
+            else if (a === 'ind') openMenu(c);
             else if (a === 'shot') {
                 const leg = c.el.querySelector('.ch-leg').textContent.trim() || c.el.querySelector('.ch-px').textContent;
                 snapshot(c.chart, { title: `${labelOf(c.symbol)} · ${tfLabel(c.tf)}`, sub: leg, name: `${c.symbol}-${tfLabel(c.tf)}` }, b);
             }
             else if (a === 'lv') { c.levels = !c.levels; b.setAttribute('aria-pressed', String(c.levels)); drawLevels(c); save(); }
         });
+        (spec.studies || []).forEach((st) => addStudy(c, st, false));
         relayout();
         load(c, true);
         if (persist) save();
@@ -619,6 +671,8 @@
     }
     function removeChart(c) {
         clearTimeout(c.refT);
+        clearTimeout(c.stT);
+        c.ro.disconnect();
         if (placing && placing.c === c) placing = null;
         c.chart.remove();
         c.el.remove();
@@ -630,7 +684,7 @@
 
     function legend(c, d) {
         const b = d && d.open != null ? d : c.bars[c.bars.length - 1];
-        const L = c.el.querySelector('.ch-leg');
+        const L = c.el.querySelector('.ch-leg .ohlc');
         if (!b) { L.textContent = ''; return; }
         const o = b.open, h = b.high, l = b.low, cl = b.close, ch = cl - o;
         L.innerHTML = `<b>O</b>${fmt(o, c.dp)} <b>H</b>${fmt(h, c.dp)} <b>L</b>${fmt(l, c.dp)} <b>C</b>${fmt(cl, c.dp)} `
@@ -673,6 +727,357 @@
                 lineStyle: x.kind === 'zone' ? 2 : x.kind === 'entry' ? 0 : 1, axisLabelVisible: true, title: x.label || '' }));
         });
     }
+    // ------------------------------------------------------------ indicators
+    // Each chart's indicators (the catalogue: cfg.studies, from niftywhale/studies.py; the maths: static/studies.js),
+    // saved with the layout. On the candles, or each in a pane of its own below them. Worked out again as the forming
+    // candle ticks (at most four times a second: only its last point is redrawn) and in full on each new candle.
+    const KIND = {};                                              // key -> catalogue entry (filled at start)
+    const WIDE = new Set(['ma', 'vwap', 'up', 'down', 'rsi', 'macd', 'k', 'adx', 'cci', 'r', 'mfi', 'obv', 'roc', 'atr']);
+    const LEVELS = { rsi: (p) => [p.upper, 50, p.lower], stoch: (p) => [p.upper, p.lower], stochrsi: (p) => [p.upper, p.lower],
+        cci: (p) => [p.upper, 0, p.lower], willr: (p) => [p.upper, p.lower], mfi: (p) => [p.upper, p.lower], macd: () => [0],
+        roc: () => [0], adx: (p) => (p.level > 0 ? [p.level] : []) };
+    const BIG = new Set(['volume', 'obv']);                        // values in lakhs and crores, shortened
+    const short = (v) => {
+        const a = Math.abs(v);
+        return a >= 1e7 ? (v / 1e7).toFixed(2) + ' Cr' : a >= 1e5 ? (v / 1e5).toFixed(2) + ' L' : a >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : String(Math.round(v));
+    };
+    const BIG_FMT = { type: 'custom', formatter: short, minMove: 1 };
+    const NOT_IN_NAME = new Set(['upper', 'lower', 'level', 'band1', 'band2']);
+    const newId = () => 's' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 6);
+    const kindOf = (st) => KIND[st.type];
+    const lineColor = (st, ln) => (st.colors && st.colors[ln.key]) || ln.color;
+    const noVolume = (c, st) => kindOf(st).volume && !c.hasVol;
+    const hasVolPanel = (c) => c.studies.some((st) => st.type === 'volume' && !noVolume(c, st));
+    // "EMA 9", "BB 20 2", "VWAP week": the short name, the numbers, and any choice off its default.
+    function stName(st) {
+        const k = kindOf(st);
+        return [k.short, ...k.params.filter((p) => !NOT_IN_NAME.has(p.key) && (!('values' in p) || st.params[p.key] !== p.default))
+            .map((p) => st.params[p.key])].join(' ');
+    }
+    function stFmt(c, st, v) {
+        if (v == null || !isFinite(v)) return '—';
+        if (BIG.has(st.type)) return short(v);
+        return fmt(v, kindOf(st).place === 'price' ? c.dp : 2);
+    }
+
+    // Shading between two of an indicator's lines (Bollinger, Keltner and Donchian bands, the Ichimoku cloud: green
+    // where span A is above span B, red below), drawn under the candles.
+    class FillLayer {
+        constructor(c, st, a, b) {
+            Object.assign(this, { c, st, a, b });
+            this.views = [{ zOrder: () => 'bottom', renderer: () => ({ draw: (t) => this.draw(t) }) }];
+        }
+        attached({ requestUpdate }) { this.req = requestUpdate; }
+        detached() { this.req = null; }
+        updateAllViews() {}
+        paneViews() { return this.views; }
+        draw(target) {
+            const { c, st } = this, A = st.out && st.out[this.a], B = st.out && st.out[this.b];
+            if (st.hidden || !A || !B) return;
+            const k = kindOf(st), la = k.lines.find((l) => l.key === this.a), lb = k.lines.find((l) => l.key === this.b);
+            const s = st.series[this.a], ts = c.chart.timeScale(), cloud = st.type === 'ichimoku';
+            const colA = lineColor(st, la) + (cloud ? '40' : '1c'), colB = cloud ? lineColor(st, lb) + '40' : colA;
+            target.useMediaCoordinateSpace(({ context: ctx }) => {
+                let prev = null;
+                for (let i = 0; i < A.length && i < B.length; i++) {
+                    const pa = A[i], pb = B[i];
+                    const x = pa.value === undefined || pb.value === undefined ? null : ts.timeToCoordinate(pa.time);
+                    const ya = x == null ? null : s.priceToCoordinate(pa.value), yb = x == null ? null : s.priceToCoordinate(pb.value);
+                    if (ya == null || yb == null) { prev = null; continue; }
+                    if (prev) {
+                        ctx.fillStyle = prev.up ? colA : colB;
+                        ctx.beginPath(); ctx.moveTo(prev.x, prev.ya); ctx.lineTo(x, ya); ctx.lineTo(x, yb); ctx.lineTo(prev.x, prev.yb); ctx.closePath(); ctx.fill();
+                    }
+                    prev = { x, ya, yb, up: pa.value >= pb.value };
+                }
+            });
+        }
+    }
+
+    function buildStudy(c, st) {
+        const k = kindOf(st), T = theme();
+        st.series = {};
+        st.pane = null;
+        if (k.place === 'panel') {
+            st.pane = c.chart.addPane();
+            st.pane.setStretchFactor(1);
+            c.chart.panes()[0].setStretchFactor(3);
+        }
+        k.lines.forEach((ln) => {
+            const o = { color: lineColor(st, ln), priceLineVisible: false, visible: !st.hidden,
+                lastValueVisible: k.place === 'panel' && ln.kind !== 'histogram' && ln === k.lines[0] };
+            if (ln.kind === 'histogram') {
+                o.priceFormat = BIG.has(st.type) ? BIG_FMT : priceFmt(c, 2);
+            } else {
+                Object.assign(o, { lineWidth: WIDE.has(ln.key) ? 2 : 1, crosshairMarkerVisible: ln.kind === 'line' });
+                if (ln.kind === 'dots') Object.assign(o, { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 1.5 });
+                o.priceFormat = BIG.has(st.type) ? BIG_FMT : priceFmt(c, k.place === 'price' ? c.dp : 2);
+            }
+            if (st.type === 'pivots') o.autoscaleInfoProvider = () => null;          // far levels never squash the candles
+            const def = ln.kind === 'histogram' ? LightweightCharts.HistogramSeries : LightweightCharts.LineSeries;
+            st.series[ln.key] = st.pane ? st.pane.addSeries(def, o) : c.chart.addSeries(def, o);
+        });
+        const main = st.series[(k.lines.find((l) => l.kind !== 'histogram') || k.lines[0]).key];
+        if (st.pane) main.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: 0.08 } });
+        st.plines = (LEVELS[st.type] ? LEVELS[st.type](st.params) : []).map((v) =>
+            main.createPriceLine({ price: v, color: T.ink, lineWidth: 1, lineStyle: 2, axisLabelVisible: false }));
+        if (k.fill) { st.fill = new FillLayer(c, st, k.fill[0], k.fill[1]); st.series[k.fill[0]].attachPrimitive(st.fill); }
+        st.n = -1;
+    }
+    function dropStudy(c, st) {
+        if (st.fill) { try { st.series[kindOf(st).fill[0]].detachPrimitive(st.fill); } catch (e) { /* gone with the series */ } st.fill = null; }
+        Object.values(st.series || {}).forEach((s) => { try { c.chart.removeSeries(s); } catch (e) { /* already gone */ } });
+        if (st.pane) {
+            const i = c.chart.panes().indexOf(st.pane);
+            if (i > 0 && !st.pane.getSeries().length) { try { c.chart.removePane(i); } catch (e) { /* removed with its last series */ } }
+        }
+        st.series = {}; st.pane = null; st.out = null; st.plines = [];
+    }
+    // The indicators drawn on the candles price like them (c.dp, which a new instrument changes).
+    function studyFormats(c) {
+        c.studies.forEach((st) => {
+            if (kindOf(st).place !== 'price' || BIG.has(st.type)) return;
+            Object.values(st.series || {}).forEach((s) => s.applyOptions({ priceFormat: priceFmt(c) }));
+        });
+    }
+    function computeStudy(c, st, full) {
+        if (!st.series) return;
+        const k = kindOf(st);
+        // No candles (a new instrument with none yet), or none with volume: nothing drawn, not the last instrument's lines.
+        if (!c.bars.length || noVolume(c, st)) { Object.values(st.series).forEach((s) => s.setData([])); st.out = null; st.n = -1; return; }
+        const T = theme();
+        const out = Studies.compute(st.type, c.bars, st.params, c.tf,
+            { up: st.colors.vol || T.up + '80', down: st.colors.vol || T.down + '80', hist: st.colors.hist || null });
+        const again = full || st.n !== c.bars.length || st.type === 'ichimoku';
+        st.n = c.bars.length;
+        st.out = out;
+        k.lines.forEach((ln) => {
+            const s = st.series[ln.key], d = out[ln.key] || [];
+            if (again || !d.length) s.setData(d); else s.update(d[d.length - 1]);
+        });
+    }
+    function computeAll(c, full) {
+        c.studies.forEach((st) => computeStudy(c, st, full));
+        volOverlay(c);
+        studyLegend(c, null);
+    }
+    function studiesSoon(c) {
+        if (!c.studies.length || c.stT) return;
+        c.stT = setTimeout(() => { c.stT = null; if (charts.includes(c)) { c.studies.forEach((st) => computeStudy(c, st, false)); studyLegend(c, c.hover); } }, 250);
+    }
+    // The candles' own volume (an overlay at their foot) gives way to a Volume pane.
+    function volOverlay(c) {
+        const on = c.hasVol && !hasVolPanel(c);
+        c.vol.applyOptions({ visible: on });
+        c.series.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: on ? 0.22 : 0.08 } });
+    }
+    function addStudy(c, raw, persist = true) {
+        const k = KIND[raw.type];
+        if (!k || c.studies.length >= cfg.studies.max) return null;
+        if (k.place === 'panel' && c.studies.filter((s) => kindOf(s).place === 'panel').length >= cfg.studies.max_panels) return null;
+        const params = Object.fromEntries(k.params.map((p) => [p.key, raw.params && raw.params[p.key] != null ? raw.params[p.key] : p.default]));
+        const st = { id: raw.id || newId(), type: k.key, params, colors: { ...(raw.colors || {}) }, hidden: !!raw.hidden };
+        c.studies.push(st);
+        buildStudy(c, st);
+        computeStudy(c, st, true);
+        volOverlay(c);
+        renderLegend(c);
+        if (persist) save();
+        return st;
+    }
+    function removeStudy(c, st) {
+        dropStudy(c, st);
+        c.studies = c.studies.filter((s) => s !== st);
+        volOverlay(c);
+        renderLegend(c);
+        save();
+    }
+    function rebuildStudy(c, st) {
+        dropStudy(c, st);
+        // Back into its place in the list; a pane goes back below the others (panes keep the order they were added in).
+        buildStudy(c, st);
+        computeStudy(c, st, true);
+        volOverlay(c);
+        renderLegend(c);
+    }
+    function setHidden(c, st, on) {
+        st.hidden = on;
+        Object.values(st.series).forEach((s) => s.applyOptions({ visible: !on }));
+        if (st.fill && st.fill.req) st.fill.req();
+        renderLegend(c);
+        save();
+    }
+    const studyState = (c) => c.studies.map(({ id, type, params, colors, hidden }) => ({ id, type, params: { ...params }, colors: { ...colors }, hidden }));
+    function copyStudiesToAll(from) {
+        const list = studyState(from);
+        charts.forEach((c) => {
+            if (c === from) return;
+            c.studies.slice().forEach((st) => dropStudy(c, st));
+            c.studies = [];
+            list.forEach((s) => addStudy(c, { ...s, id: newId() }, false));
+            volOverlay(c);
+            renderLegend(c);
+        });
+        save();
+    }
+
+    // The legend: one row per indicator under the candles' O H L C (those on the candles) or at the top of its pane,
+    // with its values under the crosshair (the latest without one), and buttons to hide, set up or remove it.
+    function renderLegend(c) {
+        const box = c.el.querySelector('.ch-leg .sts');
+        c.body.querySelectorAll('.ch-pleg').forEach((e) => e.remove());
+        const row = (st) => {
+            const k = kindOf(st), off = noVolume(c, st);
+            return `<span class="ch-st" data-id="${esc(st.id)}" data-off="${st.hidden || off ? 1 : 0}">`
+                + `<span class="nm" data-st="cfg" title="${esc(k.label)}: settings">${esc(stName(st))}</span>`
+                + (off ? '<span class="note">needs volume (none for an index)</span>'
+                    : k.lines.map((ln) => `<span class="v" data-k="${ln.key}" style="color:${lineColor(st, ln)}"></span>`).join(''))
+                + `<button type="button" data-st="eye" title="${st.hidden ? 'Show' : 'Hide'}" aria-label="${st.hidden ? 'Show' : 'Hide'} ${esc(k.label)}">${st.hidden ? IC.eyeOff : IC.eye}</button>`
+                + `<button type="button" data-st="cfg" title="Settings" aria-label="Settings for ${esc(k.label)}">${IC.gear}</button>`
+                + `<button type="button" data-st="del" title="Remove" aria-label="Remove ${esc(k.label)}">${IC.x}</button></span>`;
+        };
+        box.innerHTML = c.studies.filter((st) => kindOf(st).place === 'price').map(row).join('');
+        c.studies.filter((st) => kindOf(st).place === 'panel').forEach((st) => {
+            const el = document.createElement('div');
+            el.className = 'ch-pleg';
+            el.dataset.for = st.id;
+            el.innerHTML = row(st);
+            c.body.appendChild(el);
+        });
+        placePaneLegends(c);
+        studyLegend(c, c.hover);
+    }
+    function placePaneLegends(c) {
+        const panes = c.chart.panes();
+        // The candles' legend stays inside their pane: many rows on a short pane are cut, not laid over the next one.
+        // Runs with every crosshair move (a dragged pane divider moves no box), so the styles are written only when they change.
+        const set = (el, k, v) => { if (el.style[k] !== v) el.style[k] = v; };
+        set(c.el.querySelector('.ch-leg'), 'maxHeight', panes.length > 1 ? `${Math.max(20, panes[0].getHeight() - 8)}px` : '');
+        c.studies.forEach((st) => {
+            if (!st.pane) return;
+            const el = c.body.querySelector(`.ch-pleg[data-for="${st.id}"]`), i = panes.indexOf(st.pane);
+            if (!el || i < 0) return;
+            let top = 0;
+            for (let j = 0; j < i; j++) top += panes[j].getHeight() + 1;               // a 1 px separator between panes
+            set(el, 'top', `${top + 4}px`);
+        });
+    }
+    // The value of one line at the crosshair (p: the library's crosshair event), else its latest up to the last candle.
+    function lineValue(c, st, key, p) {
+        if (p && p.time != null) { const d = p.seriesData.get(st.series[key]); return d && d.value != null ? d.value : null; }
+        const pts = st.out && st.out[key], lastT = c.bars.length ? c.bars[c.bars.length - 1].time : Infinity;
+        for (let i = pts ? pts.length - 1 : -1; i >= 0; i--) if (pts[i].time <= lastT && pts[i].value !== undefined) return pts[i].value;
+        return null;
+    }
+    function studyLegend(c, p) {
+        c.studies.forEach((st) => {
+            const rowEl = (kindOf(st).place === 'panel' ? c.body.querySelector(`.ch-pleg[data-for="${st.id}"]`) : c.el.querySelector('.ch-leg .sts'));
+            if (!rowEl || st.hidden || noVolume(c, st)) return;
+            const r = rowEl.querySelector(`.ch-st[data-id="${st.id}"]`);
+            if (!r) return;
+            kindOf(st).lines.forEach((ln) => {
+                const v = lineValue(c, st, ln.key, p), el = r.querySelector(`.v[data-k="${ln.key}"]`);
+                if (el) el.textContent = v == null ? '' : stFmt(c, st, v);
+            });
+        });
+        placePaneLegends(c);
+    }
+
+    // The menu (Indicators, in each chart's header) and an indicator's settings, in one panel over the chart.
+    function closePop(c) { const pop = c.el.querySelector('.ch-pop'); if (pop) { pop.hidden = true; pop.dataset.for = ''; } }
+    function openMenu(c) {
+        const pop = c.el.querySelector('.ch-pop');
+        if (!pop.hidden && pop.dataset.for === 'menu') { closePop(c); return; }
+        pop.dataset.for = 'menu';
+        pop.hidden = false;
+        pop.innerHTML = `<h4>Indicators <button type="button" class="x" data-pop="close" aria-label="Close">${IC.x}</button></h4>
+            <input type="search" placeholder="Search: RSI, EMA, VWAP…" aria-label="Search indicators"><div class="lst"></div>
+            <div class="foot"><button type="button" class="lnk" data-pop="copy"${c.studies.length ? '' : ' disabled'} title="The same indicators, with these settings, on every chart">Copy to all charts</button>
+                <button type="button" class="lnk" data-pop="clear"${c.studies.length ? '' : ' disabled'}>Remove all</button></div>`;
+        const list = pop.querySelector('.lst'), q = pop.querySelector('input');
+        const panels = c.studies.filter((s) => kindOf(s).place === 'panel').length, full = c.studies.length >= cfg.studies.max;
+        const draw = () => {
+            const w = q.value.trim().toLowerCase();
+            const hits = cfg.studies.kinds.filter((k) => !w || `${k.label} ${k.short} ${k.group}`.toLowerCase().includes(w));
+            const groups = [...new Set(hits.map((k) => k.group))];
+            list.innerHTML = groups.map((g) => `<div class="grp">${esc(g)}</div>` + hits.filter((k) => k.group === g).map((k) => {
+                const why = full ? `At most ${cfg.studies.max} indicators a chart`
+                    : k.place === 'panel' && panels >= cfg.studies.max_panels ? `At most ${cfg.studies.max_panels} panes a chart`
+                        : k.volume && !c.hasVol ? 'Needs volume: an index has none' : '';
+                return `<button type="button" class="it" data-add="${k.key}"${why ? ` disabled title="${esc(why)}"` : ''}>`
+                    + `<span>${esc(k.label)}</span><small>${k.place === 'panel' ? 'own pane' : 'on the candles'}</small></button>`;
+            }).join('')).join('') || '<div class="empty">No indicator by that name.</div>';
+        };
+        draw();
+        q.addEventListener('input', draw);
+        q.focus();
+    }
+    function openSettings(c, st) {
+        const pop = c.el.querySelector('.ch-pop'), k = kindOf(st);
+        pop.dataset.for = st.id;
+        pop.hidden = false;
+        const field = (p) => {
+            const v = st.params[p.key];
+            const input = 'values' in p
+                ? `<select data-p="${p.key}">${p.values.map((x) => `<option value="${esc(x)}"${x === v ? ' selected' : ''}>${esc(x[0].toUpperCase() + x.slice(1))}</option>`).join('')}</select>`
+                : `<input type="number" data-p="${p.key}" value="${v}" min="${p.min}" max="${p.max}" step="${p.step}">`;
+            return `<label class="row"><span>${esc(p.label)}</span>${input}</label>`;
+        };
+        const lines = k.lines.filter((ln) => !(st.type === 'pivots' && ln.key.endsWith('4') && st.params.kind === 'fibonacci'));
+        pop.innerHTML = `<h4>${esc(k.label)} <button type="button" class="x" data-pop="close" aria-label="Close">${IC.x}</button></h4>
+            ${k.params.map(field).join('') || '<div class="empty">No settings.</div>'}
+            <div class="sub">Colours</div>
+            ${lines.map((ln) => `<label class="row"><span>${esc(ln.label)}</span><input type="color" data-c="${ln.key}" value="${lineColor(st, ln)}"></label>`).join('')}
+            <div class="foot"><button type="button" class="lnk" data-pop="defaults">Defaults</button>
+                <button type="button" class="lnk" data-pop="copy" title="This chart's indicators, with these settings, on every chart">Copy to all charts</button>
+                <button type="button" class="lnk" data-pop="close">Done</button></div>`;
+        pop.querySelectorAll('[data-p]').forEach((el) => el.addEventListener('change', () => {
+            const p = k.params.find((x) => x.key === el.dataset.p);
+            let v = el.value;
+            if (!('values' in p)) {
+                v = Number(v);
+                if (!isFinite(v)) v = p.default;
+                v = Math.min(p.max, Math.max(p.min, Math.round((v - p.min) / p.step) * p.step + p.min));
+                v = +v.toFixed(6);
+                el.value = v;
+            }
+            st.params[p.key] = v;
+            rebuildStudy(c, st);
+            save();
+        }));
+        pop.querySelectorAll('[data-c]').forEach((el) => el.addEventListener('input', () => {
+            const ln = k.lines.find((x) => x.key === el.dataset.c), v = el.value.toLowerCase();
+            if (v === ln.color) delete st.colors[ln.key]; else st.colors[ln.key] = v;
+            if (ln.kind === 'histogram') computeStudy(c, st, true); else st.series[ln.key].applyOptions({ color: v });
+            if (st.fill && st.fill.req) st.fill.req();
+            renderLegend(c);
+            save();
+        }));
+    }
+    function onStudyClick(c, e) {
+        const b = e.target.closest('[data-st], [data-pop], [data-add]');
+        if (!b) return;
+        e.preventDefault(); e.stopPropagation();
+        if (b.dataset.add) { const st = addStudy(c, { type: b.dataset.add }); closePop(c); if (st && kindOf(st).params.length) openSettings(c, st); return; }
+        const pop = b.dataset.pop;
+        if (pop === 'close') { closePop(c); return; }
+        if (pop === 'copy') { copyStudiesToAll(c); closePop(c); return; }
+        if (pop === 'clear') { c.studies.slice().forEach((st) => dropStudy(c, st)); c.studies = []; volOverlay(c); renderLegend(c); save(); closePop(c); return; }
+        if (pop === 'defaults') {
+            const st = c.studies.find((s) => s.id === c.el.querySelector('.ch-pop').dataset.for);
+            if (!st) return;
+            st.params = Object.fromEntries(kindOf(st).params.map((p) => [p.key, p.default]));
+            st.colors = {};
+            rebuildStudy(c, st); save(); openSettings(c, st);
+            return;
+        }
+        const id = b.closest('.ch-st') && b.closest('.ch-st').dataset.id, st = c.studies.find((s) => s.id === id);
+        if (!st) return;
+        if (b.dataset.st === 'eye') setHidden(c, st, !st.hidden);
+        else if (b.dataset.st === 'del') { if (c.el.querySelector('.ch-pop').dataset.for === st.id) closePop(c); removeStudy(c, st); }
+        else if (b.dataset.st === 'cfg') { const pop = c.el.querySelector('.ch-pop'); if (!pop.hidden && pop.dataset.for === st.id) closePop(c); else openSettings(c, st); }
+    }
+
     function toBar(r) { return { time: r[0], open: r[1], high: r[2], low: r[3], close: r[4], v: r[5] }; }
     function volBar(b, T) { return { time: b.time, value: b.v || 0, color: (b.close >= b.open ? T.up : T.down) + '55' }; }
 
@@ -689,11 +1094,13 @@
             const bars = (d.bars || []).map(toBar);
             c.levelData = d.levels || [];
             const lastP = bars.length ? bars[bars.length - 1].close : null;
+            const hadVol = c.hasVol;
             if (fresh || !c.bars.length) {
                 c.dp = dp(lastP || (c.levelData[0] && c.levelData[0].price) || 100);
                 c.hasVol = bars.some((b) => b.v > 0);
                 c.chart.applyOptions(chartOptions(c, T));
-                c.series.applyOptions({ priceFormat: { type: 'price', precision: c.dp, minMove: Math.pow(10, -c.dp) } });
+                c.series.applyOptions({ priceFormat: priceFmt(c) });
+                studyFormats(c);                          // a new instrument's decimals for the indicators on its candles
                 c.series.setData(bars);
                 c.vol.setData(c.hasVol ? bars.map((b) => volBar(b, T)) : []);
                 c.bars = bars;
@@ -717,6 +1124,9 @@
                 });
             }
             drawLevels(c);
+            // The legend again for a new instrument, or once volume shows up (a volume indicator's row stops saying it has none).
+            if (fresh || c.hasVol !== hadVol) renderLegend(c);
+            computeAll(c, true);
             if (lastP != null && c.last == null) setPrice(c, lastP);
             legend(c, null);
             const live = cfg.market_open;
@@ -773,6 +1183,7 @@
         }
         c.series.update(b);
         if (c.hasVol && b.v === 0 && b.time !== lastB.time) c.vol.update(volBar(b, T));
+        studiesSoon(c);
     }
 
     const sock = () => (window.LiveSocket && window.LiveSocket.up ? window.LiveSocket : null);
@@ -844,6 +1255,8 @@
             c.series.applyOptions({ upColor: T.up, downColor: T.down, wickUpColor: T.up, wickDownColor: T.down });
             if (c.hasVol) c.vol.setData(c.bars.map((b) => volBar(b, T)));
             drawLevels(c);
+            c.studies.forEach((st) => (st.plines || []).forEach((l) => l.applyOptions({ color: T.ink })));
+            computeAll(c, true);
         });
     }
     async function start(el) {
@@ -861,6 +1274,8 @@
             started = false;
             return;
         }
+        cfg.studies = cfg.studies && Array.isArray(cfg.studies.kinds) && window.Studies ? cfg.studies : { kinds: [], max: 0, max_panels: 0 };
+        cfg.studies.kinds.forEach((k) => { KIND[k.key] = k; });
         const groups = [...new Set(cfg.instruments.map((i) => i.group))];
         root.innerHTML = `<div class="ch-bar">
                 <form class="ch-add" autocomplete="off"><input list="ch-syms" placeholder="Instrument" aria-label="Instrument to add" spellcheck="false">
@@ -931,6 +1346,11 @@
         (cfg.layout || []).forEach((s) => addChart(s, false));
         relayout();
         window.addEventListener('resize', () => { if (visible()) relayout(); });
+        // An indicator panel closes on a click outside it, or Esc.
+        document.addEventListener('pointerdown', (e) => {
+            if (!e.target.closest('.ch-pop, [data-a="ind"], .ch-st')) charts.forEach((c) => closePop(c));
+        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') charts.forEach((c) => closePop(c)); });
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && maxed && visible() && !e.target.closest('input')) { maxed = null; charts.forEach((c) => { c.el.querySelector('[data-a="max"]').innerHTML = IC.max; }); relayout(); } });
         document.addEventListener('visibilitychange', () => { if (!document.hidden && visible()) poll(); });
         if (window.LiveSocket) {

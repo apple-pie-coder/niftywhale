@@ -757,6 +757,210 @@
     .lv-k { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 650; }
     .lv-v { font-size: 15px; font-weight: 700; }
 
+    /* ------------------------------------------------------------ stock page
+       The drawer, full screen: everything about one stock (search opens it, #s/<SYMBOL> links to it). The drawer's
+       own views (a trade, a chain) opened from it show here too, centred, and its close button goes back to the page. */
+    .dw-acts { display: flex; gap: 8px; align-items: center; flex: none; }
+    #dw-search { display: none; }
+    .sp-open { margin-left: 8px; font-size: 12px; font-weight: 600; }
+    .drawer[data-page="1"] { width: 100%; border-left: 0; }
+    /* A page, not a panel over one: solid, the app's own background, its sections as cards on it. */
+    :root .drawer[data-page="1"] { background: var(--plane); background-image: none; box-shadow: none;
+                                   -webkit-backdrop-filter: none; backdrop-filter: none; }
+    :root .drawer[data-page="1"] .dw-head { background: var(--surface); }
+    .drawer[data-page="1"] #dw-search { display: inline-grid; }
+    .drawer[data-page="1"] .dw-head, .drawer[data-page="1"] .dw-body {
+        padding-left: max(20px, calc((100% - 1240px) / 2)); padding-right: max(20px, calc((100% - 1240px) / 2)); }
+    .drawer[data-page="1"] .dw-body { padding-top: 18px; padding-bottom: 48px; }
+    .dw-head .tag { vertical-align: 3px; margin-left: 6px; }
+    .sp-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px 28px; align-items: start; }
+    .sp-price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+    .sp-last { font-size: 34px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.1; }
+    .sp-chg { font-size: 16px; font-weight: 650; }
+    .sp-chg.up, .sp-abs.up { color: var(--up); } .sp-chg.down, .sp-abs.down { color: var(--down); }
+    .sp-abs { font-size: 14px; font-weight: 600; }
+    .sp-asof { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--ink-3); }
+    .sp-badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px;
+                border-radius: var(--r-pill); background: var(--sunk); color: var(--ink-2); }
+    .sp-badge[data-t="live"] { background: var(--good-soft); color: var(--good); }
+    .sp-badge[data-t="warn"] { background: var(--warn-soft); color: var(--warn); }
+    .sp-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .sp-tags span { font-size: 11.5px; padding: 2px 9px; border-radius: var(--r-pill); border: 1px solid var(--line); color: var(--ink-2); }
+    .sp-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .sp-acts .btn { padding: 6px 12px; font-size: 12.5px; }
+    .sp-ohlc { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .sp-ohlc div { min-width: 0; }
+    .sp-ohlc span, .sp-k { display: block; font-size: 10.5px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+    .sp-ohlc b { font-size: 14px; font-variant-numeric: tabular-nums; }
+    /* A range with where the price sits in it: the day's, the year's. */
+    .sp-range { margin-top: 10px; }
+    .sp-range-h { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-3); }
+    .sp-range-h b { color: var(--ink-2); font-weight: 650; font-variant-numeric: tabular-nums; }
+    .sp-bar { position: relative; height: 6px; border-radius: 3px; margin: 5px 0 3px;
+              background: linear-gradient(90deg, var(--bad-soft), var(--sunk) 50%, var(--good-soft)); border: 1px solid var(--line); }
+    .sp-bar i { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%);
+                background: var(--accent); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); }
+    .sp-bar u { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--ink-3); }
+    /* The tabs: stuck under the header as the page scrolls; on a phone they scroll sideways. */
+    .sp-tabs { position: sticky; top: -18px; z-index: 3; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+               margin: -4px 0 -6px; padding-top: 18px; background: var(--plane); border-bottom: 1px solid var(--line); }
+    .sp-tabs::-webkit-scrollbar { display: none; }
+    .sp-tabs button { flex: none; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-3); cursor: pointer;
+                      background: none; border: 0; border-bottom: 2px solid transparent; padding: 9px 14px 10px; margin-bottom: -1px;
+                      display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-sm) var(--r-sm) 0 0; }
+    .sp-tabs button:hover { color: var(--ink); background: var(--sunk); }
+    .sp-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+    .sp-tabs button[hidden] { display: none; }
+    .sp-tn:empty { display: none; }
+    .sp-tn { font-size: 10.5px; font-weight: 700; min-width: 18px; padding: 1px 6px; border-radius: var(--r-pill);
+             background: var(--sunk); color: var(--ink-2); text-align: center; }
+    .sp-tabs button[aria-selected="true"] .sp-tn { background: var(--accent-soft); color: var(--accent); }
+    .sp-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; animation: sp-in 180ms ease-out; }
+    .sp-panel[hidden] { display: none; }
+    /* Only a slide: content must never wait on an animation to be visible (a throttled one would leave it invisible). */
+    @keyframes sp-in { from { transform: translateY(6px); } to { transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .sp-panel { animation: none; } }
+    /* The header keeps the price in view. */
+    .sp-sym { margin-right: 2px; }
+    .sp-hp { margin-left: 12px; font-size: 16px; font-weight: 650; white-space: nowrap; }
+    .sp-hp .up { color: var(--up); } .sp-hp .down { color: var(--down); }
+    .sp-hp > .num + .num { font-size: 13.5px; margin-left: 4px; }
+    /* Shimmer while a part loads. */
+    .sk-wrap { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+    .sk { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--sunk) 25%, var(--line) 50%, var(--sunk) 75%);
+          background-size: 200% 100%; animation: sk 1.2s linear infinite; }
+    @keyframes sk { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+    /* What the numbers say: the lean, then a card per reading. */
+    .sp-lean { display: flex; align-items: center; justify-content: space-between; gap: 10px 20px; flex-wrap: wrap; margin-bottom: 12px; }
+    .sp-lean b { font-size: 17px; margin-right: 10px; }
+    .sp-lean[data-lean="bull"] b { color: var(--up); } .sp-lean[data-lean="bear"] b { color: var(--down); }
+    .sp-gauge { display: flex; width: min(320px, 100%); height: 8px; border-radius: 4px; overflow: hidden; background: var(--sunk); gap: 2px; }
+    .sp-gauge i[data-l="bull"] { background: var(--up); } .sp-gauge i[data-l="bear"] { background: var(--down); }
+    .sp-gauge i[data-l="neut"] { background: var(--line-strong); }
+    .sp-sigs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+    .sig { text-align: left; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-width: 0;
+           padding: 9px 12px 10px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface);
+           border-left: 3px solid var(--line-strong); color: var(--ink); transition: background 120ms, transform 120ms; }
+    .sig:hover { background: var(--sunk); }
+    .sig:active { transform: scale(0.99); }
+    .sig[data-lean="bull"] { border-left-color: var(--up); } .sig[data-lean="bear"] { border-left-color: var(--down); }
+    .sig-k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+    .sig-v { font-size: 14.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+    .sig[data-lean="bull"] .sig-v { color: var(--up); } .sig[data-lean="bear"] .sig-v { color: var(--down); }
+    .sig-v .ic { width: 10px; height: 10px; }
+    .sig-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+    .sig-w { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); overflow: hidden; display: -webkit-box;
+             -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+    .sp-note { margin: 10px 0 0; }
+    /* Banners: an open trade, an event soon. */
+    #sp-banner:empty { display: none; }
+    #sp-banner { display: flex; flex-direction: column; gap: 8px; }
+    .sp-alert { font: inherit; font-size: 13px; text-align: left; cursor: pointer; padding: 10px 14px; border-radius: var(--r-md);
+                border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-left: 3px solid var(--accent); }
+    .sp-alert[data-t="warn"] { background: var(--warn-soft); border-left-color: var(--warn); }
+    .sp-alert[data-t="good"] { background: var(--good-soft); border-left-color: var(--good); }
+    .sp-alert:hover { filter: brightness(0.98); }
+    /* Key numbers: label and value, two to four across. */
+    .sp-keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; margin: 0; }
+    .sp-keys > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+    .sp-keys dt { font-size: 12.5px; color: var(--ink-3); }
+    .sp-keys dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; font-size: 13.5px; }
+    .sp-keys dd small { display: block; font-weight: 400; font-size: 11px; color: var(--ink-3); }
+    .sp-hero-l, .sp-hero-r { min-width: 0; }
+    .sp-ind { font-weight: 650; color: var(--ink) !important; }
+    .sp-more { display: inline-block; }
+    .sp-more summary { list-style: none; cursor: pointer; font-size: 11.5px; padding: 2px 9px; border-radius: var(--r-pill);
+                       border: 1px dashed var(--line-strong); color: var(--ink-2); }
+    .sp-more summary::-webkit-details-marker { display: none; }
+    .sp-more[open] summary { border-style: solid; background: var(--sunk); }
+    .sp-more > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .sp-acts .btn svg { margin-right: -2px; }
+    .sp-acts .btn { width: auto; flex: none; }
+    .sp-badge i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 5px; vertical-align: 1px;
+                  animation: sp-pulse 1.6s ease-in-out infinite; }
+    @keyframes sp-pulse { 50% { opacity: 0.3; } }
+    .sp-badge[data-t="acc"] { background: var(--accent-soft); color: var(--accent); }
+    .sp-dates { margin-top: 2px; }
+    .sp-sec { min-width: 0; }
+    .sp-sec > h2, .sp-card > h2 { font-size: 15px; font-weight: 700; margin: 0 0 10px; display: flex; align-items: baseline;
+                                  gap: 8px; flex-wrap: wrap; }
+    .sp-sec > h2 .muted, .sp-card > h2 .muted { font-weight: 400; }
+    .sp-sec > h2 .more, .sp-card > h2 .more { margin-left: auto; }
+    .sp-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+    .sp-kpis .stat-s, .sp-card .stat-s { white-space: normal; }
+    .sp-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+    .sp-card { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 16px; min-width: 0; background: var(--surface); }
+    #sp-top { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px 18px; }
+    .sp-tw, .sp-hist-empty { background: var(--surface); }
+    .sp-wide { grid-column: 1 / -1; }
+    .sp-card .checklist { margin-top: 10px; }
+    .sp-dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0; margin: 0; font-size: 13px; }
+    .sp-dl dt, .sp-dl dd { padding: 6px 0; border-bottom: 1px solid var(--line); margin: 0; }
+    .sp-dl dt { color: var(--ink-2); }
+    .sp-dl dd { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .sp-dl dd small { font-weight: 400; color: var(--ink-3); margin-left: 6px; }
+    .sp-dl > :nth-last-child(-n+2) { border-bottom: 0; }
+    .sp-sub { font-size: 11px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); margin: 14px 0 6px; }
+    .sp-rets { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+    .sp-rets div { border: 1px solid var(--line); border-radius: var(--r-md); padding: 7px 6px; text-align: center; min-width: 0; }
+    .sp-rets b { display: block; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+    .sp-heat { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+    .sp-heat div { border-radius: 4px; padding: 6px 2px; text-align: center; font-size: 10.5px; font-variant-numeric: tabular-nums;
+                   color: var(--ink); min-width: 0; overflow: hidden; }
+    .sp-heat span { display: block; font-size: 9.5px; color: var(--ink-3); text-transform: uppercase; }
+    .sp-piv { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; text-align: center; }
+    .sp-piv div { border-radius: var(--r-sm); padding: 6px 2px; background: var(--sunk); min-width: 0; }
+    .sp-piv div[data-k^="R"] { background: var(--good-soft); } .sp-piv div[data-k^="S"] { background: var(--bad-soft); }
+    .sp-piv div[data-near="1"] { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .sp-piv b { display: block; font-size: 12px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+    .sp-bars { display: flex; align-items: flex-end; gap: 2px; height: 56px; margin-top: 6px; }
+    .sp-bars i { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.75; }
+    .sp-bars i[data-d="down"] { background: var(--down); } .sp-bars i[data-d="up"] { background: var(--up); }
+    .sp-bars i:last-child { opacity: 1; }
+    .sp-axis { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
+    .sp-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+    .sp-list li { display: flex; gap: 10px; justify-content: space-between; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+    .sp-list li:last-child { border-bottom: 0; }
+    .sp-list .num { white-space: nowrap; }
+    .sp-tw { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+    .sp-tw table { font-size: 12.5px; }
+    .sp-tw td, .sp-tw th { padding: 7px 10px; }
+    .sp-tw tr[data-ref], .sp-tw tr[data-click] { cursor: pointer; }
+    .sp-tw tr[data-ref]:hover, .sp-tw tr[data-click]:hover { background: var(--sunk); }
+    .sp-verdict { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md);
+                  background: var(--sunk); font-size: 13px; margin-bottom: 8px; }
+    .sp-verdict b { display: block; }
+    .sp-verdict[data-ok="1"] { background: var(--good-soft); } .sp-verdict[data-ok="1"] .mark { color: var(--good); }
+    .sp-verdict[data-ok="0"] .mark { color: var(--ink-3); }
+    .sp-skel { color: var(--ink-3); font-size: 12.5px; padding: 6px 0; }
+    @media (max-width: 960px) {
+        .sp-hero, .sp-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 640px) {
+        .drawer[data-page="1"] .dw-head, .drawer[data-page="1"] .dw-body { padding-left: 14px; padding-right: 14px; }
+        .sp-last { font-size: 28px; }
+        .sp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .sp-keys { grid-template-columns: minmax(0, 1fr); }
+        .sp-sigs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .sp-tabs button { padding: 8px 11px 9px; font-size: 13px; }
+        .sp-hp { display: block; margin: 2px 0 0; font-size: 15px; }
+        .sp-acts .btn { padding: 6px 10px; }
+        /* The header carries the price on a phone: the overview starts with the day, not the price again. */
+        .sp-hero .sp-price { display: none; }
+        .sp-hero { gap: 12px; }
+        .sp-asof { margin-top: 0; }
+        .sp-acts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 12px -16px 0; padding: 2px 16px; }
+        .sp-acts::-webkit-scrollbar { display: none; }
+        .sp-ohlc { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+        .sp-ohlc b { font-size: 12.5px; }
+        .sp-ohlc span { font-size: 9.5px; }
+        .sp-rets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .sp-heat { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        .sp-piv { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .sp-card { padding: 12px; }
+    }
+
     /* Notifications: the bell, its panel and the pop-up cards. */
     .top-right .nb-btn { position: relative; width: 34px; height: 34px; padding: 0; justify-content: center; border-radius: 50%; color: var(--ink); }
     .nb-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
@@ -1412,6 +1616,14 @@
     .otune .knob .trs-step { max-width: 160px; }
     .otune .knob .switch { justify-self: start; }
     .otune-bar { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    /* The rules lock: the same button wherever the rules can change (rlPaint draws every one). */
+    .rl-lock { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; font: inherit; font-size: 12px; font-weight: 600;
+               padding: 3px 10px; border-radius: var(--r-pill); border: 1px solid var(--line-strong); background: var(--surface);
+               color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+    .rl-lock:hover { background: var(--sunk); color: var(--ink); }
+    .rl-lock[data-state="locked"] { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+    .rl-lock[data-state="open"] { color: var(--accent); border-color: var(--accent); }
+    .rl-row { margin: -4px 0 10px; }
     .otune-bar .muted { margin-right: auto; font-size: 12.5px; }
     .otune-bar .muted b { color: var(--warn); }
 
@@ -2098,7 +2310,7 @@
                 <div class="table-wrap"><table>
                     <thead><tr><th>When</th><th>Mode</th><th>What</th><th>Why</th></tr></thead>
                     <tbody id="ap-log"></tbody></table></div>
-                <div class="ap-more" id="ap-log-more"></div>
+                <div class="pager" id="pg-aplog" aria-label="Pages"></div>
             </section>
             <p class="foot">Live results are the paper journal: alerts taken exactly, no costs. Backtests replay years of
                 candles through the same rule code; they cannot see delays, costs or stocks that left the index, so treat
@@ -2513,7 +2725,10 @@
 <aside class="drawer" id="drawer" data-open="0" role="dialog" aria-modal="true" aria-labelledby="dw-title">
     <div class="dw-head">
         <div><div class="dw-title" id="dw-title">—</div><div class="muted" id="dw-sub"></div></div>
+        <div class="dw-acts">
+        <button class="x" id="dw-search" type="button" aria-label="Search another stock" title="Search another stock (Ctrl K)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5L14 14"/></svg></button>
         <button class="x" id="dw-close" type="button" aria-label="Close"><svg class="ic" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+        </div>
     </div>
     <div class="dw-body" id="dw-body"></div>
 </aside>
@@ -2542,7 +2757,7 @@
             <div class="set-row"><div class="set-txt"><b id="auto-label">Auto-scan</b><p>Runs the scan by itself every weekday at this time (IST). After 15:45 it reads the day&#39;s final candles.</p></div><div class="set-ctl"><input type="time" id="scan-time" value="16:15" aria-label="Auto-scan time, IST" title="IST"><button class="switch" id="sw-auto" role="switch" aria-checked="false" type="button" aria-labelledby="auto-label"></button></div></div>
             <div class="set-row"><div class="set-txt"><b id="shorts-label">Short setups</b><p>Supply zones as short trades. F&amp;O stocks only: a cash short must be closed the same day, so a swing short is a stock future.</p></div><div class="set-ctl"><button class="switch" id="sw-shorts" role="switch" aria-checked="false" type="button" aria-labelledby="shorts-label"></button></div></div>
             <div class="set-row"><div class="set-txt"><b id="watch-label">Zone watcher</b><p>During market hours, checks every open zone on each new 15-minute candle for a change of character (the entry). Off: zones are only checked when you press Check.</p></div><div class="set-ctl"><button class="switch" id="sw-watch" role="switch" aria-checked="false" type="button" aria-labelledby="watch-label"></button></div></div>
-            <div class="set-block"><div class="set-txt"><b>Rules</b> <span class="set-state" id="rules-summary">Protocol defaults</span>
+            <div class="set-block"><div class="set-txt"><b>Rules</b> <span class="set-state" id="rules-summary">Protocol defaults</span> <button type="button" class="rl-lock" data-rlock></button>
                 <p>The thresholds a setup must pass, from the protocol's defaults or your own. Each change re-screens the candles
                 already downloaded beside the cards, so you see which stocks it adds or drops before you save. A card in amber is
                 changed and not saved yet. <a class="more" href="/docs#11-the-rules-in-detail">What each rule means</a></p></div>
@@ -2553,7 +2768,7 @@
             <div class="set-row"><div class="set-txt"><b id="intra-label">Intraday mode</b><p>Scans every 15 minutes in session and watches its zones on 5-minute candles.</p></div><div class="set-ctl"><button class="switch" id="sw-intra" role="switch" aria-checked="false" type="button" aria-labelledby="intra-label"></button></div></div>
             <div class="set-row"><div class="set-txt"><b id="iuni-label">Stocks</b><p>The list it scans. A longer list finds more setups and takes longer each pass.</p></div><div class="set-ctl"><select id="i-universe" class="uni-select" aria-labelledby="iuni-label"></select></div></div>
             <div class="set-row"><div class="set-txt"><b id="ishorts-label">Short setups</b><p>Supply zones as short trades, on any stock (an intraday short, MIS).</p></div><div class="set-ctl"><button class="switch" id="sw-ishorts" role="switch" aria-checked="false" type="button" aria-labelledby="ishorts-label"></button></div></div>
-            <div class="set-block"><div class="set-txt"><b>Rules</b> <span class="set-state" id="i-rules-summary">The defaults</span>
+            <div class="set-block"><div class="set-txt"><b>Rules</b> <span class="set-state" id="i-rules-summary">The defaults</span> <button type="button" class="rl-lock" data-rlock></button>
                 <p>The thresholds an intraday setup must pass. Each change re-screens the candles of the last 15m scan beside the cards,
                 so you see which stocks it adds or drops before you save. A card in amber is changed and not saved yet.</p></div>
                 <div class="hub-embed" id="hub-embed-intraday"></div></div>
@@ -2562,7 +2777,7 @@
             <header class="hub-sec-head"><h3 id="hs-options">Options</h3><p>The option chain scanner reads open interest, PCR and IV on the indices and your stocks every 3 minutes (with Dhan), and turns a clear lean into an option-buying idea: the at-the-money call or put, with a stop and a target on the premium.</p></header>
             <div class="set-row"><div class="set-txt"><b id="opt-label">Option chain scanner</b><p>Fetches the chains during market hours. Needs Dhan for real-time data.</p></div><div class="set-ctl"><button class="switch" id="sw-opt" role="switch" aria-checked="false" type="button" aria-labelledby="opt-label"></button></div></div>
             <div class="set-row"><div class="set-txt"><b id="ostk-label">Stocks</b><p><span id="o-stocks-summary">5 indices + 30 stocks</span>. The indices are always read.</p></div><div class="set-ctl"><button class="btn" id="o-stocks-btn" type="button">Edit stocks…</button></div></div>
-            <div class="set-block"><div class="set-txt"><b>Idea rules</b> <span class="set-state" id="o-rules-summary">Rules</span>
+            <div class="set-block"><div class="set-txt"><b>Idea rules</b> <span class="set-state" id="o-rules-summary">Rules</span> <button type="button" class="rl-lock" data-rlock></button>
                 <p>What an idea needs, how it exits, and the guards against trading into the market. A card in amber is changed and
                 not saved yet.</p></div>
                 <div id="hub-optrules"></div></div>
@@ -2597,6 +2812,7 @@
         </section>
         <section class="hub-sec" data-sec="autopilot" aria-labelledby="hs-autopilot" hidden>
             <header class="hub-sec-head"><h3 id="hs-autopilot">Autopilot</h3><p>The autopilot proposes rule changes from walk-forward tests, runs each in shadow before it goes live, and rolls back or pauses a mode that loses. These are its safety limits.</p></header>
+            <div class="rl-row"><button type="button" class="rl-lock" data-rlock></button></div>
             <div class="hub-embed" id="hub-embed-autopilot"></div>
         </section>
         <section class="hub-sec" data-sec="charts" aria-labelledby="hs-charts" hidden>
@@ -2661,6 +2877,7 @@
 </div>
 
 <script src="/static/vendor/lightweight-charts.js"></script>
+<script src="/static/studies.js"></script>
 <script src="/static/charts.js"></script>
 <script>
 /* ------------------------------------------------------------- the live connection */
@@ -3178,7 +3395,7 @@ const PAGED = { setups: () => renderSetups(), zones: () => renderZones(), signal
                 orows: () => O && renderOptions(), ojournal: () => O && renderOptions(), oskipped: () => O && renderOptions(),
                 news: () => renderNews(), smstocks: () => renderSmartStocks(), smdeals: () => renderDeals(),
                 dmmodes: () => demoData && renderDemoTotals(), dmopen: () => renderDemo(), dmclosed: () => renderDemo(), dmskipped: () => renderDemo(), dmledger: () => renderDemo(),
-                trx: () => trxRender(), trxlog: () => trxRender() };
+                trx: () => trxRender(), trxlog: () => trxRender(), aplog: () => LAB && renderChangeLog() };
 document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-pg]');
     if (!b || b.disabled) return;
@@ -3711,43 +3928,47 @@ let tf = TF_MIN[store.get('nw.tf', 'D')] ? store.get('nw.tf', 'D') : 'D';   // t
 let range = store.get('nw.range', 126);
 let current = null;                       // the stock open in the drawer
 
-async function openStock(symbol, whatIf, wantTf) {
+// `page`: the stock's own page (the drawer, full screen) rather than the side panel. A stock opened from inside the
+// page (a peer, a row) opens as a page too.
+async function openStock(symbol, whatIf, wantTf, page) {
+    if (!page && $('drawer').dataset.page === '1' && $('drawer').dataset.open === '1') return openStockPage(symbol, wantTf);
     if (wantTf) { tf = wantTf; store.set('nw.tf', tf); }
     const token = ++drawerToken;
+    closeFull();
+    $('drawer').dataset.page = page ? '1' : '';
+    spSym = page ? String(symbol).toUpperCase() : null;
     $('dw-title').textContent = symbol;
     $('dw-sub').textContent = 'Loading…';
     $('dw-body').innerHTML = '';
+    $('dw-body').scrollTop = 0;
     $('drawer').dataset.open = '1'; $('scrim').dataset.open = '1';
     $('dw-close').focus();
+    const prof = page ? api('/api/stock/' + encodeURIComponent(symbol) + '/profile').catch((e) => ({ error: e.message })) : null;
     try {
         const q = '?bars=260' + (whatIf ? '&rules=' + encodeURIComponent(JSON.stringify(whatIf)) : '');
         const d = await api('/api/stock/' + encodeURIComponent(symbol) + q);
         if (token !== drawerToken) return;
-        current = { symbol: d.symbol, d, whatIf: !!whatIf, frames: {} };
+        current = { symbol: d.symbol, d, whatIf: !!whatIf, frames: {}, page: !!page };
         renderDrawer();
+        if (prof) prof.then((p) => {
+            if (token !== drawerToken || !current || current.symbol !== d.symbol) return;
+            current.profile = p;
+            spFill();
+        });
     } catch (e) {
         if (token === drawerToken) $('dw-sub').textContent = 'Could not load: ' + e.message;
     }
 }
 
 function renderDrawer() {
+    if (current.page) { renderPage(); return; }
     const { d } = current, a = d.analysis;
     $('dw-title').innerHTML = esc(d.symbol) + ' <span class="tag" data-t="' + (d.in_universe ? 'in' : 'out') + '">' +
         (d.in_universe ? 'in universe' : 'outside universe') + '</span>' + (a.structure ? sideTag(a.side) : '');
-    $('dw-sub').textContent = [d.name, 'daily · ' + (a.date || ''), current.whatIf ? 'what-if rules' : '']
-        .filter(Boolean).join(' · ');
-    const rangeBtns = [[63, '3M'], [126, '6M'], [260, '1Y']].map(([n, l]) =>
-        `<button type="button" data-range="${n}" aria-pressed="${range === n}">${l}</button>`).join('');
-    const ovl = [['ob', 'Order block'], ['fvg', 'FVG'], ['liq', 'Liquidity'], ['lv', 'Target / EQ / stop'],
-                 ['zone', 'Watch zone'], ['pat', 'Patterns'], ...INDICATOR_TOGGLES]
-        .map(([k, l]) => `<button type="button" data-ovl="${k}" aria-pressed="${!!overlays[k]}">${l}</button>`).join('');
-    const tfBtns = tfButtons('tf', tf);
-    $('dw-body').innerHTML =
-        `<div class="tools"><div style="display:flex;gap:8px">
-                <div class="seg small" role="group" aria-label="Timeframe">${tfBtns}</div>
-                <div class="seg small" role="group" aria-label="Range" id="range-seg">${rangeBtns}</div></div>
-             <div class="ovl" role="group" aria-label="Overlays">${ovl}</div>${chartBtns()}</div>
-         <div class="chart-wrap" id="chart-wrap"></div>` +
+    $('dw-sub').innerHTML = esc([d.name, 'daily · ' + (a.date || ''), current.whatIf ? 'what-if rules' : '']
+        .filter(Boolean).join(' · ')) + `<button type="button" class="btn-link sp-open" data-sp-open="${esc(d.symbol)}"
+        title="Everything about ${esc(d.symbol)} on one page">Full page →</button>`;
+    $('dw-body').innerHTML = chartToolsHtml() + '<div class="chart-wrap" id="chart-wrap"></div>' +
         levelsHtml(a) +
         `<div class="cols"><div class="box" id="planner"></div><div class="box" id="watchbox"></div></div>` +
         checklistHtml(d.symbol, a) + '<div class="box newsbox" id="newsbox"></div><div class="box newsbox" id="smartbox"></div>';
@@ -3756,6 +3977,21 @@ function renderDrawer() {
     drawerSmart(d.symbol);
     renderPlanner();
     renderWatchBox();
+    bindChartTools();
+}
+// The stock chart's controls (timeframe, range, overlays, the chart buttons), in the drawer and on the stock page.
+function chartToolsHtml() {
+    const rangeBtns = [[63, '3M'], [126, '6M'], [260, '1Y']].map(([n, l]) =>
+        `<button type="button" data-range="${n}" aria-pressed="${range === n}">${l}</button>`).join('');
+    const ovl = [['ob', 'Order block'], ['fvg', 'FVG'], ['liq', 'Liquidity'], ['lv', 'Target / EQ / stop'],
+                 ['zone', 'Watch zone'], ['pat', 'Patterns'], ...INDICATOR_TOGGLES]
+        .map(([k, l]) => `<button type="button" data-ovl="${k}" aria-pressed="${!!overlays[k]}">${l}</button>`).join('');
+    return `<div class="tools"><div style="display:flex;gap:8px">
+                <div class="seg small" role="group" aria-label="Timeframe">${tfButtons('tf', tf)}</div>
+                <div class="seg small" role="group" aria-label="Range" id="range-seg">${rangeBtns}</div></div>
+             <div class="ovl" role="group" aria-label="Overlays">${ovl}</div>${chartBtns()}</div>`;
+}
+function bindChartTools() {
     document.querySelectorAll('[data-range]').forEach((b) => b.addEventListener('click', () => {
         range = +b.dataset.range; store.set('nw.range', range);
         document.querySelectorAll('[data-range]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
@@ -3775,6 +4011,562 @@ function renderDrawer() {
 function closeDrawer() {
     closeFull();
     drawerToken++; current = null; $('drawer').dataset.open = '0'; $('scrim').dataset.open = '0';
+    $('drawer').dataset.page = ''; spSym = null;
+    // Back past the pages this one pushed (peers opened from it included), to where the app was: the history keeps no
+    // entry of the same address, so Back after closing leaves the app at once. An address typed in: just drop its hash.
+    const depth = (history.state && history.state.nwDepth) || 0;
+    if (pageSym()) { if (depth > 0) history.go(-depth); else history.replaceState(null, '', location.pathname + location.search); }
+}
+
+/* ------------------------------------------------------------- stock page
+   Everything about one stock on one page: the drawer, full screen, at /#s/<SYMBOL> (search opens it; the browser's
+   back button closes it). Its chart, setup checklist, planner and watch box are the drawer's own; the rest comes
+   from /api/stock/<symbol>/profile, drawn into the page's sections when it arrives (spFill). */
+let spSym = null;                         // the stock whose page is open (set as it opens, before its data is in)
+const pageSym = () => {
+    const m = /^#s\/([^/?#]{1,60})$/.exec(location.hash);
+    if (!m) return null;
+    let sym;
+    try { sym = decodeURIComponent(m[1]).toUpperCase(); } catch (e) { return null; }
+    return /^[A-Z0-9][A-Z0-9&-]{0,19}$/.test(sym) ? sym : null;
+};
+function openStockPage(symbol, wantTf) {
+    const sym = String(symbol || '').toUpperCase();
+    if (!sym) return;
+    if (pageSym() !== sym) {
+        const depth = (pageSym() && history.state && history.state.nwDepth) || 0;      // pages pushed under this one
+        history.pushState({ nwPage: sym, nwDepth: depth + 1 }, '', '#s/' + encodeURIComponent(sym));
+    }
+    return openStock(sym, undefined, wantTf, true);
+}
+// The drawer's close button and Esc: a trade or a chain opened from a stock's page goes back to the page.
+function drawerBack() {
+    const sym = pageSym();
+    if ($('drawer').dataset.page === '1' && sym && (spSym !== sym || (current && !current.page))) openStock(sym, undefined, undefined, true);
+    else closeDrawer();
+}
+window.addEventListener('popstate', () => {
+    const sym = pageSym(), open = $('drawer').dataset.open === '1';
+    if (sym) { if (S && !(open && spSym === sym)) openStock(sym, undefined, undefined, true); }
+    else if (open && $('drawer').dataset.page === '1') closeDrawer();
+});
+document.addEventListener('click', (e) => {
+    const o = e.target.closest('[data-sp-open]');
+    if (o) { openStockPage(o.dataset.spOpen, tf); return; }
+    const act = e.target.closest('[data-sp-act]');
+    if (!act || !current) return;
+    const sym = current.symbol, k = act.dataset.spAct;
+    if (k === 'chain') openOptions(sym);
+    else if (k === 'intraday') openIntraday(sym);
+    else if (k === 'plan') spShowTab('plan');
+    else if (k === 'news') { closeDrawer(); ckNews(sym); }
+    else if (k === 'smart') { closeDrawer(); setMode('smart'); openSmartStock(sym); }
+    else if (k === 'link') {
+        const url = location.origin + location.pathname + '#s/' + encodeURIComponent(sym);
+        (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('Link copied'), () => toast(url));
+    }
+});
+
+// The page's tabs: [key, label, the parts it holds]. Options shows only for F&O stocks or ones with a chain read.
+const SP_TABS = [['overview', 'Overview'], ['setup', 'Setup'], ['tech', 'Technicals'], ['opt', 'Options'], ['flow', 'Money flow'],
+    ['news', 'News & events'], ['hist', 'History'], ['peers', 'Peers'], ['plan', 'Plan a trade']];
+let spTab = 'overview', spTabSym = null;
+const spSigned = (v, d = 2, unit = '%') => v == null || !isFinite(v) ? '—'
+    : `<span class="rx" data-dir="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${(+v).toFixed(d)}${unit}</span>`;
+const spDay = (iso) => iso ? new Date(String(iso).slice(0, 10) + 'T00:00:00+05:30').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
+const spDays = (iso) => Math.round((new Date(String(iso).slice(0, 10) + 'T00:00:00+05:30') - new Date(todayIST() + 'T00:00:00+05:30')) / 864e5);
+const spStat = (k, v, sub, tone, title) => `<div class="stat"${tone ? ` data-tone="${tone}"` : ''}${title ? ` title="${esc(title)}"` : ''}>
+    <div class="stat-k">${k}</div><div class="stat-v num">${v}</div>${sub ? `<div class="stat-s">${sub}</div>` : ''}</div>`;
+// Shimmering lines where a part will be, until its numbers are in.
+const spWait = (n = 3) => `<div class="sk-wrap" aria-busy="true" aria-label="Loading">${Array.from({ length: n }, (_, i) =>
+    `<i class="sk" style="width:${[92, 76, 84, 60, 70][i % 5]}%"></i>`).join('')}</div>`;
+// A range with a dot where `v` sits: the day's low to high, the year's.
+function spRange(label, lo, hi, v, note) {
+    if (lo == null || hi == null || v == null || hi <= lo) return '';
+    const at = Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+    return `<div class="sp-range"><div class="sp-range-h"><span>${label}</span>${note ? `<span>${note}</span>` : ''}</div>
+        <div class="sp-bar" role="img" aria-label="${esc(label)}: ${px(v)} between ${px(lo)} and ${px(hi)}"><i style="left:${at.toFixed(1)}%"></i></div>
+        <div class="sp-range-h"><b>${px(lo)}</b><b>${px(hi)}</b></div></div>`;
+}
+// Small bars, oldest to newest; `dir` colours a bar up or down. `fit`: the scale starts near the lowest value rather
+// than at zero, so a series that moves little (OI, PCR, IV) still shows its moves.
+function spBars(vals, dir, title, fit) {
+    const v = vals.map((x) => (x == null || !isFinite(x) ? null : +x)), ok = v.filter((x) => x != null);
+    if (ok.length < 2) return '';
+    const hi = Math.max(...ok), lo = fit ? Math.min(...ok) - (hi - Math.min(...ok)) * 0.25 : Math.min(...ok, 0);
+    return `<div class="sp-bars" role="img" aria-label="${esc(title || '')}">${v.map((x, i) => x == null ? '<i style="height:0"></i>'
+        : `<i style="height:${Math.max(3, (x - lo) / ((hi - lo) || 1) * 100).toFixed(1)}%"${dir ? ` data-d="${dir[i] || ''}"` : ''}></i>`).join('')}</div>`;
+}
+const spCard = (id, title, sub, body) => `<section class="sp-card" id="${id}"><h2>${title}${sub ? ` <span class="muted">· ${sub}</span>` : ''}</h2>${body}</section>`;
+
+function renderPage() {
+    const { d } = current, a = d.analysis, sym = d.symbol;
+    if (spTabSym !== sym) { spTab = 'overview'; spTabSym = sym; }       // a new stock starts on its overview
+    spHead(null);
+    const panel = (k, html) => `<div class="sp-panel" role="tabpanel" id="sp-p-${k}" aria-labelledby="sp-t-${k}" data-panel="${k}"${k === spTab ? '' : ' hidden'}>${html}</div>`;
+    $('dw-body').innerHTML = `
+        <section class="sp-hero" id="sp-top">${spWait(4)}</section>
+        <div class="sp-tabs" role="tablist" aria-label="${esc(sym)}">${SP_TABS.map(([k, l]) => `<button type="button" role="tab" id="sp-t-${k}"
+            data-sp-tab="${k}" aria-controls="sp-p-${k}" aria-selected="${k === spTab}" tabindex="${k === spTab ? 0 : -1}">${l}<span class="sp-tn" id="sp-n-${k}"></span></button>`).join('')}</div>
+        ${panel('overview', `<div id="sp-banner"></div>
+            <section class="sp-card" id="sp-sig"><h2>What the numbers say <span class="muted">· tap one for the detail</span></h2><div id="sp-sigb">${spWait(3)}</div></section>
+            <section class="sp-card" id="sp-chart"><h2>Chart</h2>${chartToolsHtml()}<div class="chart-wrap" id="chart-wrap"></div></section>
+            <div class="sp-grid">
+                ${spCard('sp-keys', 'Key numbers', '', `<div id="sp-keysb">${spWait(5)}</div>`)}
+                ${spCard('sp-ret', 'Returns', '', `<div id="sp-retb">${spWait(3)}</div>`)}
+            </div>`)}
+        ${panel('setup', spCard('sp-setup', 'Setup', `the swing protocol on daily candles${a.date ? ', ' + esc(spDay(a.date)) : ''}`,
+            `<div id="sp-scans">${spWait(2)}</div>${levelsHtml(a)}${checklistHtml(sym, a)}`))}
+        ${panel('tech', spCard('sp-tech', 'Technicals', 'daily candles', `<div id="sp-techb">${spWait(6)}</div>`))}
+        ${panel('opt', spCard('sp-opt', 'Options', 'the nearest expiry', `<div id="sp-optb">${spWait(4)}</div>`))}
+        ${panel('flow', spCard('sp-flow', 'Money flow', 'NSE, end of day', `<div id="sp-flowb">${spWait(5)}</div>`))}
+        ${panel('news', `<div class="sp-grid sp-news">
+            ${spCard('sp-events', 'Events', 'results, dividends, meetings', `<div id="sp-evb">${spWait(3)}</div>`)}
+            <section class="sp-card newsbox" id="newsbox">${spWait(4)}</section></div>`)}
+        ${panel('hist', spCard('sp-hist', 'History with ' + esc(sym), 'zones, alerts, ideas and trades', `<div id="sp-histb">${spWait(5)}</div>`))}
+        ${panel('peers', spCard('sp-peers', 'Peers', '', `<div id="sp-peersb">${spWait(5)}</div>`))}
+        ${panel('plan', `<div class="cols"><div class="box sp-card" id="planner"></div><div class="box sp-card" id="watchbox"></div></div>`)}`;
+    drawChart();
+    drawerNews(sym);
+    renderPlanner();
+    renderWatchBox();
+    bindChartTools();
+    if (current.profile) spFill();
+}
+
+// One tab at a time; the chart is redrawn at its size when the overview shows again.
+function spShowTab(k, focus) {
+    const tabs = document.querySelectorAll('.sp-tabs [data-sp-tab]');
+    if (!tabs.length || ![...tabs].some((t) => t.dataset.spTab === k && !t.hidden)) return;
+    spTab = k;
+    tabs.forEach((t) => { const on = t.dataset.spTab === k; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; });
+    document.querySelectorAll('.sp-panel').forEach((p) => { p.hidden = p.dataset.panel !== k; });
+    const t = document.querySelector(`.sp-tabs [data-sp-tab="${k}"]`);
+    if (focus) t.focus();
+    t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // Keep the tabs where they were: a short tab must not leave the page scrolled past its end.
+    const body = $('dw-body'), bar = document.querySelector('.sp-tabs');
+    if (body.scrollTop > bar.offsetTop) body.scrollTop = bar.offsetTop;
+    // A hidden chart shrank to nothing: back in view, it is given its size and its candles again.
+    if (k === 'overview') {
+        const c = LWC['chart-wrap'];
+        if (c && c.wrap.isConnected) { c.el.style.height = lwcHeight(c.wrap) + 'px'; c.spec = null; c.key = null; }
+        requestAnimationFrame(() => { if (current && current.page && spTab === 'overview') drawChart(); });
+    }
+}
+document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-sp-tab]');
+    if (t) spShowTab(t.dataset.spTab);
+});
+document.addEventListener('keydown', (e) => {
+    const t = e.target.closest && e.target.closest('.sp-tabs [data-sp-tab]');
+    if (!t || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const tabs = [...document.querySelectorAll('.sp-tabs [data-sp-tab]')].filter((x) => !x.hidden), i = tabs.indexOf(t);
+    const j = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    e.preventDefault();
+    spShowTab(tabs[j].dataset.spTab, true);
+});
+
+function spFill() {
+    const P = current && current.profile;
+    if (!P || !$('sp-top')) return;
+    if (P.error) { $('sp-top').innerHTML = `<div class="sp-skel">Could not load the numbers: ${esc(P.error)}</div>`; return; }
+    spHead(P);
+    const parts = [['sp-top', spHero], ['sp-banner', spBanner], ['sp-sigb', spSignals], ['sp-keysb', spKeys], ['sp-scans', spScans],
+        ['sp-techb', spTech], ['sp-retb', spReturns], ['sp-optb', spOptions], ['sp-flowb', spFlow], ['sp-evb', spEvents],
+        ['sp-histb', spHistory], ['sp-peersb', spPeers]];
+    parts.forEach(([id, fn]) => {
+        const el = $(id);
+        if (!el) return;
+        try { el.innerHTML = fn(P); } catch (e) { console.warn('stock page', id, e); el.innerHTML = '<div class="sp-skel">Could not draw this part.</div>'; }
+    });
+    // Options only where there are options; History and Peers say how many they hold.
+    const opt = document.querySelector('[data-sp-tab="opt"]');
+    if (opt) opt.hidden = !P.fo && !P.options;
+    if (opt && opt.hidden && spTab === 'opt') spShowTab('overview');
+    const n = ['zones', 'ideas', 'demo', 'orders', 'alerts'].reduce((t, k) => t + (P[k] || []).length, 0);
+    const count = (k, v) => { const el = $('sp-n-' + k); if (el) el.textContent = v ? String(v) : ''; };
+    count('hist', n); count('peers', (P.peers || []).length);
+    count('news', ((P.events || {}).upcoming || []).length ? '!' : '');
+}
+
+// The header: the symbol, its price and the day's move, in view however far the page scrolls.
+function spHead(P) {
+    const d = current.d, a = d.analysis, q = P && P.quote;
+    const tags = (d.in_universe ? '' : ' <span class="tag" data-t="out">outside universe</span>') + (a.structure ? ' ' + sideTag(a.side) : '');
+    const price = q ? `<span class="sp-hp"><span class="num" data-lp="${esc(d.symbol)}" data-v="${q.last}">${px(q.last)}</span>${q.change_pct != null
+        ? ` <span class="num ${q.change_pct >= 0 ? 'up' : 'down'}" data-lp="${esc(d.symbol)}" data-lk="chg" data-prev="${q.prev_close}">${q.change_pct >= 0 ? '+' : ''}${q.change_pct.toFixed(2)}%</span>` : ''}</span>` : '';
+    $('dw-title').innerHTML = `<span class="sp-sym">${esc(d.symbol)}</span>${tags}${price}`;
+    $('dw-sub').textContent = [(P && P.name) || d.name, P && P.industry].filter(Boolean).join(' · ') || 'NSE';
+}
+
+function spHero(P) {
+    const q = P.quote || {}, st = P.stats || {}, sym = P.symbol;
+    const dir = q.change_pct == null ? '' : q.change_pct >= 0 ? 'up' : 'down';
+    const badge = q.live ? '<span class="sp-badge" data-t="live"><i></i>Live</span>'
+        : q.market_open ? '<span class="sp-badge" data-t="warn" title="Without Dhan the price is yfinance’s, some minutes late">Delayed</span>'
+        : '<span class="sp-badge">Last close</span>';
+    const idx = (P.indices || []).filter((n) => n !== P.tag);
+    const main = [P.tag, P.fo ? 'F&O' : ''].filter(Boolean);
+    const followed = { trade: 'open trade', tapped: 'in its zone', board: 'on the board', intraday: 'intraday setup', options: 'in the options list', setup: 'a scan setup' }[P.followed];
+    const ic = (p) => `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+    const act = (k, label, icon, primary) => `<button class="btn${primary ? ' btn-primary' : ''}" type="button" data-sp-act="${k}">${ic(icon)}${label}</button>`;
+    return `<div class="sp-hero-l">
+            <div class="sp-price"><span class="sp-last num" data-lp="${esc(sym)}" data-v="${q.last}">${px(q.last)}</span>
+                ${q.change_pct != null ? `<span class="sp-chg num ${dir}" data-lp="${esc(sym)}" data-lk="chg" data-prev="${q.prev_close}">${q.change_pct >= 0 ? '+' : ''}${q.change_pct.toFixed(2)}%</span>
+                <span class="sp-abs num ${dir}">${q.change >= 0 ? '+' : '−'}${Math.abs(q.change).toFixed(2)} today</span>` : '<span class="muted">no move yet today</span>'}</div>
+            <div class="sp-asof">${badge}<span>${esc(spDay(q.session))}</span>${q.gap_pct != null && Math.abs(q.gap_pct) >= 0.05 ? `<span>opened ${spSigned(q.gap_pct)}</span>` : ''}
+                ${followed ? `<span class="sp-badge" data-t="acc" title="The news desk follows it">${followed}</span>` : ''}</div>
+            <div class="sp-tags">${P.industry ? `<span class="sp-ind">${esc(P.industry)}</span>` : ''}${main.map((t) => `<span>${esc(t)}</span>`).join('')}
+                ${idx.length ? `<details class="sp-more"><summary>${idx.length} ${idx.length === 1 ? 'index' : 'indices'}</summary><div>${idx.map((t) => `<span>${esc(t)}</span>`).join('')}</div></details>` : ''}</div>
+            <div class="sp-acts">
+                ${act('plan', 'Plan a trade', '<path d="M3 13V3M3 13h10M6 10l2.5-3 2 1.5L13 5"/>', true)}
+                ${P.fo ? act('chain', 'Option chain', '<path d="M3 4h10M3 8h10M3 12h10M8 2v12"/>') : ''}
+                ${act('intraday', 'Intraday', '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/>')}
+                ${act('smart', 'Smart money', '<rect x="2" y="4.5" width="12" height="8" rx="1.5"/><circle cx="8" cy="8.5" r="1.7"/>')}
+                ${act('link', 'Share', '<path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 013.6 3.6L10.6 8M9 11.5l-1.2 1.2a2.6 2.6 0 01-3.6-3.6L5.4 8"/>')}</div>
+        </div>
+        <div class="sp-hero-r">
+            <div class="sp-ohlc">${[['Open', q.open], ['High', q.high], ['Low', q.low], ['Prev close', q.prev_close]]
+                .map(([k, v]) => `<div><span>${k}</span><b>${px(v)}</b></div>`).join('')}</div>
+            ${spRange('Today', q.low, q.high, q.last)}
+            ${spRange('52 weeks', st.low_52w, st.high_52w, q.last,
+                st.from_high_pct != null ? `${spSigned(st.from_high_pct, 1)} from the high` : '')}
+            ${st.high_52w_date ? `<div class="sp-range-h sp-dates"><span>low on ${esc(spDay(st.low_52w_date))}</span><span>high on ${esc(spDay(st.high_52w_date))}</span></div>` : ''}
+        </div>`;
+}
+
+// What needs attention first: an open trade, results or a dividend coming soon.
+function spBanner(P) {
+    const out = [];
+    const open = (P.zones || []).filter((z) => z.status === 'triggered' && ((z.mode || 'swing') === 'intraday' || (z.trigger || {}).paper));
+    const ideas = (P.ideas || []).filter((i) => i.status === 'open');
+    const demo = (P.demo || []).filter((p) => p.status === 'open');
+    if (open.length || ideas.length || demo.length) {
+        const parts = [open.length && `${open.length} paper trade${open.length > 1 ? 's' : ''}`, ideas.length && `${ideas.length} option idea${ideas.length > 1 ? 's' : ''}`,
+                       demo.length && `${demo.length} demo position${demo.length > 1 ? 's' : ''}`].filter(Boolean);
+        out.push(`<button type="button" class="sp-alert" data-t="good" data-sp-tab="hist"><b>Open now:</b> ${parts.join(', ')} <span class="muted">· see History</span></button>`);
+    }
+    const ev = ((P.events || {}).upcoming || []).find((e) => spDays(e.day) <= 14);
+    if (ev) {
+        const n = spDays(ev.day);
+        out.push(`<button type="button" class="sp-alert" data-t="warn" data-sp-tab="news"><b>${esc(ev.purpose)}</b> ${n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`}
+            (${esc(spDay(ev.day))}) <span class="muted">· prices can gap around it</span></button>`);
+    }
+    return out.join('');
+}
+
+// Each reading in plain words, leaning bullish, bearish or neither; together, which way they lean. A reading the app has no
+// data for is left out rather than guessed.
+function spSignals(P) {
+    const a = current.d.analysis || {}, st = P.stats || {}, sma = st.sma || {}, q = P.quote || {}, sig = [];
+    const add = (k, lean, v, why, tab) => sig.push({ k, lean, v, why, tab });
+    if (sma['50'] && sma['200']) {
+        const a50 = sma['50'].dist_pct >= 0, a200 = sma['200'].dist_pct >= 0;
+        add('Trend', a50 && a200 ? 'bull' : !a50 && !a200 ? 'bear' : 'neut', a50 && a200 ? 'Uptrend' : !a50 && !a200 ? 'Downtrend' : 'Mixed',
+            `${a50 ? 'above' : 'below'} its 50-day and ${a200 ? 'above' : 'below'} its 200-day average`, 'tech');
+    }
+    const bias = a.structure && a.structure.bias;
+    if (bias || a.failed_at === 'structure') {
+        const b = bias || 'range';
+        add('Structure', b === 'bullish' ? 'bull' : b === 'bearish' || b === 'broken' ? 'bear' : 'neut',
+            { bullish: 'Higher highs', bearish: 'Lower lows', broken: 'Broken', range: 'Range', unclear: 'Unclear' }[b] || b,
+            (a.structure && a.structure.reason) || a.reason || 'daily swings', 'setup');
+    }
+    if (st.rsi14 != null) {
+        const r = st.rsi14;
+        add('Momentum', r >= 55 && r < 70 ? 'bull' : r > 30 && r <= 45 ? 'bear' : 'neut',
+            r >= 70 ? 'Overbought' : r <= 30 ? 'Oversold' : r >= 55 ? 'Strong' : r <= 45 ? 'Weak' : 'Neutral', `RSI ${r.toFixed(0)} of 100`, 'tech');
+    }
+    if (st.volume_ratio != null) {
+        const v = st.volume_ratio, heavy = v >= 1.5, up = (q.change_pct || 0) >= 0;
+        add('Volume', heavy ? (up ? 'bull' : 'bear') : 'neut', heavy ? (up ? 'Heavy buying' : 'Heavy selling') : v < 0.7 ? 'Light' : 'Normal',
+            `${v.toFixed(1)}× its 20-day average`, 'tech');
+    }
+    if (st.range_pos != null) {
+        const p = st.range_pos;
+        add('52 weeks', p >= 0.8 ? 'bull' : p <= 0.2 ? 'bear' : 'neut', p >= 0.8 ? 'Near the high' : p <= 0.2 ? 'Near the low' : 'Mid-range',
+            `${Math.round(p * 100)}% of the way up its year's range`, 'tech');
+    }
+    const m1 = (st.returns || {})['1M'];
+    if (m1 != null) add('Last month', m1 >= 2 ? 'bull' : m1 <= -2 ? 'bear' : 'neut', `${m1 >= 0 ? 'Up' : 'Down'} ${Math.abs(m1).toFixed(1)}%`, 'over 21 sessions', 'tech');
+    const dv = (P.smart || {}).delivery;
+    if (dv) add('Delivery', dv.read === 'accumulation' ? 'bull' : dv.read === 'distribution' ? 'bear' : 'neut',
+        dv.read.charAt(0).toUpperCase() + dv.read.slice(1), `${dv.deliv_pct.toFixed(0)}% delivered against ${dv.avg_pct.toFixed(0)}% usually`, 'flow');
+    const f = P.futures;
+    if (f && f.read) add('Futures', /long build|short cover/.test(f.read) ? 'bull' : 'bear', f.read.charAt(0).toUpperCase() + f.read.slice(1),
+        `open interest ${f.oi_chg_pct != null ? (f.oi_chg_pct >= 0 ? '+' : '') + f.oi_chg_pct.toFixed(1) + '%' : 'changed'} on ${spDay(f.day)}`, 'flow');
+    const s = ((P.options || {}).summary) || {};
+    if (s.bias_label) add('Options', s.bias_label === 'bullish' ? 'bull' : s.bias_label === 'bearish' ? 'bear' : 'neut',
+        s.bias_label.charAt(0).toUpperCase() + s.bias_label.slice(1), `PCR ${s.pcr != null ? s.pcr.toFixed(2) : '—'}, the chain's writing`, 'opt');
+    const sw = (P.scans || {}).swing, r = sw && sw.result, c = sw && sw.candidate;
+    if (sw) add('Swing scan', r && r.passed ? (c && c.side === 'short' ? 'bear' : 'bull') : 'neut',
+        r && r.passed ? `${c && c.side === 'short' ? 'Short' : 'Long'} setup` : r ? 'No setup' : 'Not scanned',
+        r && r.passed ? `R:R ${c ? rr(c.rr) : '—'}, target ${c ? px(c.target) : '—'}` : r ? 'stopped at ' + spStep(r.failed_at, false) : 'outside the scanned list', 'setup');
+    if (!sig.length) return '<div class="sp-skel">Not enough data to read yet.</div>';
+    const bull = sig.filter((x) => x.lean === 'bull').length, bear = sig.filter((x) => x.lean === 'bear').length, neut = sig.length - bull - bear;
+    const lean = bull - bear >= 2 ? 'bull' : bear - bull >= 2 ? 'bear' : 'neut';
+    const word = { bull: 'Leaning bullish', bear: 'Leaning bearish', neut: 'No clear lean' }[lean];
+    const w = (n) => (n / sig.length * 100).toFixed(1);
+    const mark = { bull: IC.up, bear: IC.down, neut: '<i class="sig-dot"></i>' };
+    return `<div class="sp-lean" data-lean="${lean}"><div><b>${word}</b><span class="muted">${bull} bullish · ${bear} bearish · ${neut} neutral, of ${sig.length} readings</span></div>
+            <div class="sp-gauge" role="img" aria-label="${bull} bullish, ${neut} neutral, ${bear} bearish"><i data-l="bull" style="width:${w(bull)}%"></i><i data-l="neut" style="width:${w(neut)}%"></i><i data-l="bear" style="width:${w(bear)}%"></i></div></div>
+        <div class="sp-sigs">${sig.map((x) => `<button type="button" class="sig" data-lean="${x.lean}" data-sp-tab="${x.tab}" title="${esc(x.why)}">
+            <span class="sig-k">${esc(x.k)}</span><span class="sig-v">${mark[x.lean]}${esc(x.v)}</span><span class="sig-w">${esc(x.why)}</span></button>`).join('')}</div>
+        <p class="muted sp-note">A reading of the numbers, not advice. Each one is explained in its tab.</p>`;
+}
+
+// The facts at a glance, as label and value.
+function spKeys(P) {
+    const q = P.quote || {}, st = P.stats || {}, s = ((P.options || {}).summary) || {}, rows = [];
+    const add = (k, v, sub) => { if (v != null && v !== '—') rows.push(`<div><dt>${k}</dt><dd>${v}${sub ? `<small>${sub}</small>` : ''}</dd></div>`); };
+    add('Volume today', st.volume != null ? volWords(st.volume) : null, st.volume_ratio != null ? `${st.volume_ratio.toFixed(1)}× usual` : '');
+    add('Avg volume', st.avg_volume_20 ? volWords(st.avg_volume_20) : null, '20 sessions');
+    add('Turnover', st.avg_turnover_cr_20 != null ? '₹' + Math.round(st.avg_turnover_cr_20).toLocaleString('en-IN') + ' cr' : null, 'a day');
+    add('ATR 14', st.atr14 != null ? px(st.atr14) : null, st.atr_pct != null ? st.atr_pct.toFixed(2) + '% of price' : '');
+    add('Volatility', st.volatility_20 != null ? st.volatility_20.toFixed(1) + '%' : null, 'a year, from 20 sessions');
+    add('RSI 14', st.rsi14 != null ? st.rsi14.toFixed(1) : null);
+    add('52-week high', st.high_52w != null ? px(st.high_52w) : null, st.from_high_pct != null ? spSigned(st.from_high_pct, 1) : '');
+    add('52-week low', st.low_52w != null ? px(st.low_52w) : null, st.from_low_pct != null ? spSigned(st.from_low_pct, 1) : '');
+    if (st.streak) add('Streak', `${Math.abs(st.streak)} day${Math.abs(st.streak) === 1 ? '' : 's'} ${st.streak > 0 ? 'up' : 'down'}`);
+    if (s.lot) add('Lot size', Number(s.lot).toLocaleString('en-IN'), s.dte != null ? `expiry in ${s.dte}d` : '');
+    const dv = (P.smart || {}).delivery;
+    if (dv) add('Delivery', dv.deliv_pct.toFixed(1) + '%', `usually ${dv.avg_pct.toFixed(1)}%`);
+    const ev = ((P.events || {}).upcoming || [])[0];
+    if (ev) add('Next event', esc(spDay(ev.day)), esc(ev.purpose));
+    return rows.length ? `<dl class="sp-keys">${rows.join('')}</dl>` : '<div class="sp-skel">No daily numbers yet.</div>';
+}
+
+const spStep = (key, intra) => {
+    const steps = (intra ? S && S.intraday && S.intraday.steps : S && S.steps) || [];
+    const s = steps.find((x) => x.key === key);
+    return s ? s.label : key || '—';
+};
+function spScans(P) {
+    const S_ = P.scans || {};
+    const one = (mode, label) => {
+        const x = S_[mode];
+        if (!x) return '';
+        const r = x.result, c = x.candidate, when = hhmm(x.finished_at);
+        if (!r) return `<div class="sp-verdict" data-ok="0"><span class="mark">–</span><div><b>${label}: not in the last scan</b>
+            <span class="muted">${esc(uniLabel(x.universe))} · ${when}</span></div></div>`;
+        if (r.passed) return `<div class="sp-verdict" data-ok="1"><span class="mark">${IC.check}</span><div><b>${label}: a setup</b>
+            <span class="muted">${c ? `${c.side === 'short' ? 'short' : 'long'} · zone ${px(c.zone_low)} – ${px(c.zone_high)} · target ${px(c.target)} · R:R ${rr(c.rr)} · score ${c.score ?? '—'}` : ''} · ${when}</span></div></div>`;
+        return `<div class="sp-verdict" data-ok="0"><span class="mark">${IC.cross}</span><div><b>${label}: stopped at ${esc(spStep(r.failed_at, mode === 'intraday'))}</b>
+            <span class="muted">${esc(r.reason || '')} · ${when}</span></div></div>`;
+    };
+    return one('swing', 'Swing scan') + one('intraday', 'Intraday scan');
+}
+
+function spTech(P) {
+    const st = P.stats;
+    if (!st) return '<div class="sp-skel">Not enough daily candles.</div>';
+    const last = P.quote.last, sma = st.sma || {}, ema = st.ema || {};
+    const row = (k, v, sub) => `<dt>${k}</dt><dd>${v}${sub ? `<small>${sub}</small>` : ''}</dd>`;
+    let h = '<dl class="sp-dl">';
+    ['20', '50', '200'].forEach((k) => { if (sma[k]) h += row(`${k}-day average`, px(sma[k].v), spSigned(sma[k].dist_pct, 1) + ' away'); });
+    ['9', '21'].forEach((k) => { if (ema[k] != null) h += row(`${k}-day EMA`, px(ema[k]), spSigned((last / ema[k] - 1) * 100, 1) + ' away'); });
+    if (st.rsi14 != null) h += row('RSI 14', st.rsi14.toFixed(1));
+    if (st.atr14 != null) h += row('ATR 14', px(st.atr14), st.atr_pct.toFixed(2) + '%');
+    if (st.volatility_20 != null) h += row('Volatility (20 sessions, a year)', st.volatility_20.toFixed(1) + '%');
+    if (st.avg_volume_20) h += row('Average volume (20 sessions)', volWords(st.avg_volume_20));
+    h += row('52-week high', px(st.high_52w), spDay(st.high_52w_date));
+    h += row('52-week low', px(st.low_52w), spDay(st.low_52w_date));
+    h += '</dl>';
+    const pv = st.pivots;
+    if (pv) {
+        const ks = ['S3', 'S2', 'S1', 'P', 'R1', 'R2', 'R3'];
+        const near = ks.reduce((b, k) => (Math.abs(pv[k] - last) < Math.abs(pv[b] - last) ? k : b), 'P');
+        h += `<div class="sp-sub">Pivots <span style="text-transform:none;letter-spacing:0;font-weight:400">· classic, from ${esc(spDay(pv.from))}; the nearest outlined</span></div>
+            <div class="sp-piv">${ks.map((k) => `<div data-k="${k}"${k === near ? ' data-near="1"' : ''}><span class="sp-k">${k}</span><b>${px(pv[k])}</b></div>`).join('')}</div>`;
+    }
+    return h;
+}
+
+function spReturns(P) {
+    const st = P.stats;
+    if (!st) return '<div class="sp-skel">Not enough daily candles.</div>';
+    const r = st.returns || {};
+    let h = `<div class="sp-rets">${['1D', '1W', '1M', '3M', '6M', 'YTD', '1Y'].map((k) =>
+        `<div><span class="sp-k">${k}</span><b>${spSigned(r[k], 1)}</b></div>`).join('')}</div>`;
+    const months = st.months || [];
+    if (months.length) {
+        const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        h += `<div class="sp-sub">Month by month</div><div class="sp-heat">${months.map((m) => {
+            const a = Math.min(1, Math.abs(m.r) / 10) * 55 + 8;
+            return `<div style="background:color-mix(in srgb, var(${m.r >= 0 ? '--up' : '--down'}) ${a.toFixed(0)}%, transparent)" title="${M[+m.m.slice(5) - 1]} ${m.m.slice(0, 4)}: ${(m.r >= 0 ? '+' : '') + m.r.toFixed(2)}%">
+                <span>${M[+m.m.slice(5) - 1]}</span>${(m.r >= 0 ? '+' : '') + m.r.toFixed(1)}</div>`;
+        }).join('')}</div>`;
+    }
+    return h + `<div class="muted" style="margin-top:8px">From ${st.sessions} daily candles since ${esc(spDay(st.from))}. The current month runs to the price above.</div>`;
+}
+
+function spOptions(P) {
+    const o = P.options;
+    if (!P.fo && !o) return '<div class="sp-skel">Not in F&amp;O: no options or futures trade on it.</div>';
+    if (!o || !o.summary || o.summary.spot == null) return `<div class="sp-skel">No option chain has been read for it yet. Chains are read for the indices and the
+        stocks in the options list.</div><div class="sp-acts"><button class="btn" type="button" data-sp-act="chain">Try the option chain</button></div>`;
+    const s = o.summary, num = (v, d = 0) => v == null ? '—' : (+v).toLocaleString('en-IN', { maximumFractionDigits: d });
+    const tiles = [
+        spStat('Expiry', esc(spDay(o.expiry)), s.dte != null ? `${s.dte} day${s.dte === 1 ? '' : 's'} left · lot ${num(s.lot)}` : ''),
+        spStat('ATM IV', s.atm_iv != null ? s.atm_iv.toFixed(1) + '%' : '—',
+            o.iv_rank != null ? `IV rank ${Math.round(o.iv_rank)} · percentile ${Math.round(o.iv_pctile)}` : `${o.iv_days} session(s) of history`),
+        spStat('PCR', s.pcr != null ? s.pcr.toFixed(2) : '—', s.pcr_vol != null ? `volume PCR ${s.pcr_vol.toFixed(2)}` : ''),
+        spStat('Max pain', px(s.max_pain), `ATM strike ${px(s.atm)}`),
+        spStat('Support (put OI)', px(s.support), s.support2 != null ? `next ${px(s.support2)}` : '', 'good'),
+        spStat('Resistance (call OI)', px(s.resistance), s.resistance2 != null ? `next ${px(s.resistance2)}` : '', 'bad'),
+        spStat('Call OI', num(s.ce_oi), s.ce_doi != null ? `${s.ce_doi >= 0 ? '+' : '−'}${num(Math.abs(s.ce_doi))} today` : ''),
+        spStat('Put OI', num(s.pe_oi), s.pe_doi != null ? `${s.pe_doi >= 0 ? '+' : '−'}${num(Math.abs(s.pe_doi))} today` : ''),
+    ];
+    let h = `<p class="sm-line" style="margin:0 0 10px">The chain reads <span class="bias" data-b="${esc(s.bias_label || 'neutral')}">${esc(s.bias_label || 'neutral')}</span>
+        <span class="muted">· read ${hhmm(o.ts)}</span></p><div class="oc-sum">${tiles.join('')}</div>`;
+    const days = o.days || [];
+    if (days.length > 2) {
+        h += `<div class="sp-sub">PCR, session by session</div>${spBars(days.map((x) => x.pcr), null, 'PCR by session', true)}
+            <div class="sp-axis"><span>${esc(spDay(days[0].session))}</span><span>${days[days.length - 1].pcr != null ? days[days.length - 1].pcr.toFixed(2) : ''}</span><span>${esc(spDay(days[days.length - 1].session))}</span></div>
+            <div class="sp-sub">ATM IV, session by session</div>${spBars(days.map((x) => x.atm_iv), null, 'ATM IV by session', true)}
+            <div class="sp-axis"><span>${esc(spDay(days[0].session))}</span><span>${days[days.length - 1].atm_iv != null ? days[days.length - 1].atm_iv.toFixed(1) + '%' : ''}</span><span>${esc(spDay(days[days.length - 1].session))}</span></div>`;
+    }
+    return h + '<div class="sp-acts"><button class="btn btn-primary" type="button" data-sp-act="chain">Open the option chain</button></div>';
+}
+
+function spFlow(P) {
+    const f = P.futures, sm = P.smart || {}, dv = sm.delivery, hist = sm.history || [], deals = sm.deal_list || [];
+    let h = '';
+    if (f) {
+        const rows = f.history || [];
+        h += `<div class="sp-sub" style="margin-top:0">Futures open interest</div>
+            <p class="sm-line" style="margin:0">${f.read ? `<b>${esc(f.read)}</b> on ${esc(spDay(f.day))}: ` : ''}OI ${Number(f.oi).toLocaleString('en-IN')}
+            ${f.oi_chg != null ? `(${f.oi_chg >= 0 ? '+' : '−'}${Math.abs(f.oi_chg).toLocaleString('en-IN')}${f.oi_chg_pct != null ? ', ' + spSigned(f.oi_chg_pct, 1) : ''})` : ''},
+            future at ${px(f.close)}.</p>
+            ${spBars(rows.map((r) => r.oi), rows.map((r, i) => (i && r.close != null && rows[i - 1].close != null ? (r.close >= rows[i - 1].close ? 'up' : 'down') : '')), 'Futures OI by session', true)}
+            <div class="sp-axis"><span>${esc(spDay(rows[0].day))}</span><span>bars: OI · green the future rose that day, red it fell</span><span>${esc(spDay(rows[rows.length - 1].day))}</span></div>`;
+    } else if (P.fo) h += '<p class="muted">No futures open interest held yet.</p>';
+    h += '<div class="sp-sub">Delivery</div>';
+    if (dv) {
+        h += `<p class="sm-line" style="margin:0"><span class="dread" data-r="${esc(dv.read)}">${esc(dv.read)}</span> ${esc(spDay(dv.day))}: delivery
+            <b>${dv.deliv_pct.toFixed(1)}%</b> against a ${dv.avg_pct.toFixed(1)}% average (${dv.ratio}×), volume ${dv.vol_ratio}× its average${dv.deliv_value_cr != null ? `, ₹${dv.deliv_value_cr} cr delivered` : ''}.</p>
+            <p class="muted" style="margin:4px 0 0">${esc(READ_NOTE[dv.read] || '')}</p>`;
+        const rows = hist.filter((r) => r.deliv_pct != null);
+        if (rows.length > 2) h += spBars(rows.map((r) => r.deliv_pct), rows.map((r) => (r.close != null && r.prev_close ? (r.close >= r.prev_close ? 'up' : 'down') : '')), 'Delivery % by session')
+            + `<div class="sp-axis"><span>${esc(spDay(rows[0].day))}</span><span>bars: delivery % · green an up day</span><span>${esc(spDay(rows[rows.length - 1].day))}</span></div>`;
+    } else h += '<p class="muted" style="margin:0">No delivery data for it yet.</p>';
+    h += '<div class="sp-sub">Bulk and block deals <span style="text-transform:none;letter-spacing:0;font-weight:400">· last 30 days</span></div>';
+    h += deals.length ? `<ul class="sp-list">${deals.slice(0, 10).map((x) => `<li><span><span class="num">${esc(spDay(x.day))}</span>
+            <span class="rx" data-dir="${x.side === 'buy' ? 'up' : 'down'}">${esc(x.side)}</span> ${esc(x.client)}
+            <span class="muted">${esc(x.ctype || '')} · ${esc(x.kind || '')}</span></span><span class="num">${crPlain(x.value_cr)}${x.price ? ` @ ${px(x.price)}` : ''}</span></li>`).join('')}</ul>`
+        : '<p class="muted" style="margin:0">None.</p>';
+    return h;
+}
+
+function spEvents(P) {
+    const E = P.events || {}, up = E.upcoming || [], past = E.past || [];
+    const today = new Date(todayIST() + 'T00:00:00+05:30');
+    const li = (e, future) => {
+        const days = Math.round((new Date(e.day + 'T00:00:00+05:30') - today) / 864e5);
+        return `<li><span>${esc(e.purpose)}</span><span class="num">${esc(spDay(e.day))}<span class="muted"> · ${future ? (days === 0 ? 'today' : `in ${days}d`) : `${-days}d ago`}</span></span></li>`;
+    };
+    if (!up.length && !past.length) return '<div class="sp-skel">No events on the calendar for it.</div>';
+    return (up.length ? `<div class="sp-sub" style="margin-top:0">Coming up</div><ul class="sp-list">${up.map((e) => li(e, true)).join('')}</ul>`
+        : '<p class="muted" style="margin:0 0 6px">Nothing announced yet.</p>')
+        + (past.length ? `<div class="sp-sub">Before</div><ul class="sp-list">${past.slice(0, 6).map((e) => li(e, false)).join('')}</ul>` : '');
+}
+
+function spHistory(P) {
+    const sym = P.symbol, Z = P.zones || [], A = P.alerts || [], I = P.ideas || [], D = P.demo || [], O = P.orders || [], G = P.signals || [];
+    if (![Z, A, I, D, O, G].some((x) => x.length)) return `<div class="empty"><b>Nothing yet</b>No zone, alert, option idea or trade has
+        involved ${esc(sym)}. When a scan finds a setup in it, or you watch a zone of your own (Plan a trade), it starts here.</div>`;
+    const table = (head, rows) => `<div class="sp-tw"><table><thead><tr>${head.map((x) => `<th${x[1] ? ' class="r"' : ''}>${x[0]}</th>`).join('')}</tr></thead>
+        <tbody>${rows.join('')}</tbody></table></div>`;
+    let h = '';
+    // A summary of the trades taken: swing and intraday (zones that triggered), options (ideas), the demo account's money.
+    const closed = (ms) => Z.filter((z) => ms.includes(z.mode || 'swing') && ['won', 'lost', 'closed'].includes(z.status) && z.trigger && z.trigger.r != null);
+    const sum = (rows) => rows.reduce((t, z) => t + (+z.trigger.r || 0), 0);
+    const tiles = [];
+    ['swing', 'intraday'].forEach((m) => {
+        const c = closed([m]);
+        if (c.length) tiles.push(spStat(MODE_NAME[m] + ' trades', `${c.filter((z) => z.status === 'won').length}/${c.length} won`,
+            `${sum(c) >= 0 ? '+' : ''}${sum(c).toFixed(2)}R in all`, sum(c) >= 0 ? 'good' : 'bad'));
+    });
+    const ic = I.filter((i) => i.r != null && i.status !== 'open');
+    if (ic.length) {
+        const r = ic.reduce((t, i) => t + (+i.r || 0), 0);
+        tiles.push(spStat('Option ideas', `${ic.filter((i) => i.status === 'won').length}/${ic.length} won`, `${r >= 0 ? '+' : ''}${r.toFixed(2)}R in all`, r >= 0 ? 'good' : 'bad'));
+    }
+    const dc = D.filter((p) => p.status === 'closed');
+    if (D.length) {
+        const net = dc.reduce((t, p) => t + (+p.net || 0), 0);
+        tiles.push(spStat('Demo account', moneyHidden ? MONEY_MASK : rs(net), `${dc.length} closed · ${D.filter((p) => p.status === 'open').length} open`, net >= 0 ? 'good' : 'bad'));
+    }
+    if (tiles.length) h += `<div class="sp-kpis" style="margin-bottom:14px">${tiles.join('')}</div>`;
+    if (Z.length) {
+        h += '<div class="sp-sub" style="margin-top:0">Zones and trades</div>' + table(
+            [['Set'], ['Mode'], ['Status'], ['Zone', 1], ['Entry', 1], ['Stop', 1], ['Target', 1], ['Result', 1], ['Note']],
+            Z.map((z) => {
+                const t = z.trigger || {}, m = z.mode || 'swing';
+                const trade = (m === 'swing' && t.paper) || (m === 'intraday' && ['triggered', 'won', 'lost', 'closed'].includes(z.status));
+                const label = { triggered: trade ? 'open' : 'triggered', won: 'target', lost: 'stop', closed: 'squared off' }[z.status] || z.status;
+                return `<tr${trade ? ` data-ref="${m}:${z.id}" data-click="${esc(sym)}"` : ''}><td class="num">${hhmm(z.created_at)}</td>
+                    <td>${esc(MODE_NAME[m] || m)} ${sideTag(z.side)}</td><td>${tradeChip(z.status, label, z.skipped)}</td>
+                    <td class="r num">${px(z.zone_low)} – ${px(z.zone_high)}</td><td class="r num">${px(t.entry)}</td><td class="r num">${px(t.stop)}</td>
+                    <td class="r num">${px(t.target != null ? t.target : z.target)}</td>
+                    <td class="r num">${z.status === 'triggered' && trade ? lpR(sym, t, z.side, rfmt(t.r_open)) : rfmt(t.r)}</td>
+                    <td class="muted" style="white-space:normal;min-width:180px">${esc(z.note || '')}</td></tr>`;
+            }));
+    }
+    if (I.length) {
+        h += '<div class="sp-sub">Option ideas</div>' + table(
+            [['When'], ['Contract'], ['View'], ['Entry', 1], ['Stop', 1], ['Target', 1], ['Status'], ['Result', 1]],
+            I.map((i) => `<tr data-ref="options:${i.id}" data-oc-sym="${esc(sym)}"><td class="num">${hhmm(i.created_at)}</td>
+                <td><span class="sym">${px(i.strike)} ${esc(i.side || '')}</span> <span class="muted">${esc(spDay(i.expiry))}</span></td>
+                <td>${sideTag(i.direction === 'short' ? 'short' : 'long')} ${esc(i.direction || '')}</td>
+                <td class="r num">${px(i.entry)}</td><td class="r num">${px(i.stop)}</td><td class="r num">${px(i.target)}</td>
+                <td>${tradeChip(i.status, { won: 'target', lost: 'stop' }[i.status] || i.status)}</td>
+                <td class="r num">${rfmt(i.r != null ? i.r : i.r_open)}</td></tr>`));
+    }
+    if (D.length) {
+        h += '<div class="sp-sub">Demo account</div>' + table(
+            [['Entry'], ['Mode'], ['Instrument'], ['Qty', 1], ['Entry', 1], ['Exit', 1], ['Status'], ['Net P&amp;L', 1]],
+            D.map((p) => `<tr${p.ref ? ` data-ref="${esc(p.ref)}" data-click="${esc(sym)}"` : ''}><td class="num">${dmWhen(p.entry_time)}</td>
+                <td>${esc(MODE_NAME[p.mode] || p.mode)} ${sideTag(p.direction === 'short' || p.side === 'sell' ? 'short' : 'long')}</td>
+                <td>${esc(p.instrument || sym)}</td><td class="r num">${p.qty != null ? Number(p.qty).toLocaleString('en-IN') : '—'}</td>
+                <td class="r num">${px(p.entry)}</td><td class="r num">${px(p.exit)}</td><td>${tradeChip(p.status === 'open' ? 'triggered' : p.status, p.status)}</td>
+                <td class="r num">${p.status === 'closed' ? rsSigned(p.net) : p.unreal != null ? rsSigned(p.unreal) + ' <span class="muted">open</span>' : '—'}</td></tr>`));
+    }
+    if (O.length) {
+        h += '<div class="sp-sub">Live orders</div>' + table(
+            [['When'], ['Mode'], ['Instrument'], ['Status'], ['Qty', 1], ['Fill', 1], ['Exit', 1], ['Net', 1]],
+            O.map((o) => `<tr><td class="num">${dmWhen(o.entry_time || '')}</td><td>${esc(MODE_NAME[o.mode] || o.mode)}</td><td>${esc(o.instrument || sym)}</td>
+                <td>${tradeChip(o.status, o.status)}</td><td class="r num">${o.qty ?? '—'}</td><td class="r num">${px(o.fill)}</td>
+                <td class="r num">${px(o.exit)}</td><td class="r num">${o.net != null ? rsSigned(o.net) : '—'}</td></tr>`));
+    }
+    if (A.length) {
+        h += '<div class="sp-sub">Alerts</div>' + table(
+            [['When'], ['Mode'], ['Kind'], ['Entry', 1], ['Stop', 1], ['Target', 1], ['R:R', 1], ['Message']],
+            A.map((x) => `<tr${x.kind !== 'rejected' && x.zone_id ? ` data-ref="${esc(x.mode || 'swing')}:${x.zone_id}" data-click="${esc(sym)}"` : ''}>
+                <td class="num">${hhmm(x.choch_time || x.created_at)}</td><td>${esc(MODE_NAME[x.mode || 'swing'] || x.mode)} ${sideTag(x.side)}</td>
+                <td>${tradeChip(x.kind === 'entry' ? 'triggered' : x.kind, x.kind)}</td><td class="r num">${px(x.entry)}</td><td class="r num">${px(x.stop)}</td>
+                <td class="r num">${px(x.target)}</td><td class="r num">${['won', 'lost'].includes(x.kind) ? rfmt(x.rr) : rr(x.rr)}</td>
+                <td class="muted" style="white-space:normal;min-width:200px">${esc(x.message || '')}</td></tr>`));
+    }
+    if (G.length) {
+        h += '<div class="sp-sub">Price-action signals</div>' + table([['Candle'], ['Timeframe'], ['Pattern'], ['Close', 1], ['At the zone']],
+            G.map((g) => `<tr><td class="num">${hhmm(g.bar_time)}</td><td>${esc(g.timeframe)}</td><td>${esc(g.label || g.pattern)}</td>
+                <td class="r num">${px(g.close)}</td><td>${g.at_zone ? IC.check : ''}</td></tr>`));
+    }
+    return h;
+}
+
+function spPeers(P) {
+    const peers = P.peers || [];
+    if (!peers.length) return `<div class="sp-skel">${P.industry ? 'No other stock in the universe shares its industry.' : 'Its industry is not known (it is outside the universe).'}</div>`;
+    const day = (peers.find((p) => p.day) || {}).day;
+    return `<p class="muted" style="margin:0 0 8px">${esc(P.industry)} · their last session${day ? ' (' + esc(spDay(day)) + ')' : ''}, from NSE’s bhavcopy. Open one for its page.</p>
+        <div class="sp-tw"><table><thead><tr><th>Stock</th><th>List</th><th class="r">Close</th><th class="r">Change</th><th class="r">Delivery</th><th class="r">Turnover</th></tr></thead>
+        <tbody>${peers.map((p) => `<tr data-click="${esc(p.symbol)}"><td><span class="sym">${esc(p.symbol)}</span><span class="sub">${esc(p.name || '')}</span></td>
+            <td>${esc(p.tag || '')}</td><td class="r num">${px(p.close)}</td><td class="r num">${spSigned(p.change_pct)}</td>
+            <td class="r num">${p.deliv_pct != null ? p.deliv_pct.toFixed(1) + '%' : '—'}</td>
+            <td class="r num">${p.turnover_cr != null ? crPlain(p.turnover_cr) : '—'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 /* Full view borrows the drawer's own chart controls (timeframe, range,
@@ -4242,7 +5034,7 @@ function lwcMake(wrap) {
     const el = wrap.firstChild, T = lwcTheme(el);
     const c = { wrap, el, full, tip: wrap.querySelector('.tip'), chart: LightweightCharts.createChart(el, lwcOptions(T, full)),
                 key: null, spec: null, n: 0, extra: [], T };
-    c.candle = c.chart.addCandlestickSeries({
+    c.candle = c.chart.addSeries(LightweightCharts.CandlestickSeries, {
         borderVisible: false, priceLineVisible: true, lastValueVisible: true, priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
         // Levels the spec asks to keep in view (a near target, the zone) widen the price range.
         autoscaleInfoProvider: (base) => {
@@ -4251,10 +5043,10 @@ function lwcMake(wrap) {
             return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...c.extra), maxValue: Math.max(r.priceRange.maxValue, ...c.extra) } };
         },
     });
-    const line = (o) => c.chart.addLineSeries({ priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...o });
+    const line = (o) => c.chart.addSeries(LightweightCharts.LineSeries, { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...o });
     c.vwap = line({ lineWidth: 2, lastValueVisible: true, title: 'VWAP' });
     c.bbU = line({ lineWidth: 1 }); c.bbL = line({ lineWidth: 1 }); c.bbM = line({ lineWidth: 1, lineStyle: 2 });
-    c.delta = c.chart.addHistogramSeries({ priceScaleId: 'delta', priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'volume' } });
+    c.delta = c.chart.addSeries(LightweightCharts.HistogramSeries, { priceScaleId: 'delta', priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'volume' } });
     c.cum = line({ priceScaleId: 'cum', lineWidth: 2 });
     ['delta', 'cum'].forEach((id) => c.chart.priceScale(id).applyOptions({ scaleMargins: { top: 0.76, bottom: 0.03 }, visible: false }));
     c.layer = new LwcLayer();
@@ -4360,7 +5152,7 @@ function paintChart(spec, wrap) {
         });
     }
     marks.sort((x, y) => (x.time > y.time ? 1 : x.time < y.time ? -1 : 0));
-    c.candle.setMarkers(marks);
+    (c.marks || (c.marks = LightweightCharts.createSeriesMarkers(c.candle))).setMarkers(marks);
     c.layer.set({
         font: T.font, ink: T.ink, strong: T.strong, cum: T.cum, last: B[N - 1].c, delta: showDelta, cumShown: showDelta && view !== 'bars',
         deltaLabel: view === 'cumulative' ? 'Δ est.' : 'Δ est.' + (I.delta_source === 'bar' ? ' (from bars)' : ''),
@@ -5569,7 +6361,15 @@ function trxRender() {
         + box('Capital', d.capital ? rs(d.capital) : '—', `${st.capital ? 'set in Settings' : d.dhan ? 'Dhan available balance' : 'connect Dhan or set it'} · `
               + (st.sizing === 'lots' ? `${st.lots} lot${st.lots === 1 ? '' : 's'} a trade` : `${st.risk_pct}% risk a trade`))
         + box('Today', rsSigned(d.book.day_pnl), `${d.book.today} entr${d.book.today === 1 ? 'y' : 'ies'} · ${d.book.open} open · loss limit ${st.daily_loss_pct}%`, d.book.day_pnl < 0 ? 'bad' : '')
-        + box('Shadow so far', rsSigned(d.totals.shadow.net), `${d.totals.shadow.trades} closed · real ${rsSigned(d.totals.real.net)} over ${d.totals.real.trades}`);
+        + box('Shadow so far', rsSigned(d.totals.shadow.net), `${d.totals.shadow.trades} closed · real ${rsSigned(d.totals.real.net)} over ${d.totals.real.trades}`)
+        // Real fills against the paper trades they copy (exec_fills): R a trade lost to the spread and slippage.
+        + (() => {
+            const F = d.fills || {}, ms = Object.keys(F);
+            if (!ms.length) return box('Fills against paper', '—', 'no real fills yet: compared once orders fill');
+            const n = ms.reduce((t, m) => t + F[m].orders, 0), avg = ms.reduce((t, m) => t + F[m].entry_r * F[m].orders, 0) / n;
+            return box('Fills against paper', `${avg >= 0 ? '−' : '+'}${Math.abs(avg).toFixed(2)}R`, ms.map((m) => `${MODE_NAME[m] || m} ${F[m].orders}: entry ${F[m].entry_r >= 0 ? '−' : '+'}${Math.abs(F[m].entry_r).toFixed(2)}R`
+                + (F[m].exit_r != null ? `, exit ${F[m].exit_r >= 0 ? '−' : '+'}${Math.abs(F[m].exit_r).toFixed(2)}R` : '')).join(' · '), avg > 0.05 ? 'bad' : '');
+        })();
     $('trx-modes').innerHTML = ['swing', 'intraday', 'options'].map((m) => {
         const lvl = d.levels[m], g = d.gates[m];
         return `<div class="trx-mode" data-level="${lvl}"><h3>${MODE_NAME[m]} ${lvl !== 'off' ? `<span class="trx-live" data-l="${lvl}">${lvl === 'shadow' ? 'SHADOW' : 'LIVE'}</span>` : ''}</h3>
@@ -6066,7 +6866,7 @@ async function appSettingsModal(focus) {
     const names = { telegram_token: 'bot token', telegram_chat_id: 'chat ID', dhan_client_id: 'client ID', dhan_pin: 'PIN', dhan_totp: 'TOTP secret',
                     data_source: 'price data', live_watch_delay: 'delay with Dhan', watch_delay: 'delay with yfinance', log_level: 'log level',
                     intraday_square_off: 'intraday square-off', nse_cts_end_fo: "F&O stocks' trading end", nse_closes_final: 'official closes out',
-                    nse_fo_close: 'F&O close', nse_cas_start: "the auction's first day" };
+                    nse_fo_close: 'F&O close', nse_cas_start: "the auction's first day", heartbeat_url: 'watchdog address' };
     const foot = (keys) => {
         const env = keys.filter((k) => F[k].source === 'env').map((k) => names[k]);
         const here = keys.filter((k) => F[k].source === 'app');
@@ -6083,7 +6883,11 @@ async function appSettingsModal(focus) {
             ${status(C.telegram_configured, C.telegram_configured ? `Sending as @${esc(tok.bot || 'your bot')}` : tok.set && !tok.bot ? 'Telegram did not accept the bot token' : 'Not set up yet')}
             ${field('telegram_token', 'Bot token', secret('telegram_token', 'From @BotFather: 123456789:AA…'))}
             ${field('telegram_chat_id', 'Chat ID', text('telegram_chat_id', 'Your chat, a group (−…) or @channel'))}
-            ${foot(['telegram_token', 'telegram_chat_id'])}</div>
+            ${foot(['telegram_token', 'telegram_chat_id'])}
+            ${field('heartbeat_url', 'Watchdog ping address', secret('heartbeat_url', 'https://hc-ping.com/…'))}
+            <p class="apps-foot">Optional. The app pings it every minute; a service off the Pi (healthchecks.io, free) alerts you when the
+                pings stop, as after a power or network cut, when this Telegram goes quiet with the Pi.</p>
+            ${foot(['heartbeat_url'])}</div>
         <div class="apps-pane" data-pane="dhan" hidden>
             ${status(D.live, esc(D.message || '') + (D.mode === 'auto' ? ' · automatic login' : D.mode === 'token' ? ' · pasted token' : ''))}
             ${field('dhan_client_id', 'Client ID', text('dhan_client_id', 'e.g. 1100012345', 'numeric'))}
@@ -7114,10 +7918,10 @@ function dmcDraw() {
     }
     if (!c.series.bal) {
         const fmt = { type: 'custom', formatter: (v) => rsShort(v), minMove: 1 };
-        c.series.base = c.chart.addLineSeries({ lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
-        c.series.bal = c.chart.addLineSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4, priceFormat: fmt });
-        c.series.now = c.chart.addLineSeries({ lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
-        c.series.bars = c.chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false, priceFormat: fmt });
+        c.series.base = c.chart.addSeries(LightweightCharts.LineSeries, { lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
+        c.series.bal = c.chart.addSeries(LightweightCharts.LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4, priceFormat: fmt });
+        c.series.now = c.chart.addSeries(LightweightCharts.LineSeries, { lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: fmt });
+        c.series.bars = c.chart.addSeries(LightweightCharts.HistogramSeries, { priceLineVisible: false, lastValueVisible: false, priceFormat: fmt });
         c.series.bal.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: 0.08 } });
         c.fill = new LwlBetween();
         c.series.bal.attachPrimitive(c.fill);
@@ -7138,7 +7942,7 @@ function dmcDraw() {
     c.series.bal.setData(line ? pts.slice(0, real).map((p, i) => ({ time: i, value: p.v })) : []);
     c.series.now.applyOptions({ color: T.accent });
     c.series.now.setData(line && isNow ? [{ time: n - 2, value: pts[n - 2].v }, { time: n - 1, value: pts[n - 1].v }] : []);
-    c.series.bal.setMarkers(line ? pts.slice(0, real).map((p, i) => [p, i]).filter(([p]) => p.kind !== 'start')
+    (c.marks || (c.marks = LightweightCharts.createSeriesMarkers(c.series.bal))).setMarkers(line ? pts.slice(0, real).map((p, i) => [p, i]).filter(([p]) => p.kind !== 'start')
         .map(([p, i]) => ({ time: i, position: 'inBar', shape: 'circle', size: p.kind !== 'trade' ? 0.9 : 0.6,
                             color: p.kind !== 'trade' ? T.warn : p.amount >= 0 ? T.good : T.bad })) : []);
     c.series.bars.setData(line ? [] : pts.map((p, i) => ({ time: i, value: p.v, color: lwcAlpha(p.v >= 0 ? T.good : T.bad, 0.85) })));
@@ -8069,7 +8873,7 @@ function ocDayPaint(se) {
     slot.replaceWith(c.host);
     if (!c.series.spot) {
         const mk = (id, top, bottom) => {
-            const sr = c.chart.addLineSeries({ priceScaleId: id, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+            const sr = c.chart.addSeries(LightweightCharts.LineSeries, { priceScaleId: id, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
             c.chart.priceScale(id).applyOptions({ scaleMargins: { top, bottom }, visible: false });
             return sr;
         };
@@ -8273,11 +9077,13 @@ async function renderOptRules(host) {
     host.innerHTML = `<div class="otune" id="otune">${groups.map(([name, ks]) => `<div class="tz-group"><h3>${esc(name)}</h3>
             <div class="tz-cards">${ks.map(optCard).join('')}</div></div>`).join('')}</div>
         <div class="otune-bar"><span class="muted" id="otune-n"></span>
+            <button type="button" class="rl-lock" data-rlock></button>
             <button class="btn" type="button" id="o-rules-reset" title="Fill in the defaults (not saved until Save)">Defaults</button>
             <button class="btn btn-primary" type="button" id="o-rules-save">Save rules</button></div>
         <p class="hint">Entries from ${O.rules.start}; everything still open is squared off at ${O.rules.square_off}.</p>`;
     host.querySelectorAll('[data-stepper]').forEach(stepperEnds);
     optCount();
+    rlPaint();
     const box = $('otune');
     box.addEventListener('input', (e) => { const k = e.target.dataset.orule; if (k) optSet(k, +e.target.value, false); });
     box.addEventListener('change', (e) => { const sw = e.target.closest('[data-osw]'); if (sw) optSet(sw.dataset.osw, sw.getAttribute('aria-checked') === 'true' ? 1 : 0, false); });
@@ -8288,7 +9094,7 @@ async function renderOptRules(host) {
     });
     $('o-rules-reset').addEventListener('click', () => Object.keys(O.tunable).forEach((k) => optSet(k, O.tunable[k].default, true)));
     $('o-rules-save').addEventListener('click', async () => {
-        try { await api('/api/options/rules', optVals); toast('Idea rules saved'); refresh(); loadOptions(); renderOptRules(host); }
+        try { await rulesApi('/api/options/rules', optVals); toast('Idea rules saved'); refresh(); loadOptions(); renderOptRules(host); }
         catch (e) { toast(e.message); }
     });
 }
@@ -8578,8 +9384,8 @@ function equityDraw(box, pts, now) {
     if (c.host.parentNode !== box) { box.innerHTML = ''; lwlInto(c, box); }
     if (!c.series.main) {
         const fmtR = { type: 'custom', formatter: (v) => sgnR(v, 1), minMove: 0.01 };
-        c.series.main = c.chart.addLineSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 3, priceFormat: fmtR });
-        c.series.now = c.chart.addLineSeries({ lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, priceFormat: fmtR });
+        c.series.main = c.chart.addSeries(LightweightCharts.LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 3, priceFormat: fmtR });
+        c.series.now = c.chart.addSeries(LightweightCharts.LineSeries, { lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: true, priceFormat: fmtR });
         c.zero = c.series.main.createPriceLine({ price: 0, lineWidth: 1, lineStyle: 0, axisLabelVisible: false });
     }
     c.redraw = () => equityDraw(box, pts, now);
@@ -8795,9 +9601,10 @@ function renderPerf() {
 
 /* The change log: each entry with what moved in it ('Final R:R (5m) 2 → 2.5'), named as the tuners
    and App settings name them; the autopilot's nested limits by their path; no override (null) as
-   'default'. Older entries page in
-   below the newest 40, and stay while the panel reloads. */
-const LOG_OLDER = { rows: [], more: null };
+   'default'. The panel brings the newest 40; the older ones are fetched behind them (200 at a time). Every entry
+   seen is kept by its id while the page is open, so the table pages and searches over the whole log like every
+   other table, and new entries pushing the newest 40 along leave no gap. */
+const LOG_SEEN = new Map(), LOG_OLDER = { more: null, loading: false, retryAt: 0 };
 const flatLog = (o, p = '', out = {}) => {
     if (o && typeof o === 'object' && !Array.isArray(o)) Object.entries(o).forEach(([k, v]) => flatLog(v, p ? `${p}.${k}` : k, out));
     else if (p) out[p] = o;
@@ -8824,26 +9631,28 @@ function logDiff(r) {
         items.length > 6 ? `<br>+${items.length - 6} more` : ''}</div>`;
 }
 function renderChangeLog() {
-    const first = LAB.log.length ? Math.min(...LAB.log.map((r) => r.id)) : Infinity;
-    const rows = LAB.log.concat(LOG_OLDER.rows.filter((r) => r.id < first));
-    $('ap-log').innerHTML = rows.length ? rows.map((r) => `<tr><td class="num">${hhmm(r.ts)}</td><td>${esc(r.mode === 'app' ? 'app settings' : r.mode)}</td>
+    LAB.log.forEach((r) => LOG_SEEN.set(r.id, r));
+    if (LOG_OLDER.more === null) LOG_OLDER.more = !!LAB.log_more;
+    const rows = [...LOG_SEEN.values()].sort((x, y) => y.id - x.id);
+    const shown = paged('aplog', rows);
+    $('ap-log').innerHTML = shown.map((r) => `<tr><td class="num">${hhmm(r.ts)}</td><td>${esc(r.mode === 'app' ? 'app settings' : r.mode)}</td>
         <td>${esc(r.action)}${r.by === 'you' ? ' <span class="muted">(you)</span>' : ''}${logDiff(r)}</td><td class="note">${esc(r.why || '')}</td></tr>`).join('')
-        : '<tr><td colspan="4"><div class="empty"><b>No changes yet</b>Your Tune… and App settings saves, and the autopilot\'s proposals, promotions, rollbacks and pauses, are logged here.</div></td></tr>';
-    const more = LOG_OLDER.rows.length ? LOG_OLDER.more : LAB.log_more;
-    $('ap-log-more').innerHTML = more ? '<button class="btn-link" type="button" id="ap-log-older">Show older</button>' : '';
+        || (rows.length ? '' : '<tr><td colspan="4"><div class="empty"><b>No changes yet</b>Your Tune… and App settings saves, and the autopilot\'s proposals, promotions, rollbacks and pauses, are logged here.</div></td></tr>');
+    if (LOG_OLDER.more && rows.length && Date.now() >= LOG_OLDER.retryAt) logLoadOlder();
 }
-$('ap-log-more').addEventListener('click', async (e) => {
-    const b = e.target.closest('#ap-log-older');
-    if (!b || !LAB) return;
-    const all = LAB.log.concat(LOG_OLDER.rows);
-    b.disabled = true;
+async function logLoadOlder() {
+    if (LOG_OLDER.loading || !LAB) return;
+    LOG_OLDER.loading = true;
     try {
-        const d = await api(`/api/lab/log?before=${Math.min(...all.map((r) => r.id))}&limit=50`);
-        LOG_OLDER.rows.push(...d.log);
-        LOG_OLDER.more = d.more;
-        renderChangeLog();
-    } catch (err) { b.disabled = false; toast('Could not load older changes: ' + err.message); }
-});
+        const d = await api(`/api/lab/log?before=${Math.min(...LOG_SEEN.keys())}&limit=200`);
+        d.log.forEach((r) => LOG_SEEN.set(r.id, r));
+        LOG_OLDER.more = d.more && d.log.length > 0;
+    } catch (err) {
+        LOG_OLDER.retryAt = Date.now() + 60000;  // a panel reload after a minute tries again
+        toast('Could not load older changes: ' + err.message);
+    } finally { LOG_OLDER.loading = false; }
+    if (LAB) renderChangeLog();
+}
 
 function renderAutopilot() {
     if (!LAB) return;
@@ -8854,7 +9663,7 @@ function renderAutopilot() {
         const v = vals[k], b = base ? base[k] : undefined, changed = base && b != null && Math.abs(v - b) > 1e-9;
         return `<span>${esc(PARAM_LABEL[k] || k)} <b${changed ? ' style="color:var(--accent)"' : ''}>${fmtParam(k, v)}</b>${changed ? ` <span class="muted">(was ${fmtParam(k, b)})</span>` : ''}</span>`;
     }).join('')}</div>`;
-    let html = `<div class="ap-mode"><div class="ap-row"><b>Current rules</b>${thr(a.current)}</div>`;
+    let html = `<div class="ap-mode"><div class="ap-row"><b>Current rules</b> <button type="button" class="rl-lock" data-rlock></button>${thr(a.current)}</div>`;
     if (a.paused) {
         html += `<div class="ap-card" data-tone="warn"><b>${IC.pause} ${MODE_LABEL[pfMode]} entry alerts are paused</b>
             <span>Trades are still recorded and followed; Telegram stays quiet until they recover or you resume.</span>
@@ -8887,6 +9696,7 @@ function renderAutopilot() {
     }
     if (!a.paused) html += `<div class="ap-row"><button class="btn-link" type="button" data-ap="pause" data-on="1">Pause ${MODE_LABEL[pfMode].toLowerCase()} alerts</button></div>`;
     $('ap-box').innerHTML = html + '</div>';
+    rlPaint();
     renderChangeLog();
     $('perf-badge').innerHTML = Object.values(LAB.modes).some((m) => m.paused) ? IC.pause : Object.values(LAB.modes).some((m) => m.awaiting) ? '•' : '';
 }
@@ -9254,9 +10064,11 @@ function openPolicy() {
         </div>
         <div id="ap-mode">${polModeHtml()}</div>
         <div class="otune-bar"><span class="muted" id="ap-n"></span>
+            <button type="button" class="rl-lock" data-rlock></button>
             <button class="btn" type="button" id="pol-reset">Undo edits</button>
             <button class="btn btn-primary" type="button" id="pol-save">Save</button></div></div>`);
     const box = $('pol');
+    rlPaint();
     box.querySelectorAll('[data-stepper]').forEach(stepperEnds);
     const count = () => { const n = polChanges(); $('ap-n').innerHTML = n ? `<b>${n}</b> change${n === 1 ? '' : 's'} not saved yet` : 'Your saved settings';
         $('pol-reset').disabled = !n; };
@@ -9316,7 +10128,7 @@ function openPolicy() {
             }
             const body = { mode: d.mode, max_steps: d.max_steps, shadow_days: d.shadow_days, cooldown_days: d.cooldown_days,
                 pause_r: d.pause_r, rollback_r: d.rollback_r, limits };
-            try { await api('/api/autopilot/policy', body); pfMode = POL.mode; closeModal(); toast('Autopilot settings saved'); loadPerf(); }
+            try { await rulesApi('/api/autopilot/policy', body); pfMode = POL.mode; closeModal(); toast('Autopilot settings saved'); loadPerf(); }
             catch (err) { toast(err.message); }
         }
     });
@@ -9339,7 +10151,7 @@ $('perf-view').addEventListener('click', async (e) => {
             : { title: 'Apply the proposed rules now?', body: (inShadow
                 ? `It is still in its shadow run (${sh.days || 0}${need ? ` of ${need}` : ''} sessions): applying now skips the rest of that test. `
                 : '') + 'The next scan uses them; the change log keeps the old ones, so you can undo it.', ok: 'Apply' })) return;
-        try { await api('/api/autopilot/' + action, { mode: pfMode, paused: ap.dataset.on === '1', since: prop ? prop.since : undefined }); toast('Done'); refresh(); loadPerf(); }
+        try { await rulesApi('/api/autopilot/' + action, { mode: pfMode, paused: ap.dataset.on === '1', since: prop ? prop.since : undefined }); toast('Done'); refresh(); loadPerf(); }
         catch (er) { toast(er.message); }
         return;
     }
@@ -9421,6 +10233,7 @@ async function refresh() {
         S = await api('/api/state');
         if (!WS.up && 'mood' in S) applyMood(S.mood);
         render();
+        rlPaint();
     } catch (e) {
         $('market-text').textContent = '';
         $('market-pill').title = 'Server unreachable'; $('market-pill').setAttribute('aria-label', 'Server unreachable');
@@ -9518,7 +10331,8 @@ document.addEventListener('click', (e) => {
     const row = e.target.closest('tr[data-click]');
     if (row) openStock(row.dataset.click, undefined, row.dataset.tf);
 });
-$('dw-close').addEventListener('click', closeDrawer);
+$('dw-close').addEventListener('click', drawerBack);
+$('dw-search').addEventListener('click', () => openCmdk(''));
 $('scrim').addEventListener('click', closeDrawer);
 
 /* ------------------------------------------------- filters + sorting */
@@ -9582,6 +10396,61 @@ async function apiConfirmed(path, body, why = 'Where alerts go and how Dhan is l
             }
         }
         throw new Error('Not changed: the password was not right three times');
+    }
+}
+
+/* The rules lock: the three tuners' rules and the autopilot's settings frozen, so a rule set builds up a record of its
+   own. The server refuses a change while they are locked, and the autopilot's proposals wait for you. The lock icon
+   locks at once; unlocking asks for a passkey or the password every time, however recent the sign-in, and lasts a
+   quarter of an hour: then they lock again by themselves. */
+const RL_IC = {
+    shut: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>',
+    open: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 014.9-.7"/></svg>',
+};
+let rlTimer = null;
+const rlState = () => (S && S.rules_lock) || { locked: false, open: true, until: null };
+function rlPaint() {
+    const L = rlState(), shut = !L.open;
+    const at = L.until ? new Date(L.until * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+    const text = shut ? 'Rules locked' : L.locked ? `Unlocked until ${at}` : 'Lock the rules';
+    const tip = shut ? 'The tuner rules and the autopilot settings are locked. Click to unlock them for 15 minutes (a passkey or your password).'
+        : L.locked ? `Unlocked for now: they lock again by themselves at ${at}. Click to lock them now.`
+        : 'Lock the tuner rules and the autopilot settings: nothing changes them until you unlock them with a passkey or your password';
+    document.querySelectorAll('[data-rlock]').forEach((b) => {
+        b.innerHTML = (shut || !L.locked ? RL_IC.shut : RL_IC.open) + `<span>${esc(text)}</span>`;
+        b.title = tip;
+        b.setAttribute('aria-label', tip);
+        b.setAttribute('aria-pressed', String(shut));
+        b.dataset.state = shut ? 'locked' : L.locked ? 'open' : 'none';
+    });
+    clearTimeout(rlTimer);
+    if (L.until) rlTimer = setTimeout(refresh, Math.max(1000, L.until * 1000 - Date.now() + 1000));   // locked again by then
+}
+async function rlUnlock() {
+    S.rules_lock = await apiConfirmed('/api/rules/lock', { locked: false },
+        'Unlocking the tuner rules and the autopilot settings asks for your password (or a passkey) every time. They lock again by themselves after 15 minutes.');
+    rlPaint();
+    toast('Rules unlocked for 15 minutes');
+}
+document.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-rlock]')) return;
+    e.preventDefault();
+    try {
+        if (rlState().open) { S.rules_lock = await api('/api/rules/lock', { locked: true }); rlPaint(); toast('Rules locked'); }
+        else await rlUnlock();
+    } catch (err) { toast(err.message); }
+});
+// A rule change the server refused because the rules are locked: offer to unlock them, then send it again.
+async function rulesApi(path, body) {
+    try { return await api(path, body); }
+    catch (e) {
+        if (!(e.data && e.data.rules_locked)) throw e;
+        if (!await ask({ title: 'The rules are locked', ok: 'Unlock',
+            body: 'Unlock the tuner rules and the autopilot settings for 15 minutes to make this change? It asks for a passkey or your password.' })) {
+            throw new Error('Not changed: the rules are locked');
+        }
+        await rlUnlock();
+        return api(path, body);
     }
 }
 $('ask-yes').addEventListener('click', () => askDone && askDone(true));
@@ -9814,6 +10683,7 @@ function openTuner(intra) {
                 <p class="tz-links"><a class="more" href="${TU.guide}" target="_blank" rel="noopener">How the tuner works</a> ·
                     <a class="more" href="/docs#11-the-rules-in-detail" target="_blank" rel="noopener">Tuning tips</a></p></aside></div>
         <div class="tz-bar"><span class="tz-n" id="t-n"></span>
+            <button type="button" class="rl-lock" data-rlock></button>
             <button class="btn" id="t-saved" type="button">Back to saved</button>
             <button class="btn" id="t-env" type="button">Protocol defaults</button>
             <button class="btn" id="t-saverun" type="button">Save &amp; rescan</button>
@@ -9829,6 +10699,7 @@ function openTuner(intra) {
     });
     renderKnobs();
     tzLastScan();
+    rlPaint();
 }
 
 // Until a rule changes, the result panel shows the last scan: a re-screen of the saved rules finds the same, and on a
@@ -9952,7 +10823,7 @@ async function runWhatIf() {
 
 async function saveRules(rescan) {
     try {
-        await api(TU.save, { rules: tunerVals });
+        await rulesApi(TU.save, { rules: tunerVals });
         if (rescan) await api(TU.scan, TU.intra ? {} : { universe: S.settings.universe });
         toast(rescan ? 'Rules saved — rescanning now' : 'Rules saved — the next scan and the watcher use them');
         await refresh();                            // the saved rules first, so the tuner shown again (in Settings) has them
@@ -10129,7 +11000,7 @@ function ckStockItem(x, q, why) {
     return { key: 'stock:' + x.sym, group: why || 'Stocks', icon: `<span>${esc(x.sym.slice(0, 4))}</span>`,
              title: ckHi(x.sym, q.toLowerCase()) + ` <span class="cmdk-s" style="font-weight:500">${ckHi(x.name, q.toLowerCase())}</span>`,
              sub: [x.ind, x.tag].filter(Boolean).join(' · '), right: chips + price,
-             run: () => x.index ? openOptions(x.sym) : openStock(x.sym), live: L.open || L.zone || !!L.demo };
+             run: () => x.index ? openOptions(x.sym) : openStockPage(x.sym), live: L.open || L.zone || !!L.demo };
 }
 
 // The things one can do with one stock.
@@ -10140,6 +11011,7 @@ function ckStockActions(x) {
         a('Option chain', 'OI walls, PCR, IV, max pain', CK_IC.list, () => openOptions(s), 'oc');
         return out;
     }
+    a('Stock page', 'everything about it on one page', CK_IC.doc, () => openStockPage(s), 'page');
     a('Chart · daily', 'structure, zones, plan', CK_IC.chart, () => openStock(s, undefined, 'D'), 'd');
     a('Chart · 15 minutes', 'entries and the watch zone', CK_IC.chart, () => openStock(s, undefined, '15m'), '15m');
     a('Intraday view', 'today’s 15m setup and rules', CK_IC.chart, () => openIntraday(s), 'id');
@@ -10289,7 +11161,7 @@ function ckBuild(raw) {
             const up = q.toUpperCase();
             if (/^[A-Z0-9][A-Z0-9&-]{0,19}$/.test(up) && !CK.bySym.has(up))
                 items.push({ key: 'any:' + up, group: 'Outside the universe', icon: CK_IC.chart, title: `Analyse <b>${esc(up)}</b> anyway`,
-                             sub: 'not in the scanned lists: the chart and the protocol still work', run: () => openStock(up) });
+                             sub: 'not in the scanned lists: the chart and the protocol still work', run: () => openStockPage(up) });
         }
     }
     return dedupe(items);
@@ -10388,7 +11260,7 @@ async function searchNow() {
         qItems = items; qIdx = items.length ? 0 : -1; renderMenu();
     } catch (e) { closeMenu(); }
 }
-function pick(it) { closeMenu(); $('q').value = ''; $('q').blur(); openStock(it.symbol); }
+function pick(it) { closeMenu(); $('q').value = ''; $('q').blur(); openStockPage(it.symbol); }
 $('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(searchNow, 140); });
 $('q').addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' && qItems.length) { e.preventDefault(); qIdx = (qIdx + 1) % qItems.length; renderMenu(); }
@@ -10424,11 +11296,19 @@ document.addEventListener('keydown', (e) => {
     else if (!$('modal').hidden && !$('hub').hidden) closeModal();
     else if (!$('hub').hidden && $('drawer').dataset.open === '1' && !document.body.classList.contains('hub-over')) closeDrawer();
     else if (!$('hub').hidden) { if (e.target === $('hub-q') && $('hub-q').value) { $('hub-q').value = ''; hubNav(); } else closeSettings(); }
-    else if ($('drawer').dataset.open === '1') closeDrawer();
+    else if ($('drawer').dataset.open === '1') drawerBack();
     else if (!$('modal').hidden) closeModal();
 });
 
-refresh();
+// A link to a stock's page (/#s/RELIANCE) opens it once the state it reads is in.
+// Its entry becomes the app's own, under the page, so closing the page (or Back) lands in the app, not before it.
+refresh().then(() => {
+    const sym = pageSym();
+    if (!sym || !S) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    history.pushState({ nwPage: sym, nwDepth: 1 }, '', '#s/' + encodeURIComponent(sym));
+    openStock(sym, undefined, undefined, true);
+});
 loadBoard();
 loadNews();
 api('/api/demo').then((d) => { demoData = d; renderDemo(); }).catch(() => {});

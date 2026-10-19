@@ -62,7 +62,11 @@ CHOICES = {'sizing': ('risk', 'lots')}
 TICK = 0.05                   # every price a multiple of 5 paise: valid at every NSE tick size
 
 # The evidence a mode needs before it may send (gate).
-GATE = {'bt_trades': {'swing': 60, 'intraday': 100, 'options': 30}, 'paper_trades': 30}
+GATE = {'bt_trades': {'swing': 60, 'intraday': 100, 'options': 30}, 'paper_trades': 30,
+        # A day mode's trades on one session ride the same market: a dozen of them are one observation. So also
+        # enough sessions on the rules in force, and an average paper day clearly above zero against how much the
+        # days vary (its t-statistic: the mean day over its standard error). 30 trades are a week of options ideas.
+        'paper_days': {'intraday': 40, 'options': 40}, 'paper_day_t': 2.0}
 
 
 def settings_from(saved: Any, base: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -136,7 +140,9 @@ def entry_limit(px: float, buy: bool, bps: float) -> float:
     return tick(px * (1 + bps / 1e4) if buy else px * (1 - bps / 1e4), up=buy)
 
 
-PRODUCT = {'CNC': ('NSE_EQ', 'CNC'), 'MIS': ('NSE_EQ', 'INTRADAY'), 'FUT': ('NSE_FNO', 'MARGIN'), 'OPT': (None, 'MARGIN')}
+# An option idea is squared off the same day (15:15), so it goes as INTRADAY: if the app is down then, Dhan squares it
+# off itself rather than carrying it overnight as a MARGIN (carry-forward) position would be.
+PRODUCT = {'CNC': ('NSE_EQ', 'CNC'), 'MIS': ('NSE_EQ', 'INTRADAY'), 'FUT': ('NSE_FNO', 'MARGIN'), 'OPT': (None, 'INTRADAY')}
 
 
 def plan(trade: Dict[str, Any], sz: Dict[str, Any], inst: Dict[str, Any], st: Dict[str, Any],
@@ -239,7 +245,30 @@ def gate(mode: str, ev: Dict[str, Any]) -> Dict[str, Any]:
         {'label': 'Paper R after costs at your size', 'value': paper.get('total_r'), 'need': '> 0',
          'ok': (paper.get('total_r') or 0) > 0},
     ]
+    if mode in GATE['paper_days']:
+        need_days, t = GATE['paper_days'][mode], paper.get('day_t')
+        checks += [
+            {'label': 'Paper sessions on these rules', 'value': paper.get('days') or 0,
+             'need': f'≥ {need_days}' + (f' since {since}' if since else ''), 'ok': (paper.get('days') or 0) >= need_days},
+            {'label': 'Paper days: the average against how much they vary (t)', 'value': t,
+             'need': f"≥ {GATE['paper_day_t']:g}", 'ok': t is not None and t >= GATE['paper_day_t']},
+        ]
     return {'ok': all(c['ok'] for c in checks), 'checks': checks, 'account': ev.get('account')}
+
+
+def day_t(trades: List[Dict[str, Any]]) -> Optional[float]:
+    """The t-statistic of the trades' daily totals (by entry day): the mean day over its standard error. None
+    with fewer than two days, or days that do not vary."""
+    days: Dict[str, float] = {}
+    for t in trades:
+        k = str(t.get('entry_time') or '')[:10]
+        days[k] = days.get(k, 0.0) + float(t['r'])
+    v = list(days.values())
+    if len(v) < 2:
+        return None
+    mean = sum(v) / len(v)
+    sd = math.sqrt(sum((x - mean) ** 2 for x in v) / (len(v) - 1))
+    return round(mean / (sd / math.sqrt(len(v))), 2) if sd > 0 else None
 
 
 def hold_r(equity: List[Any], since: str) -> Optional[float]:

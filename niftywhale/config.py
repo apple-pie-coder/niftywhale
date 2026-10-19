@@ -41,6 +41,9 @@ FIELDS: Dict[str, Tuple[str, str, str, bool]] = {
     'nse_closes_final': ('cfg:nse_closes_final', 'NSE_CLOSES_FINAL', '15:45', False),
     'nse_fo_close': ('cfg:nse_fo_close', 'NSE_FO_CLOSE', '15:40', False),
     'nse_cas_start': ('cfg:nse_cas_start', 'NSE_CAS_START', '2026-08-03', False),
+    # A watchdog off the Pi (healthchecks.io, or any address that alerts when its pings stop): pinged every minute
+    # while the app runs, so a power or network cut, which takes the Pi's own Telegram alerts down with it, is told.
+    'heartbeat_url': ('secret:heartbeat_url', 'HEARTBEAT_URL', '', True),
 }
 # What App settings calls each one (the change log shows them by these names).
 LABELS = {'telegram_token': 'Telegram bot token', 'telegram_chat_id': 'Telegram chat ID', 'dhan_client_id': 'Dhan client ID',
@@ -48,7 +51,7 @@ LABELS = {'telegram_token': 'Telegram bot token', 'telegram_chat_id': 'Telegram 
           'live_watch_delay': 'Wait after a candle, with Dhan (s)', 'data_source': 'Price data', 'log_level': 'Log level',
           'intraday_square_off': 'Intraday square-off', 'nse_cts_end_fo': 'F&O stocks stop trading at',
           'nse_closes_final': 'Official closes are out by', 'nse_fo_close': 'F&O segment closes at',
-          'nse_cas_start': 'Closing auction began on'}
+          'nse_cas_start': 'Closing auction began on', 'heartbeat_url': 'Watchdog ping address'}
 # Times (HH:MM) and the range each may take; a value out of it from .env falls back to the default.
 CLOCKS: Dict[str, Tuple[str, str, str]] = {
     'intraday_square_off': ('09:30', '15:30', 'the intraday square-off'),
@@ -150,6 +153,8 @@ def validate(name: str, value: Any) -> Optional[str]:
             return f'{what} is a time like {FIELDS[name][2]}'
         if not lo <= t <= hi:
             return f'{what} is between {lo} and {hi}'
+    if name == 'heartbeat_url' and not re.fullmatch(r'https://[^\s/$.?#][^\s]{3,300}', v):
+        return 'the watchdog address is an https:// link (healthchecks.io gives one per check)'
     if name == 'nse_cas_start':
         try:
             d = date.fromisoformat(v)

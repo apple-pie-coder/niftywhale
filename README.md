@@ -250,6 +250,8 @@ stop (3.7).
 | `niftywhale/livefeed.py` | The live feed: who wants which instrument priced, ticks for the Charts tab, the stream with a REST poll for whatever it does not carry. |
 | `niftywhale/hub.py` | The page's WebSocket (`/ws`): channels, "this changed" from the database's change triggers and the app's state. |
 | `niftywhale/dhan.py` | Dhan real-time data: tokens (paste, TOTP login, renewal), symbol IDs, option lot sizes, quotes (stocks and indices), index daily candles, 5m and 15m candles (one shared 5-requests-a-second limit), option chains and expiries (their own one-every-3-seconds limit). |
+| `niftywhale/studies.py` | The Charts tab's indicators: each one's settings (defaults, limits, choices) and lines, and the check of a saved layout's indicators. |
+| `static/studies.js` | The Charts tab's indicator maths, worked out in the page as candles tick (tested under Node: `tests/js/`). |
 | `niftywhale/indicators.py` | Chart indicators as pure functions: estimated delta (close-location split, from 1-minute candles where available), cumulative delta, session VWAP, the opening range and its breakout, Bollinger Bands. |
 | `niftywhale/notify.py` | Telegram. |
 | `templates/index.html` | The whole dashboard (HTML, CSS and JS in one file). |
@@ -345,8 +347,9 @@ Alerts from before paper trading started (6 Oct 2026) stay as they were: trigger
 - **Main column, Intraday:** see 5.6.
 - **Stock panel:** slides in from the right when you click any stock (4.6). From the Smart money tab it opens on that stock's
   smart-money record instead (4.15).
+- **Stock page:** a stock picked in search opens full screen, with everything the app knows about it on one page (4.6).
 - **Long tables page:** every long table (setups, zones, signals, alerts; the intraday zones, setups and journal; the options
-  tables; Your stocks and the deals in Smart money; every Demo funds table) shows 10 rows at a time, with **« ‹ 1 2 3 › »** and a
+  tables; Your stocks and the deals in Smart money; every Demo funds table; the Performance tab's change log) shows 10 rows at a time, with **« ‹ 1 2 3 › »** and a
   **Rows** choice (10 / 25 / 50 / 100, remembered per table) underneath once it has more than 10. The News list pages its cards
   in twelves (12 / 24 / 48 / 96, 24 to start). The page you are on survives the dashboard's refresh; changing a filter or sort
   goes back to page 1. The zone watcher keeps closed zones for 14 days, and the alert and signal logs their last 300.
@@ -490,7 +493,8 @@ heading (*In the zone now* / *Waiting*) again wherever that group appears on it.
 
 ### 4.6 The stock panel
 
-Opens from any table row, funnel list, tuner result or search result. From top to bottom:
+Opens from any table row, funnel list or tuner result (a search result opens the stock page instead, below; the panel's
+**Full page →** link does too). From top to bottom:
 
 ![The stock panel: timeframes, overlays, the daily chart with the zone, liquidity, stop and target, delta below, and the setup's numbers](docs/screenshots/stock-panel.png)
 
@@ -579,6 +583,39 @@ delivery read with its bulk and block deals (4.15).
   **–** not applicable.
 - Steps 10–12 fill in from the watcher once the zone triggers.
 
+#### The stock page
+
+Everything the app knows about one stock, on one page. A stock picked in search (4.8) opens it, and so does the panel's
+**Full page →** link. It fills the screen and has its own address, `/#s/<SYMBOL>` (`/#s/RELIANCE`), so it can be bookmarked or
+shared (**Share** copies the link). The browser's back button, **Esc** or **×** close it; the magnifier beside **×** searches
+for another stock.
+
+**Always in view:** the header keeps the symbol, its price and the day's change (moving live while the market is open) however
+far you scroll, and the tabs stay under it.
+
+**At the top:** the price and the day's move, *Live* (Dhan), *Delayed* (yfinance, in session) or *Last close*, the session and
+the opening gap; its industry, list and F&O, with the indices it is in behind **N indices**; why the news desk follows it, if
+it does; open, high, low and previous close; where the price sits in **today's range** and its **52-week range**, with the
+distance from the high and the dates of both. Buttons: **Plan a trade**, **Option chain** (F&O), **Intraday**, **Smart money**,
+**Share**. On a phone the price lives in the header only and the buttons scroll sideways.
+
+**Tabs** (**←** / **→** move between them once one has focus; a new stock starts on Overview):
+
+| Tab | Shows |
+|---|---|
+| **Overview** | A banner for anything that needs you first: an open paper trade, option idea or demo position, or results or a dividend within 14 days. **What the numbers say**: each reading in plain words with why (trend against the 50 and 200-day averages, the daily structure, RSI momentum, volume against normal on an up or down day, place in the 52-week range, the last month, delivery, the futures build-up, the option chain's bias, the swing scan's verdict), coloured bullish, bearish or neutral, and the lean they add up to (two more one way than the other). A reading opens the tab that explains it; one with no data is left out. Then the chart (every timeframe, overlay and control of the panel), **Key numbers** (volume today and on average, turnover, ATR, volatility, RSI, 52-week high and low, streak, lot size, delivery, next event) and **Returns** (1 day to 1 year, and the last 12 months as a heat map). |
+| **Setup** | What the latest swing and intraday scans made of it (a setup with its zone, target, R:R and score, or the step it stopped at and why), the key levels and the 12 steps. |
+| **Technicals** | The 20, 50 and 200-day averages and the 9 and 21-day EMAs with the price's distance from each, RSI, ATR, volatility, average volume, the 52-week high and low, and the classic pivots (S3 to R3) from the last complete session, the nearest outlined. |
+| **Options** | F&O only, once a chain has been read for it (6.1): the nearest expiry, days left and lot; ATM IV with its rank and percentile over the year; PCR (OI and volume); max pain; support and resistance from put and call OI; call and put OI with the day's change; the chain's bias; PCR and ATM IV session by session; **Open the option chain**. |
+| **Money flow** | The stock future's open interest over 30 sessions and what the latest says (long or short build-up, short covering, long unwinding); the last session's delivery read (4.15) with delivery % session by session; bulk and block deals of the last 30 days. |
+| **News & events** | Coming results, dividends and meetings with how many days away, the last ones before, and its filings and headlines of the last 30 days (4.14). The tab carries a **!** when an event is coming. |
+| **History** | Every zone it has had (swing and intraday, any status), option ideas, demo positions, live orders, alerts and price-action signals, with the trades won and the R or ₹ made. A trade opens its trade view; **×** comes back to the page. The tab counts them. |
+| **Peers** | The other universe stocks in its industry with their last session's close, change, delivery and turnover (NSE's bhavcopy). One opens its own page; back returns. |
+| **Plan a trade** | The panel's **Trade planner** and **Watch this zone**. |
+
+The readings are the numbers put in words, not advice. While a part loads it shimmers; on a phone the parts stack and wide
+tables scroll sideways inside their box, never the page. The numbers come from one request, `/api/stock/<SYMBOL>/profile` (12.1).
+
 ### 4.7 Rule tuner
 
 In Settings → Swing scan, under **Rules** (the command palette's *Swing rules* and the **try the rule tuner** link on an
@@ -620,7 +657,7 @@ With nothing typed it shows what is open now, your recent picks and the other ta
 
 | Type | Does |
 |---|---|
-| `VEDL` | the stock, and everything you can open for it: daily and 15m chart, intraday view, option chain (F&O), smart money, news |
+| `VEDL` | the stock (Enter opens its page, 4.6), and everything you can open for it: its page, daily and 15m chart, intraday view, option chain (F&O), smart money, news |
 | `VEDL 15m` · `VEDL d` | that chart straight away (`15`, `daily`, `chart`) |
 | `VEDL options` · `nifty oc` | the option chain (`oc`, `chain`) |
 | `VEDL deals` | its smart money (`smart`, `delivery`, `bulk`, `block`) |
@@ -632,8 +669,8 @@ With nothing typed it shows what is open now, your recent picks and the other ta
 | `scan`, `settings`, `legend`, … | any action or tab by name |
 | `?` | this list, in the palette |
 
-A symbol outside the scanned lists is offered as "Analyse … anyway". **Keys:** **↑ / ↓** move, **Enter** runs, **Esc**
-closes. **Esc** also closes the expanded chart, then the stock panel, then any open dialog. With a stock panel open, **F**
+A symbol outside the scanned lists is offered as "Analyse … anyway" (its page, without the universe's list and peers).
+**Keys:** **↑ / ↓** move, **Enter** runs, **Esc** closes. **Esc** also closes the expanded chart, then the stock panel or page, then any open dialog. With a stock panel open, **F**
 opens or closes the expanded chart, **M** toggles the magnet, and **+**, **−** and **0** zoom.
 
 ### 4.9 Live board and price action
@@ -701,6 +738,37 @@ setup stronger; a pattern outside the zone means little.
 **Pattern alerts** (Settings → Alerts, **off** by default): sends a Telegram message for each new
 15-minute pattern that forms *inside a zone*. It needs Telegram alerts on. Patterns outside the
 zone are only logged, never sent.
+
+#### Charts tab: indicators
+
+The wave button in each chart's header opens **Indicators**: search by name, or pick from the groups. Some go on the
+candles, others in a pane of their own below them (resize panes by dragging the line between them).
+
+| On the candles | In a pane below |
+|---|---|
+| Moving averages: SMA, EMA, WMA, Hull (HMA), volume-weighted (VWMA) | Volume, with its average |
+| VWAP, with ±1 and ±2 standard-deviation bands; resets each session, week or month | RSI, MACD, Stochastic, Stochastic RSI |
+| Bollinger Bands, Keltner Channels, Donchian Channels (shaded between) | ATR, ADX / DMI |
+| Supertrend, Parabolic SAR, Ichimoku Cloud | CCI, Williams %R, Rate of change |
+| Pivot points: traditional, Fibonacci, Camarilla, from the previous day, week or month (**auto**: a day on intraday charts, a week on daily, a month on weekly) | Money flow index (MFI), on-balance volume (OBV) |
+
+- **Settings and defaults:** TradingView's, so a chart reads the same in both (EMA 20, RSI 14, MACD 12 26 9, Bollinger 20 2,
+  Supertrend 10 3, Ichimoku 9 26 52). The settings open when you add one; later, click its name in the legend or its gear.
+  Add one more than once for, say, EMA 9 and EMA 50. **Defaults** puts an indicator back.
+- **The legend:** each indicator's values under the crosshair (the latest otherwise), in its colours, with buttons to hide
+  it, open its settings or remove it.
+- **Live:** they move with the forming candle as it ticks. Volume reaches the chart with the candles' refresh (every 30 s
+  to 2 min), so VWAP, VWMA, MFI and OBV catch up then.
+- **Indices** have no volume: the volume-based ones are greyed out in the menu, and one copied onto an index says
+  *needs volume*.
+- **Up to 10** a chart, **4** of them in panes. **Copy to all charts** (in the menu and in an indicator's settings) puts
+  this chart's indicators on every chart; **Remove all** clears them.
+- Saved with the layout (`POST /api/charts/layout`), so every device shows them. A Volume pane takes the place of the
+  volume under the candles. Drawings stay on the candles' pane.
+
+The maths is in `static/studies.js`, worked out in the page; `niftywhale/studies.py` lists each indicator's settings and
+checks a saved layout against them. Each follows TradingView's own definition: averages start from a simple average of their
+first values, RSI, ATR and DMI use Wilder's smoothing, Bollinger and VWAP bands a population standard deviation.
 
 #### Charts tab: drawing
 
@@ -1925,7 +1993,8 @@ Every proposal, promotion, drop, rollback, pause and resume is announced on Tele
 The **Change log** is the whole tuning history: the autopilot's changes and yours, marked *(you)*. A save with a **Tune…**
 button (swing, intraday, options) and a change in **App settings** are logged too. Each entry lists the values that moved,
 as the tuner names them (*Final R:R (5m) 2 → 2.5*), and a secret only as set, not set or replaced, never its value.
-The newest 40 show; **Show older** brings 50 more at a time.
+It pages like every other long table (10 rows to start; **Rows** 10 / 25 / 50 / 100) and has a **Search** box (4.1): the
+whole log, newest first, the older entries fetched behind the newest 40 as the tab opens.
 Options learning stays dormant until about three months of candidates are recorded; Dhan has no historical option chains to backtest on.
 
 **Why swing has gates (October 2026 study).** All 711 swing trades from three years of nifty100 history, replayed with the
@@ -2616,6 +2685,51 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/palette
       "AADHARHFC",
       "Aadhar Housing Finance Ltd."
     ]
+  ]
+}
+```
+
+#### `GET /api/stock/<SYMBOL>/profile`
+
+Everything the app knows about one stock, for its page (4.6): who it is (`name`, `industry`, `indices`, `tag`, `fo`), its price now (`quote`: real-time with Dhan, else the last daily candle), the year's numbers (`stats`: 52-week range, returns 1D to 1Y, 20/50/200-day averages, 9/21 EMAs, RSI, ATR, volatility, volume against its average, pivots, each month's return), the latest swing and intraday scans' verdicts (`scans`), every zone, alert, signal, option idea, demo position and live order it has had, its options (`options`: the latest chain's summary, the sessions before it, the IV's rank in its year), futures OI and its build-up (`futures`), delivery and deals (`smart`), corporate events (`events`) and its industry's other stocks with their last session (`peers`). `404` without daily candles.
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/stock/PAYTM/profile
+```
+
+```json
+{
+  "alerts": [
+    {…}
+  ],
+  "demo": [
+    {…}
+  ],
+  "events": {…},
+  "fo": true,
+  "followed": null,
+  "futures": {…},
+  "ideas": [],
+  "in_universe": true,
+  "indices": [
+    "Nifty 200"
+  ],
+  "industry": "Financial Services",
+  "name": "One 97 Communications Ltd.",
+  "nifty100": false,
+  "orders": [],
+  "peers": [
+    {…}
+  ],
+  "quote": {…},
+  "scans": {…},
+  "signals": [],
+  "smart": {…},
+  "stats": {…},
+  "symbol": "PAYTM",
+  "tag": "F&O",
+  "zones": [
+    {…}
   ]
 }
 ```
@@ -3986,7 +4100,7 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
 
 #### `GET /api/charts/config`
 
-The Charts tab's instruments, timeframes, the saved layout and the live feed's state.
+The Charts tab's instruments, timeframes, the saved layout, the live feed's state, and `studies`: the indicator catalogue (`kinds`: each one's settings with defaults and limits, and its lines with their colours; `max` a chart, `max_panels` in panes below the candles).
 
 ```sh
 curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/charts/config
@@ -4012,6 +4126,13 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/charts/confi
   "realtime": true,
   "shift": 19800,
   "source": "dhan",
+  "studies": {
+    "kinds": [
+      {…}
+    ],
+    "max": 10,
+    "max_panels": 4
+  },
   "tfs": [
     {
       "label": "1s",
@@ -4024,13 +4145,13 @@ curl -H "Authorization: Bearer $NW_TOKEN" http://127.0.0.1:5058/api/charts/confi
 
 #### `POST /api/charts/layout`
 
-Saves the Charts tab's layout.
+Saves the Charts tab's layout, each chart's indicators included.
 
-**Body:** `layout`: a list of `{symbol, tf, levels}`
+**Body:** `layout`: a list of `{symbol, tf, levels, studies}`; `studies` a list of `{id, type, params, colors, hidden}` (`type` from the catalogue; a setting left out takes its default, one out of range is brought into it)
 
 ```sh
 curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"layout": [{"symbol": "IDX:13", "tf": 300, "levels": true}, {"symbol": "PAYTM", "tf": 900, "levels": true}]}' http://127.0.0.1:5058/api/charts/layout
+  -d '{"layout": [{"symbol": "IDX:13", "tf": 300, "levels": true, "studies": [{"id": "e9", "type": "ema", "params": {"length": 9}}, {"id": "r1", "type": "rsi"}]}, {"symbol": "PAYTM", "tf": 900, "levels": true}]}' http://127.0.0.1:5058/api/charts/layout
 ```
 
 ```json
@@ -4038,11 +4159,28 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
   "layout": [
     {
       "levels": true,
+      "studies": [
+        {
+          "colors": {},
+          "hidden": false,
+          "id": "e9",
+          "params": {…},
+          "type": "ema"
+        },
+        {
+          "colors": {},
+          "hidden": false,
+          "id": "r1",
+          "params": {…},
+          "type": "rsi"
+        }
+      ],
       "symbol": "IDX:13",
       "tf": 300
     },
     {
       "levels": true,
+      "studies": [],
       "symbol": "PAYTM",
       "tf": 900
     }
@@ -4913,6 +5051,13 @@ docker run --rm --entrypoint python -v "$PWD:/w" -w /w -e DB_PATH=/tmp/test.db -
   -e DHAN_ACCESS_TOKEN= -e TELEGRAM_BOT_TOKEN= -e TELEGRAM_CHAT_ID= niftywhale-test -m unittest discover -s tests
 ```
 
+The Charts tab's indicator maths (`static/studies.js`) has its own tests, run with Node 20 on the Pi (they read the catalogue
+from `niftywhale/studies.py` with `python3`):
+
+```sh
+node --test tests/js/
+```
+
 `NIFTYWHALE_AUTH=0` lets the feature tests reach the API without signing in; `tests/test_auth.py` switches sign-in back on
 for itself. The empty Dhan and Telegram variables keep the tests from reading the real ones in `.env` (a Dhan login from a
 test would replace the live app's token).
@@ -5120,9 +5265,38 @@ Every abbreviation, code and symbol the dashboard shows. The same list is in the
 | **OR H / OR L** | Opening range high / low | The first 15-minute candle's high and low, as lines when the ORB box is off. |
 | **PDH / PDL** | Previous day high / low | Yesterday's high and low: common intraday liquidity pools and targets. |
 | **BB** | Bollinger Bands | 20-candle average (dashed) ± 2 standard deviations, shaded. |
+| **DMA** | Daily moving average | The average close of the last 20, 50 or 200 sessions (the stock page). Price above all three is an uptrend. |
+| **EMA** | Exponential moving average | A moving average that weights recent closes more: the stock page shows the 9 and 21-day ones. |
+| **RSI 14** | Relative strength index | Gains against losses over 14 sessions, 0 to 100 (Wilder smoothing). Over 70 overbought, under 30 oversold. |
+| **Volatility** | Realised volatility | The spread of the last 20 daily returns, annualised (× √252), in %. |
+| **P / S1–S3 / R1–R3** | Pivot points | Classic floor pivots from the last complete session: P = (H + L + C) ÷ 3, supports below it, resistances above. |
 | **EQ 50%** | Equilibrium line | The leg's midpoint, dashed grey. |
 | **Target** | Target line | The liquidity the setup aims for, green. |
 | **watch** | Watch-zone box | Dashed amber box: the zone the watcher is waiting on. |
+
+### Charts tab indicators
+
+| Term | Stands for | Meaning |
+|---|---|---|
+| **SMA / WMA** | Simple / weighted moving average | The average close of the last N candles; the weighted one counts the latest most (N, N−1 … 1). |
+| **HMA** | Hull moving average | A weighted average of 2 × WMA(N/2) − WMA(N), over √N candles: smooth, and quick to turn. |
+| **VWMA** | Volume-weighted moving average | The average close of the last N candles, each counted by its volume. Not for indices (no volume). |
+| **VWAP bands** | VWAP ± standard deviations | Lines 1 and 2 standard deviations of price (weighted by volume) either side of VWAP, from the same start. |
+| **KC** | Keltner Channels | A 20-candle EMA ± 2 × ATR(10): a band that widens when candles grow. |
+| **DC** | Donchian Channels | The highest high and lowest low of the last 20 candles, and their midpoint. |
+| **Supertrend** | Supertrend | A line 3 × ATR(10) from the candles' midpoint that only moves the trend's way: green under price in an uptrend, red over it in a downtrend. |
+| **SAR** | Parabolic stop and reverse | Dots that trail price and speed up as the trend runs (0.02 a new extreme, up to 0.2); price crossing them flips the side. |
+| **Ichimoku** | Ichimoku Cloud | Conversion (9) and base (26) lines, the cloud between leading spans A and B drawn 26 candles ahead (green where A is above), and the close drawn 26 back. |
+| **Fibonacci / Camarilla pivots** | Pivot point variants | Fibonacci: P ± 0.382, 0.618 and 1 × the last period's range. Camarilla: the last close ± 1.1 × the range ÷ 12, 6, 4 and 2. |
+| **MACD** | Moving average convergence divergence | EMA 12 − EMA 26, its 9-candle EMA (the signal) and the gap between them as bars (darker while it grows). |
+| **Stoch** | Stochastic | Where the close sits in the last 14 candles' range, 0 to 100, smoothed over 3 (%K) and again over 3 (%D). Over 80 high, under 20 low. |
+| **Stoch RSI** | Stochastic RSI | The stochastic of RSI 14 instead of price: where RSI sits in its own last 14 values. |
+| **DMI / ADX / +DI / −DI** | Directional movement | +DI and −DI: how much of the range is new highs against new lows (14, Wilder). ADX: how strong the trend is, either way; over 25 a trend. |
+| **CCI** | Commodity channel index | How far the typical price is from its 20-candle average, in units of its average deviation (÷ 0.015). Over 100 or under −100 is stretched. |
+| **%R** | Williams %R | Where the close sits in the last 14 candles' range, from 0 (at the high) to −100 (at the low). |
+| **MFI** | Money flow index | RSI with volume: money flowing in against out over 14 candles, 0 to 100. Not for indices. |
+| **OBV** | On-balance volume | A running total of volume: added on an up close, taken off on a down close. |
+| **ROC** | Rate of change | The % change of the close over the last 9 candles. |
 
 ### Candlestick pattern codes
 
@@ -5176,6 +5350,7 @@ Every abbreviation, code and symbol the dashboard shows. The same list is in the
 | **OI bias** | Writing balance | From −1 to +1: put OI added minus call OI added, over the 5 strikes either side of the money. + is bullish, − bearish. |
 | **IV** | Implied volatility | The yearly volatility an option's price implies. High IV makes options dear to buy. |
 | **IV pct** | IV percentile | Share of past sessions whose ATM IV was below today's. Shown after 20 sessions of history. |
+| **IV rank** | Where IV sits in its year | 0 at the lowest ATM IV of the past year's sessions, 100 at the highest. Shown after 20 sessions of history. |
 | **Skew** | 25-delta skew | Put IV minus call IV at about 25 delta. Positive is normal (insurance costs more); a jump means fear. |
 | **DTE** | Days to expiry | Calendar days until the expiry; "expires today" on expiry day. |
 | **Lot** | Lot size | Shares per contract (Nifty 65, Bank Nifty 30, …). ₹ / lot in the journal is the result for one lot. |

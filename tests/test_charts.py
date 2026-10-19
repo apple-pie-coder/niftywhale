@@ -16,7 +16,7 @@ assert os.path.realpath(_store.DB_PATH).startswith(os.path.realpath(tempfile.get
     f'tests would write to {_store.DB_PATH}; run them with DB_PATH set to a temporary file'
 
 import app  # noqa: E402
-from niftywhale import charts, livefeed, store  # noqa: E402
+from niftywhale import charts, livefeed, store, studies  # noqa: E402
 
 
 class Feed(unittest.TestCase):
@@ -116,9 +116,19 @@ class Routes(unittest.TestCase):
         bad = [{'symbol': 'idx:25', 'tf': 60}, {'symbol': 'NOPE', 'tf': 60}, {'symbol': 'IDX:13', 'tf': 7},
                {'symbol': 'IDX:13', 'tf': '3600', 'levels': False}, 'junk'] + [{'symbol': 'IDX:13', 'tf': 1}] * 20
         r = self.c.post('/api/charts/layout', json={'layout': bad}).get_json()
-        self.assertEqual(r['layout'][:2], [{'symbol': 'IDX:25', 'tf': 60, 'levels': True},
-                                           {'symbol': 'IDX:13', 'tf': 3600, 'levels': False}])
+        self.assertEqual(r['layout'][:2], [{'symbol': 'IDX:25', 'tf': 60, 'levels': True, 'studies': []},
+                                           {'symbol': 'IDX:13', 'tf': 3600, 'levels': False, 'studies': []}])
         self.assertEqual(len(r['layout']), app.CHART_MAX)
+        self.assertEqual(self.c.get('/api/charts/config').get_json()['layout'], r['layout'])
+
+    def test_indicators_saved_with_the_layout(self):
+        d = self.c.get('/api/charts/config').get_json()['studies']
+        self.assertEqual((d['max'], d['max_panels']), (studies.MAX_STUDIES, studies.MAX_PANELS))
+        self.assertIn('ema', [k['key'] for k in d['kinds']])
+        ema = {'id': 'e9', 'type': 'ema', 'params': {'length': 9}, 'colors': {'ma': '#FF0000'}}
+        r = self.c.post('/api/charts/layout', json={'layout': [{'symbol': 'IDX:13', 'tf': 300, 'studies': [ema]}]}).get_json()
+        self.assertEqual(r['layout'][0]['studies'],
+                         [{'id': 'e9', 'type': 'ema', 'params': {'length': 9, 'source': 'close'}, 'colors': {'ma': '#ff0000'}, 'hidden': False}])
         self.assertEqual(self.c.get('/api/charts/config').get_json()['layout'], r['layout'])
 
     def test_candles_watch_the_symbol_and_carry_levels(self):
@@ -193,9 +203,6 @@ class Marks(unittest.TestCase):
             self.assertEqual(charts.fetch_prices(['OPT:NSE_FNO:44608']), {})      # no option quotes off Dhan
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class Drawings(unittest.TestCase):
     """The Charts tab's drawings: per instrument, cleaned, every device."""
@@ -255,6 +262,50 @@ class Spark(unittest.TestCase):
             self.assertEqual(app.spark('options:1')['pts'], [])
         with mock.patch.object(app, 'trade_detail', return_value={**d, 'status': 'won'}):
             self.assertEqual(app.spark('options:1'), {})
+
+
+class Studies(unittest.TestCase):
+    """A saved chart's indicators checked against the catalogue (niftywhale/studies.py)."""
+
+    def test_settings_clamped_stepped_and_defaulted(self):
+        got = studies.clean([{'id': 'a', 'type': 'bb', 'params': {'length': 9999, 'mult': '2.345', 'source': 'nope'}},
+                             {'id': 'b', 'type': 'rsi', 'params': {'length': 'x', 'upper': float('nan')}},
+                             {'id': 'c', 'type': 'vwap', 'params': {'anchor': 'week', 'band1': -3}}])
+        self.assertEqual(got[0]['params'], {'length': 500, 'mult': 2.3, 'source': 'close'})
+        self.assertEqual(got[1]['params'], {'length': 14, 'source': 'close', 'upper': 70, 'lower': 30})
+        self.assertEqual(got[2]['params'], {'anchor': 'week', 'band1': 0.0, 'band2': 2.0})
+        self.assertIsInstance(got[0]['params']['length'], int)
+
+    def test_unknown_duplicate_and_bad_entries_dropped(self):
+        got = studies.clean([{'id': 'a', 'type': 'sma'}, {'id': 'a', 'type': 'ema'}, {'id': 'bad id!', 'type': 'ema'},
+                             {'id': 'z', 'type': 'nope'}, 'junk', {'type': 'ema'},
+                             {'id': 'k', 'type': 'macd', 'colors': {'macd': '#123456', 'zzz': '#ffffff', 'signal': 'red'}, 'hidden': True}])
+        self.assertEqual([(s['id'], s['type']) for s in got], [('a', 'sma'), ('k', 'macd')])
+        self.assertEqual(got[1]['colors'], {'macd': '#123456'})
+        self.assertTrue(got[1]['hidden'])
+        self.assertEqual(studies.clean('junk'), [])
+        # A kind that is not a string, an id or colour with a newline after it: dropped, not a crash or a saved newline.
+        self.assertEqual(studies.clean([{'id': 'a', 'type': ['ema']}, {'id': 'b', 'type': {'k': 1}}, {'id': 'c\n', 'type': 'ema'}]), [])
+        self.assertEqual(studies.clean([{'id': 'd', 'type': 'ema', 'colors': {'ma': '#123456\n'}}])[0]['colors'], {})
+
+    def test_limits(self):
+        many = [{'id': f'p{i}', 'type': 'rsi'} for i in range(6)] + [{'id': f'o{i}', 'type': 'ema'} for i in range(12)]
+        got = studies.clean(many)
+        self.assertEqual(len(got), studies.MAX_STUDIES)
+        self.assertEqual(sum(s['type'] == 'rsi' for s in got), studies.MAX_PANELS)
+
+    def test_every_kind_is_well_formed(self):
+        for k in studies.CATALOG:
+            self.assertIn(k['place'], ('price', 'panel'), k['key'])
+            self.assertTrue(k['lines'], k['key'])
+            for p in k['params']:
+                if 'values' in p:
+                    self.assertIn(p['default'], p['values'], (k['key'], p['key']))
+                else:
+                    self.assertTrue(p['min'] <= p['default'] <= p['max'], (k['key'], p['key']))
+                    self.assertEqual(studies._value(p, p['default']), p['default'], (k['key'], p['key']))
+            for f in k.get('fill', []):
+                self.assertIn(f, [ln['key'] for ln in k['lines']], k['key'])
 
 
 if __name__ == '__main__':

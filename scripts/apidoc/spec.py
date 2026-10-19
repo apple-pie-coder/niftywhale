@@ -50,6 +50,8 @@ E = [
      'Up to 10 universe matches for the search box, plus an "analyse anyway" entry.'),
     ('state', 'GET', '/api/palette', '/api/palette', None, '',
      'What the command palette searches: every universe stock (symbol, name, tag, F&O, industry, weight) and the option indices.'),
+    ('state', 'GET', '/api/stock/<SYMBOL>/profile', '/api/stock/PAYTM/profile', None, '',
+     "Everything the app knows about one stock, for its page (4.6): who it is (`name`, `industry`, `indices`, `tag`, `fo`), its price now (`quote`: real-time with Dhan, else the last daily candle), the year's numbers (`stats`: 52-week range, returns 1D to 1Y, 20/50/200-day averages, 9/21 EMAs, RSI, ATR, volatility, volume against its average, pivots, each month's return), the latest swing and intraday scans' verdicts (`scans`), every zone, alert, signal, option idea, demo position and live order it has had, its options (`options`: the latest chain's summary, the sessions before it, the IV's rank in its year), futures OI and its build-up (`futures`), delivery and deals (`smart`), corporate events (`events`) and its industry's other stocks with their last session (`peers`). `404` without daily candles."),
 
     ('swing', 'POST', '/api/scan', '/api/scan', {'universe': 'fo'}, '`universe` (optional; also saved as the setting)',
      'Starts a scan. Universe keys: `nifty100`, `fo`, `both`, or an index such as `nifty500`, `niftybank`, `niftyit`. `409` if one is running.'),
@@ -173,10 +175,16 @@ E = [
      '`approve` a proposal now, `reject` it, `undo` the last change, or `pause` / resume a mode\'s entry alerts.'),
 
     ('charts', 'GET', '/api/charts/config', '/api/charts/config', None, '',
-     'The Charts tab\'s instruments, timeframes, the saved layout and the live feed\'s state.'),
+     'The Charts tab\'s instruments, timeframes, the saved layout, the live feed\'s state, and `studies`: the indicator '
+     'catalogue (`kinds`: each one\'s settings with defaults and limits, and its lines with their colours; `max` a chart, '
+     '`max_panels` in panes below the candles).'),
     ('charts', 'POST', '/api/charts/layout', '/api/charts/layout',
-     {'layout': [{'symbol': 'IDX:13', 'tf': 300, 'levels': True}, {'symbol': 'PAYTM', 'tf': 900, 'levels': True}]},
-     '`layout`: a list of `{symbol, tf, levels}`', 'Saves the Charts tab\'s layout.'),
+     {'layout': [{'symbol': 'IDX:13', 'tf': 300, 'levels': True,
+                  'studies': [{'id': 'e9', 'type': 'ema', 'params': {'length': 9}}, {'id': 'r1', 'type': 'rsi'}]},
+                 {'symbol': 'PAYTM', 'tf': 900, 'levels': True}]},
+     '`layout`: a list of `{symbol, tf, levels, studies}`; `studies` a list of `{id, type, params, colors, hidden}` '
+     '(`type` from the catalogue; a setting left out takes its default, one out of range is brought into it)',
+     'Saves the Charts tab\'s layout, each chart\'s indicators included.'),
     ('charts', 'POST', '/api/charts/drawings', '/api/charts/drawings', {'symbol': 'IDX:13', 'drawings': [{'id': 'a1', 'type': 'hline', 'p1': {'t': 1791545100, 'p': 22500}}]},
      '`symbol`, `drawings`: a list of `{id, type: "trend" | "hline" | "rect", p1, p2, color}` (`color` optional, `#rrggbb`)',
      "Replaces one instrument's drawings on the Charts tab (an empty list removes them). Points are `{t, p}`: the chart's time in "
@@ -193,7 +201,7 @@ E = [
      '`lab_swing_universe`, `lab_intraday_universe`, `lab_years_swing`, `lab_years_intraday`, `weekly_report`',
      'Saves dashboard settings; returns them all.'),
     ('settings', 'GET', '/api/config', '/api/config', None, '',
-     'App settings that once needed .env (Telegram, Dhan automatic login, data source, candle delays, the market session's times, log level): each value and where it '
+     "App settings that once needed .env (Telegram, Dhan automatic login, data source, candle delays, the market session's times, log level): each value and where it "
      'comes from (`app`, `env` or `default`). Secrets only say whether they are set; the Telegram token says which bot it is.'),
     ('settings', 'POST', '/api/config', '/api/config', {'watch_delay': '60', 'log_level': 'INFO'},
      '`telegram_token`, `telegram_chat_id`, `dhan_client_id`, `dhan_pin`, `dhan_totp`, `data_source` (`auto` or `yfinance`), '

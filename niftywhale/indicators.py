@@ -38,7 +38,7 @@ SETTINGS: Dict[str, Dict[str, Any]] = {
     'color_delta_down': {'default': None, 'color': True, 'label': 'Delta: selling'},
     'color_cum':        {'default': None, 'color': True, 'label': 'Cumulative delta'},
 }
-COLOR_RE = __import__('re').compile(r'^#[0-9a-fA-F]{6}$')
+COLOR_RE = __import__('re').compile(r'^#[0-9a-fA-F]{6}\Z')
 
 
 def settings_from(saved: Any) -> Dict[str, Any]:

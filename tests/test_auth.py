@@ -241,6 +241,22 @@ class Hardening(SignIn):
         self.assertEqual(r.get_json()['levels']['swing'], 'shadow')
         store.set_settings({'exec': {}, 'exec_since': ''})
 
+    def test_unlocking_the_rules_takes_the_password_however_fresh_the_sign_in(self):
+        self.assertEqual(self.post('/api/rules/lock', {'locked': True}).get_json()['open'], False)     # locking asks nothing
+        r = self.post('/api/rules/lock', {'locked': False})                    # signed in seconds ago: still asked
+        self.assertEqual((r.status_code, r.get_json().get('need_password')), (403, True))
+        self.assertEqual(self.post('/api/options/rules', {'min_bias': 0.5}).status_code, 423)
+        self.assertEqual(self.post('/api/rules/lock', {'locked': False, 'password': 'not-it'}).get_json().get('wrong_password'), True)
+        r = self.post('/api/rules/lock', {'locked': False, 'password': PW})
+        self.assertEqual((r.status_code, r.get_json()['open']), (200, True))
+        self.assertEqual(self.post('/api/options/rules', {}).status_code, 200)
+        tok = self.post('/api/auth/tokens', {'name': 's', 'scope': 'write', 'password': PW}).get_json()['token']
+        self.post('/api/rules/lock', {'locked': True})
+        anon = app.app.test_client()                                           # a token can lock, never unlock
+        r = anon.post('/api/rules/lock', json={'locked': False, 'password': PW}, base_url=BASE, headers=self.bearer(tok))
+        self.assertEqual(r.status_code, 401)
+        store.set_settings({'rules_lock': {}})
+
     def test_another_site_cannot_sign_you_out(self):
         self.assertEqual(self.post('/api/auth/logout', headers={'Origin': 'https://evil.example'}).status_code, 403)
         self.assertEqual(self.get('/api/glossary').status_code, 200)

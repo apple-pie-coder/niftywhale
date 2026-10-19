@@ -60,6 +60,9 @@ SETTING_DEFAULTS = {
     'lab_years_intraday': '1',      # intraday replays are the heavy ones (~0.5 s per stock-session)
     'lab_costs': '1',               # backtests count Dhan's charges and slippage (costs.py)
     'lab_slippage_bps': '5',        # slippage a side, in basis points of the price
+    # JSON {locked, until}: the tuner rules and the autopilot policy frozen (rules_locked); `until` (epoch s) a
+    # short unlock confirmed with the password or a passkey, after which they lock again by themselves.
+    'rules_lock': '{}',
 }
 MANUAL_NOTE = 'squared off by you'   # a trade or demo position you closed yourself (app.py, square off)
 ZONE_LIFETIME_DAYS = 10         # a setup that has not played out in two weeks is stale
@@ -432,6 +435,22 @@ def _json_or(v: Any) -> Any:
         return v
 
 
+def rules_lock() -> Dict[str, Any]:
+    """The rules lock as saved: {locked: bool, until: epoch seconds or None}."""
+    raw = _json_or(settings().get('rules_lock') or '{}')
+    raw = raw if isinstance(raw, dict) else {}
+    until = raw.get('until')
+    return {'locked': raw.get('locked') is True, 'until': float(until) if isinstance(until, (int, float)) else None}
+
+
+def rules_locked(now: Optional[float] = None) -> bool:
+    """Whether the tuner rules and the autopilot policy may not change now: locked, and not inside an unlock.
+    Nothing changes them then, by hand or by the autopilot (its proposals wait for you instead)."""
+    lk = rules_lock()
+    now = datetime.now(timezone.utc).timestamp() if now is None else now
+    return lk['locked'] and not (lk['until'] and now < lk['until'])
+
+
 def set_settings(updates: Dict[str, Any]) -> Dict[str, str]:
     with connect() as c:
         for k, v in updates.items():
@@ -536,6 +555,21 @@ def scheduled_scans(date_str: str) -> List[Dict[str, Any]]:
         return _rows(c.execute("SELECT id, started_at, status FROM scans WHERE origin = 'schedule' "
                                "AND COALESCE(mode, 'swing') = 'swing' AND started_at LIKE ? ORDER BY id",
                                (date_str + '%',)))
+
+
+def candidate_for(scan_id: int, symbol: str) -> Optional[Dict[str, Any]]:
+    """One stock's candidate row in a scan, or None."""
+    with connect() as c:
+        rows = _rows(c.execute('SELECT * FROM candidates WHERE scan_id = ? AND symbol = ? LIMIT 1', (scan_id, symbol)))
+    for r in rows:
+        r['analysis'] = json.loads(r['analysis'] or '{}')
+    return rows[0] if rows else None
+
+
+def candidate_names(scan_id: int) -> List[Dict[str, Any]]:
+    """A scan's candidates, symbol and name only (no analysis to parse)."""
+    with connect() as c:
+        return _rows(c.execute('SELECT symbol, name FROM candidates WHERE scan_id = ?', (scan_id,)))
 
 
 def candidates(scan_id: int) -> List[Dict[str, Any]]:
@@ -663,6 +697,19 @@ def chart_zones(symbol: str, limit: int = 12) -> List[Dict[str, Any]]:
         rows = _rows(c.execute("SELECT * FROM zones WHERE symbol = ? AND status IN ('watching','tapped','triggered') "
                                "ORDER BY id DESC LIMIT ?", (symbol, limit)))
     return _zone_rows(rows)
+
+
+def symbol_zones(symbol: str, limit: int = 60) -> List[Dict[str, Any]]:
+    """Every zone one stock has had, swing and intraday, any status, newest first (its page's history)."""
+    with connect() as c:
+        rows = _rows(c.execute('SELECT * FROM zones WHERE symbol = ? ORDER BY id DESC LIMIT ?', (symbol, limit)))
+    return _zone_rows(rows)
+
+
+def symbol_alerts(symbol: str, limit: int = 40) -> List[Dict[str, Any]]:
+    """One stock's alerts, both modes, newest first."""
+    with connect() as c:
+        return _rows(c.execute('SELECT * FROM alerts WHERE symbol = ? ORDER BY id DESC LIMIT ?', (symbol, limit)))
 
 
 def recent_zones(limit: int = 60) -> List[Dict[str, Any]]:
@@ -978,6 +1025,14 @@ def iv_history(symbol: str, before_session: str, days: int = 250) -> List[float]
     with connect() as c:
         return [r[0] for r in c.execute('SELECT atm_iv FROM oc_daily WHERE symbol = ? AND session < ? AND atm_iv > 0 '
                                         'ORDER BY session DESC LIMIT ?', (symbol, before_session, days))]
+
+
+def oc_days(symbol: str, days: int = 60) -> List[Dict[str, Any]]:
+    """One underlying's end-of-session option readings (spot, ATM IV, PCR, max pain), oldest first."""
+    with connect() as c:
+        rows = _rows(c.execute('SELECT session, spot, atm_iv, pcr, max_pain FROM oc_daily WHERE symbol = ? '
+                               'ORDER BY session DESC LIMIT ?', (symbol, days)))
+    return rows[::-1]
 
 
 def prune_options(today: str) -> None:
@@ -1525,6 +1580,13 @@ def series(table: str, symbols: List[str], fields: str, until: Optional[str] = N
     return out
 
 
+def symbol_events(symbol: str, limit: int = 40) -> List[Dict[str, Any]]:
+    """One stock's corporate events from the calendar (results, dividends, AGMs...), newest first."""
+    with connect() as c:
+        return _rows(c.execute('SELECT day, purpose FROM sm_events WHERE symbol = ? ORDER BY day DESC LIMIT ?',
+                               (symbol, limit)))
+
+
 def results_dates(symbols: Optional[List[str]] = None) -> Dict[str, List[str]]:
     """Each stock's results board meetings (ISO days, oldest first), from the event calendar."""
     q, args = "SELECT symbol, day FROM sm_events WHERE purpose LIKE '%Result%'", []
@@ -1602,11 +1664,16 @@ def trade_notices(ref: str) -> List[Dict[str, Any]]:
     return [r for r in rows if r['key'].endswith(':' + ref) and r['key'].count(':') == ref.count(':') + 1]
 
 
-def demo_positions(status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-    q, args = 'SELECT * FROM demo_positions', []
+def demo_positions(status: Optional[str] = None, limit: Optional[int] = None, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    q, where, args = 'SELECT * FROM demo_positions', [], []
     if status:
-        q += ' WHERE status = ?'
+        where.append('status = ?')
         args.append(status)
+    if symbol:
+        where.append('symbol = ?')
+        args.append(symbol)
+    if where:
+        q += ' WHERE ' + ' AND '.join(where)
     with connect() as c:
         # Every row by default: the account's balance and the trades already taken are read from all of them.
         rows = _rows(c.execute(q + ' ORDER BY entry_time DESC, id DESC LIMIT ?', args + [-1 if limit is None else limit]))
@@ -1649,12 +1716,17 @@ EXEC_COLS = ('ref', 'mode', 'symbol', 'instrument', 'side', 'level', 'status', '
              'exit_time', 'gross', 'charges', 'net', 'last', 'unreal', 'expires', 'body', 'note')
 
 
-def exec_orders(statuses: Optional[List[str]] = None, limit: int = 500) -> List[Dict[str, Any]]:
-    """Live-trading rows, newest first; `body` (the order sent or planned) parsed."""
-    q, args = 'SELECT * FROM exec_orders', []
+def exec_orders(statuses: Optional[List[str]] = None, limit: int = 500, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Live-trading rows (one stock's when `symbol` is given), newest first; `body` (the order sent or planned) parsed."""
+    q, where, args = 'SELECT * FROM exec_orders', [], []
     if statuses:
-        q += f" WHERE status IN ({','.join('?' * len(statuses))})"
-        args = list(statuses)
+        where.append(f"status IN ({','.join('?' * len(statuses))})")
+        args += list(statuses)
+    if symbol:
+        where.append('symbol = ?')
+        args.append(symbol)
+    if where:
+        q += ' WHERE ' + ' AND '.join(where)
     with connect() as c:
         rows = _rows(c.execute(q + ' ORDER BY id DESC LIMIT ?', args + [limit]))
     for r in rows:

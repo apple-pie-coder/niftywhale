@@ -248,7 +248,7 @@ def why_text(w: Optional[Dict[str, Any]]) -> str:
     return (', '.join(parts) or 'the same trades') + f"; better on {d['better']} day{'s' if d['better'] != 1 else ''}, worse on {d['worse']}"
 
 
-HOLDOUT_MIN_TRADES = 10        # fewer in the holdout (both rule sets) and it cannot judge: the check passes, said so
+HOLDOUT_MIN_TRADES = 20        # fewer in the holdout (both rule sets) and it cannot judge: no proposal (not a pass)
 
 
 def folds(first: date, last: date, months: int) -> List[Tuple[date, date]]:
@@ -351,17 +351,24 @@ def walk_forward(evaluate: Callable[[Dict[str, float]], List[Dict[str, Any]]], c
     if proposal and hold_from:
         start = hold_from.isoformat()
         later = lambda ts: [t for t in ts if t['entry_time'][:10] >= start]
-        ph, ch = perf.summary(later(evaluate(proposal))), perf.summary(later(evaluate(current)))
         # Judged when either rule set trades enough: a proposal that filters out nearly every holdout trade
-        # gives up their R, and that is evidence too, not a pass.
+        # gives up their R, and that is evidence too, not a pass. Too few to judge is no evidence either way,
+        # and a change needs evidence: no proposal. Judged by the day as well, so one lucky day cannot carry it.
+        tp, tc = later(evaluate(proposal)), later(evaluate(current))
+        ph, ch = perf.summary(tp), perf.summary(tc)
         enough = max(ph.get('trades', 0), ch.get('trades', 0)) >= HOLDOUT_MIN_TRADES
-        ok = not enough or (ph.get('total_r') or 0) >= (ch.get('total_r') or 0)
-        holdout = {'from': start, 'months': hold, 'proposal': ph, 'current': ch, 'ok': ok, 'judged': enough}
+        db = days_better(tp, tc)
+        ok = enough and (ph.get('total_r') or 0) >= (ch.get('total_r') or 0) and db['better'] >= db['worse']
+        holdout = {'from': start, 'months': hold, 'proposal': ph, 'current': ch, 'ok': ok, 'judged': enough, 'days': db}
         checks.append({'key': 'holdout', 'label': f'Holdout from {start}, never tuned on', 'value': ph.get('total_r'),
                        'need': ch.get('total_r') if enough else f'{HOLDOUT_MIN_TRADES}+ trades to judge', 'ok': ok})
-        if not ok:
+        if not enough:
+            reasons.append(f"from {start} on, which tuning never saw, only {max(ph.get('trades', 0), ch.get('trades', 0))} "
+                           f"trades: too few to judge (need {HOLDOUT_MIN_TRADES})")
+        elif not ok:
             reasons.append(f"from {start} on, which tuning never saw, {ph.get('total_r') or 0}R against the "
-                           f"current rules' {ch.get('total_r') or 0}R")
+                           f"current rules' {ch.get('total_r') or 0}R, better on {db['better']} days and worse on {db['worse']}")
+        if not ok:
             proposal = None
     return {'folds': rows, 'oos_tuned': st, 'oos_current': sc, 'gain_r': round(gain, 3),
             'proposal': proposal, 'reasons': reasons, 'checks': checks, 'holdout': holdout}

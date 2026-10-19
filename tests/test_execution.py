@@ -77,8 +77,10 @@ class Plans(unittest.TestCase):
         opt = {**TRADE, 'mode': 'options', 'trail_pct': 20}
         p = execution.plan(opt, {'product': 'OPT', 'qty': 65}, {'security_id': '7', 'segment': 'NSE_FNO'}, ST, 'C1')
         self.assertIn('trailing exit', p['skip'])
-        self.assertNotIn('skip', execution.plan({**opt, 'trail_pct': 0}, {'product': 'OPT', 'qty': 65},
-                                                {'security_id': '7', 'segment': 'NSE_FNO'}, ST, 'C1'))
+        p = execution.plan({**opt, 'trail_pct': 0}, {'product': 'OPT', 'qty': 65}, {'security_id': '7', 'segment': 'NSE_FNO'}, ST, 'C1')
+        self.assertNotIn('skip', p)
+        # Squared off the same day: as INTRADAY, so Dhan closes it if the app cannot (never carried overnight).
+        self.assertEqual((p['body']['productType'], p['body']['exchangeSegment']), ('INTRADAY', 'NSE_FNO'))
 
     def test_protection_holds_target_then_stop(self):
         p = {'qty': 10, 'segment': 'NSE_EQ', 'security_id': '5', 'target': 151.0, 'stop': 122.65, 'correlation_id': 'nw-swing7'}
@@ -129,6 +131,20 @@ class Guards(unittest.TestCase):
         self.assertIn('has run', self.why(last=127.5))
         self.assertIn('through the stop', self.why(last=122.0))
         self.assertIn('shorts are not live', self.why(trade={**TRADE, 'side': 'short', 'stop': 130, 'target': 110}, last=None))
+
+    def test_a_day_mode_needs_sessions_and_a_steady_edge(self):
+        good = {'bt': {'trades': 90}, 'rules_ok': True, 'account': '1 lot a trade',
+                'live': {'account': '1 lot a trade', 'avg_r': 0.08, 'hold_r': 1.5},
+                'paper': {'trades': 200, 'total_r': 30.0, 'days': 45, 'day_t': 2.4}}
+        self.assertTrue(execution.gate('options', good)['ok'])
+        g = execution.gate('options', {**good, 'paper': {**good['paper'], 'days': 8, 'day_t': 1.2}})
+        self.assertEqual([c['label'] for c in g['checks'] if not c['ok']],
+                         ['Paper sessions on these rules', 'Paper days: the average against how much they vary (t)'])
+        self.assertTrue(execution.gate('swing', {**good, 'paper': {'trades': 40, 'total_r': 3.0}})['ok'])   # swing: by trade
+        # Days of +1R, +3R, -1R, +1R: a mean of 1R a day, a standard error of 0.82R.
+        trades = [{'entry_time': f'2026-10-0{d}T10:00', 'r': r} for d, r in ((1, 1.0), (2, 2.0), (2, 1.0), (5, -1.0), (6, 1.0))]
+        self.assertEqual(execution.day_t(trades), 1.22)
+        self.assertIsNone(execution.day_t(trades[:1]))
 
     def test_the_gate(self):
         good = {'bt': {'trades': 90}, 'rules_ok': True, 'account': '1 lot a trade',
@@ -381,7 +397,8 @@ class LiveBook(unittest.TestCase):
         st = execution.settings_from({})
         margin = lambda **kw: app.exec_margin({'mode': 'swing', 'qty': 10, 'price': 100.0, **kw}, st)   # noqa: E731
         self.assertEqual((margin(product='CNC'), margin(product='INTRADAY'), margin(product='MARGIN'),
-                          margin(product='MARGIN', mode='options')), (1000.0, 200.0, 200.0, 1000.0))
+                          margin(product='MARGIN', mode='options'), margin(product='INTRADAY', mode='options')),
+                         (1000.0, 200.0, 200.0, 1000.0, 1000.0))
         for k, status in enumerate(('offered', 'placing', 'placed', 'open')):
             self.add(f'swing:t{k}', status)
         self.add('swing:s', 'shadow', level='shadow')
@@ -506,6 +523,22 @@ class Records(unittest.TestCase):
         trades = [t('2026-10-01', '2026-10-09', 3.0), t('2026-10-02', '2026-10-03', -1.0), t('2026-10-04', '2026-10-05', -1.0)]
         self.assertEqual(perf.summary(trades)['max_drawdown'], -2.0)
         self.assertEqual(perf.summary(trades)['first'], '2026-10-01')
+
+class Fills(unittest.TestCase):
+    """Real fills against the paper trades they copy, in R: the evidence was made on paper prices."""
+
+    def test_entry_and_exit_against_paper_in_r(self):
+        paper = {'swing': [{'ref': 'swing:1', 'entry': 100.0, 'stop': 98.0, 'exit': 104.0}], 'intraday': [],
+                 'options': [{'ref': 'options:2', 'entry': 50.0, 'stop': 40.0, 'exit': None}]}
+        rows = [{'ref': 'swing:1', 'mode': 'swing', 'side': 'long', 'product': 'CNC', 'fill': 100.5, 'price': 100.1,
+                 'status': 'closed', 'exit': 103.5},
+                {'ref': 'options:2', 'mode': 'options', 'side': 'long', 'product': 'INTRADAY', 'fill': 49.0, 'status': 'open'},
+                {'ref': 'swing:9', 'mode': 'swing', 'fill': 10.0}]                # no paper twin: not counted
+        with mock.patch.object(app.store, 'live_trades', side_effect=lambda m: paper[m]):
+            got = app.exec_fills(rows)
+        self.assertEqual(got['swing'], {'orders': 1, 'entry_r': 0.25, 'closed': 1, 'exit_r': 0.25})   # half a rupee each way
+        self.assertEqual(got['options'], {'orders': 1, 'entry_r': -0.1, 'closed': 0, 'exit_r': None})  # filled cheaper: better
+
 
 if __name__ == '__main__':
     unittest.main()
