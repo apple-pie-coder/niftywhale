@@ -153,6 +153,15 @@ class Stored(unittest.TestCase):
         rows = {r['t']: r['levels'] for r in store.of_bars('NIFTY-FUT')}
         self.assertEqual(rows, {T0 - 20 * 86400: [], T0: [[25000.0, 0, 65, 0]]})     # footprint gone, numbers kept
 
+    def test_quality_per_day(self):
+        b = {'key': 'TCS', 't': T0, 'open': 1, 'high': 1, 'low': 1, 'close': 1, 'buy': 30, 'sell': 10, 'unknown': 10,
+             'delta': 20, 'cvd': 20, 'poc': 1, 'step': 0.05, 'trades': 10, 'merged': 4, 'by_quote': 7, 'by_tick': 3, 'levels': []}
+        store.add_of_bars([b, {**b, 't': T0 + 60}])
+        with mock.patch.object(store, 'now_local', return_value=datetime(2026, 10, 21, 16, 0)):
+            rows = store.of_quality(7)
+        self.assertEqual([(r['day'], r['name'], r['bars'], r['trades'], r['merged'], r['by_tick'], r['volume'], r['unknown'])
+                          for r in rows], [('2026-10-21', 'TCS', 2, 20, 8, 6, 100, 20)])
+
 
 class AtEntry(unittest.TestCase):
     """What an intraday entry records (context.orderflow_context) and how the Performance tab buckets it."""

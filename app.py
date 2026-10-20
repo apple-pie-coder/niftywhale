@@ -5682,6 +5682,20 @@ def api_charts_orderflow():
                          'quality': orderflow.quality([b for b in bars if orderflow.time_day(b['t']) == today])}))
 
 
+@app.route('/api/orderflow/quality')
+def api_orderflow_quality():
+    """How far orderflow's calls can be trusted, per day and instrument (store.of_quality): the share of packets that
+    carried several trades (`merged`), of trades the tick rule called (`by_tick`) and of volume no rule could call
+    (`unknown_volume`). The first checkpoint (README 4.19) reads it after a week."""
+    days = max(1, min(90, request.args.get('days', 7, type=int)))
+    rows = store.of_quality(days)
+    for r in rows:
+        n, v = r['trades'] or 0, r['volume'] or 0
+        r.update(merged=round(r['merged'] / n, 3) if n else None, by_tick=round(r['by_tick'] / n, 3) if n else None,
+                 unknown_volume=round(r['unknown'] / v, 3) if v else None)
+    return jsonify(safe({'days': days, 'rows': rows}))
+
+
 def chart_syms(raw) -> list:
     return [s for s in raw if charts.known(s)][:CHART_MAX]
 

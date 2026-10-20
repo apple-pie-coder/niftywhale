@@ -1345,6 +1345,44 @@ connection's IP usually changes: use an ISP static IP, or a small server with a 
 calls through. Market data needs no static IP, so **Shadow works without any of this**. If Dhan refuses an order for
 its IP, live trading halts.
 
+### 4.19 Orderflow
+
+Orderflow shows who was aggressive: how much traded at the ask (buyers lifting the offer) against the bid (sellers
+hitting it), minute by minute. It is recorded to answer one question, not traded on: **do intraday entries whose sweep
+showed absorption or a delta divergence do better than those that did not?** No rule reads it.
+
+**What is read.** With Dhan, in the regular session (to the F&O close, 15:40): the NIFTY and BANKNIFTY near-month futures
+(an index has no volume; the contract rolls on its expiry day) and every stock with an intraday zone that day. They are
+streamed in Dhan's full mode, whose packets carry the best bid and ask. Extra sessions (Muhurat) are not read.
+
+**How a trade is called.** Dhan's packets do not say who started a trade, and one packet can stand for several. A
+packet's size is the rise in the day's volume since the one before; its side is its price against the bid and ask of the
+packet before (at or above the ask a buy, at or below the bid a sell), else the tick rule (above the previous price a
+buy, below a sell). It is an approximation: several trades in one packet are booked at its last price.
+
+**What is kept** (`of_bars`): one row per instrument per minute, with buys, sells, delta, the day's running delta, the
+busiest price and the footprint (volume per price level, about 1 bp of the price apart). Footprints are kept 10 days,
+the rest 90.
+
+**Where it shows.**
+- **Charts tab:** the **Orderflow** button on a chart adds a pane with each candle's delta and the day's running delta
+  (1m to 4h). NIFTY 50 and NIFTY BANK show their futures'.
+- **Every intraday entry** records, from the sweep to the CHoCH candle's close: absorption (heavy selling that did not
+  push price down, or the reverse), delta divergence (a new low on a higher running delta), stacked imbalances (three or
+  more price levels in a row where one side traded 3 times the other), exhaustion, the window's delta, the CHoCH
+  candle's own delta, and how much of the window was read. The trade drawer lists them.
+- **Performance tab:** four breakdowns of intraday trades by those readings, with "too little data" when under half
+  the window was read. Backtests have none (no history of every trade exists).
+
+**The two checkpoints.**
+1. **After the first week, the data.** `GET /api/orderflow/quality?days=7` gives, per day and instrument, the share of
+   packets that carried several trades (`merged`), of trades the tick rule had to call (`by_tick`) and of volume nothing
+   could call (`unknown_volume`). The chart pane shows today's. If most packets carry several trades, the calls are too
+   rough to trust and the recording should stop there.
+2. **After about 50 trades a bucket, the outcome.** On the Performance tab, compare intraday trades with absorption or a
+   divergence with the trade against those without. Only if the difference holds up, and the rules freeze has lifted,
+   is it worth making a gate.
+
 ## 5. Intraday mode
 
 Intraday mode runs the same protocol **one timeframe down, inside one session**. The 15-minute
@@ -4246,6 +4284,37 @@ curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/charts/cand
   "source": "dhan",
   "ticks_from": null
 }
+```
+
+#### `GET /api/charts/orderflow`
+
+Each minute's delta and the day's running delta `[t, delta, cvd]` (t in seconds, IST) of the instrument behind a chart
+(4.19): a stock's own, NIFTY 50's and NIFTY BANK's from their futures. Empty for one never read, or a daily timeframe.
+
+**Query:** `?symbol=`, `?tf=` seconds (decides how many days are sent)
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/charts/orderflow?symbol=IDX:13&tf=300'
+```
+
+```json
+{
+  "bars": [[1792574460, 1520, 1520], [1792574520, -310, 1210]],
+  "name": "NIFTY-FUT",
+  "quality": {"bars": 2, "by_tick": 0.08, "merged": 0.21, "trades": 1450, "unknown_volume": 0.0}
+}
+```
+
+#### `GET /api/orderflow/quality`
+
+Per day and instrument, how far orderflow's calls can be trusted (4.19, the first checkpoint): the share of packets that
+carried several trades (`merged`), of trades the tick rule called (`by_tick`), of volume nothing could call
+(`unknown_volume`), with the counts.
+
+**Query:** `?days=` (1 to 90, default 7)
+
+```sh
+curl -H "Authorization: Bearer $NW_TOKEN" 'http://127.0.0.1:5058/api/orderflow/quality?days=7'
 ```
 
 #### `GET /api/charts/live`

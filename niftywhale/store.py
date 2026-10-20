@@ -1373,6 +1373,17 @@ def of_bars(name: str, day: str = None, since: int = None, until: int = None, le
     return rows
 
 
+def of_quality(days: int = 7) -> List[Dict[str, Any]]:
+    """Per day and instrument, the counts behind orderflow.quality, newest day first: the first-week check of how
+    often a packet carried several trades and how often the tick rule had to call a side."""
+    since = (now_local().date() - timedelta(days=days)).isoformat()
+    with connect() as c:
+        return _rows(c.execute(
+            'SELECT day, name, COUNT(*) AS bars, SUM(trades) AS trades, SUM(merged) AS merged, SUM(by_quote) AS by_quote, '
+            'SUM(by_tick) AS by_tick, SUM(buy + sell + unknown) AS volume, SUM(unknown) AS unknown '
+            'FROM of_bars WHERE day >= ? GROUP BY day, name ORDER BY day DESC, name', (since,)))
+
+
 def of_names(day: str) -> List[str]:
     with connect() as c:
         return [r[0] for r in c.execute('SELECT DISTINCT name FROM of_bars WHERE day = ? ORDER BY name', (day,))]
