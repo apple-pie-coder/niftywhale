@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime
 from unittest import mock
 
 _tmp = tempfile.mkdtemp()
@@ -169,7 +170,8 @@ class FeedWithStream(unittest.TestCase):
         feed.watch(['RELIANCE', 'TCS'])
         self.assertTrue(wait_for(lambda: fetched))
         self.assertEqual(fetched[0], ['TCS'])
-        self.assertEqual(Cover.calls[-1], {'IDX:13': 'quote', 'IDX:25': 'quote', 'RELIANCE': 'ticker', 'TCS': 'ticker'})
+        # Watched symbols stream in 'quote' mode: its packets carry the day's volume, for the candles.
+        self.assertEqual(Cover.calls[-1], {'IDX:13': 'quote', 'IDX:25': 'quote', 'RELIANCE': 'quote', 'TCS': 'quote'})
 
     def test_a_streamed_repeat_within_a_second_is_one_tick(self):
         feed = livefeed.Feed(lambda s: {}, lambda: 1, name='t')
@@ -204,6 +206,47 @@ class SourceTest(unittest.TestCase):
         self.assertEqual(got['OPT:NSE_FNO:7']['oi'], 9000)
         self.assertAlmostEqual(feed.last('IDX:13')[1], 22500.0)
         self.assertAlmostEqual(feed.last('OPT:NSE_FNO:7')[1], 101.5, places=2)
+
+
+class OrderflowSource(unittest.TestCase):
+    T0 = 1792554600.0                     # 21 Oct 2026 09:20 IST, a minute's start
+
+    def pkt(self, sid, vol, ltp, at, bid, ask):
+        return {'code': 8, 'seg': 'NSE_FNO', 'sid': sid, 'ltp': ltp, 'vol': vol, 'ltt': at, 'bid': bid, 'ask': ask}
+
+    def test_named_instruments_make_bars_once(self):
+        feed = livefeed.Feed(lambda s: {}, lambda: 1, name='t')
+        src = app.charts.DhanSource(lambda: feed)
+        with mock.patch.object(app.dhan, 'available', return_value=True), mock.patch.object(src.stream, 'want'), \
+                mock.patch.object(src.stream, 'subscribed', return_value={('NSE_FNO', 48704): 'full', ('NSE_FNO', 9): 'full'}):
+            src.cover({'OPT:NSE_FNO:48704': 'full', 'OPT:NSE_FNO:9': 'full'})
+        src.flow_want({'NIFTY-FUT': 'OPT:NSE_FNO:48704'})
+        t = self.T0
+        for p in (self.pkt(48704, 1000, 25000.0, t, 24999.5, 25000.5), self.pkt(48704, 1065, 25000.5, t + 2, 25000.0, 25001.0),
+                  self.pkt(48704, 1130, 25000.0, t + 3, 24999.5, 25000.5), self.pkt(9, 50, 10.0, t + 4, 9.95, 10.05)):
+            src._packet(p)
+        self.assertEqual(src.flow_bars('NIFTY-FUT'), [])
+        src.flow_flush(t + 61)
+        bars = src.flow_bars('NIFTY-FUT')
+        self.assertEqual(len(bars), 1)
+        self.assertEqual((bars[0]['buy'], bars[0]['sell'], bars[0]['key']), (65, 65, 'NIFTY-FUT'))
+        self.assertEqual([b['key'] for b in src.take_flow()], ['NIFTY-FUT'])
+        self.assertEqual(src.take_flow(), [])                         # handed out once
+        self.assertEqual(src.flow_names(), ['NIFTY-FUT'])             # the unnamed contract made none
+
+    def test_what_is_read(self):
+        store.init()
+        today = '2026-10-21'
+        with store.connect() as c:
+            c.execute("DELETE FROM zones WHERE mode = 'intraday'")
+            for sym, status in (('TCS', 'watching'), ('INFY', 'triggered'), ('WIPRO', 'expired')):
+                c.execute("INSERT INTO zones (symbol, mode, status, created_at) VALUES (?, 'intraday', ?, ?)",
+                          (sym, status, today + 'T09:30:00'))
+        futs = {'NIFTY': ('48704', '2026-10-27'), 'BANKNIFTY': ('48699', '2026-10-27')}
+        with mock.patch.object(app.dhan, 'index_future', side_effect=lambda und, on: futs.get(und)):
+            got = app.orderflow_symbols(datetime(2026, 10, 21, 10, 0, tzinfo=app.data.IST))
+        self.assertEqual(got, {'NIFTY-FUT': 'OPT:NSE_FNO:48704', 'BANKNIFTY-FUT': 'OPT:NSE_FNO:48699',
+                               'INFY': 'INFY', 'TCS': 'TCS'})
 
 
 class Triggers(unittest.TestCase):

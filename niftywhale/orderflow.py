@@ -82,7 +82,7 @@ class Book:
         if vol is None or not ltp or ltp <= 0:
             return None
         at = p.get('ltt') or now
-        day = _day(at)
+        day = time_day(at)
         done = None
         if day != self.day:                         # a new session: the day's volume starts again
             done = self._close()
@@ -166,9 +166,10 @@ class Book:
         return b
 
 
-def _day(epoch: float) -> str:
+def time_day(epoch: float) -> str:
     """The IST date of an epoch second."""
     return datetime.fromtimestamp(epoch, IST).date().isoformat()
+
 
 
 # ---------------------------------------------------------------- readings

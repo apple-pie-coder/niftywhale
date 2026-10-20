@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import data, dhan, dhanws, livefeed, ticker, universe
+from niftywhale import data, dhan, dhanws, livefeed, orderflow, ticker, universe
 
 logger = logging.getLogger(__name__)
 
@@ -145,14 +145,23 @@ def ws_url() -> Optional[str]:
 
 class DhanSource:
     """The live feed's stream: feed symbols to Dhan instruments and back, and the latest packet of
-    each (open / high / low, OI, best bid and ask) for what wants more than the price."""
+    each (open / high / low, OI, best bid and ask) for what wants more than the price.
+
+    Orderflow rides it: the instruments the app names (flow_want: {name: feed symbol}, streamed in
+    'full' mode so the best bid and ask decide each trade's side) feed an orderflow.Book each, whose
+    closed 1-minute bars are kept for the day (flow_bars) and handed out once to be saved (take_flow)."""
     QUOTE_KEEP_S = 600
+    FLOW_KEEP = 450                             # bars per name in memory: a session is 375 minutes
 
     def __init__(self, feed_fn):
         self._feed = feed_fn                    # -> the Feed the prices go to
         self._lock = threading.Lock()
         self._sym: Dict[tuple, str] = {}
         self._quotes: Dict[tuple, dict] = {}
+        self._flow_names: Dict[str, str] = {}   # feed symbol -> orderflow name
+        self._books: Dict[str, orderflow.Book] = {}
+        self._flow_bars: Dict[str, List[dict]] = {}
+        self._flow_new: List[dict] = []
         self.stream = dhanws.Stream(ws_url, self._packet, name='dhan-feed')
 
     def cover(self, want: Dict[str, str]) -> set:
@@ -179,9 +188,54 @@ class DhanSource:
             q.update({a: b for a, b in p.items() if a not in ('code', 'seg', 'sid')})
             q['at'] = now
             sym = self._sym.get(k)
+            name = self._flow_names.get(sym) if sym else None
+            if name:
+                book = self._books.get(name)
+                if book is None:
+                    book = self._books[name] = orderflow.Book(name)
+                self._keep_bar(book.on_packet(p, now))
         ltp = p.get('ltp')
         if sym and ltp and ltp > 0:
-            self._feed().add({sym: float(ltp)}, now)
+            self._feed().add({sym: float(ltp)}, now, {sym: p['vol']} if p.get('vol') is not None else None)
+
+    # ------------------------------------------------------------ orderflow
+    def flow_want(self, names: Dict[str, str]) -> None:
+        """Read the orderflow of these instruments ({name: feed symbol}); the caller keeps them on the
+        feed in 'full' mode (Feed.mark). A name dropped keeps its bars until the day's end."""
+        with self._lock:
+            self._flow_names = {sym: name for name, sym in names.items()}
+
+    def _keep_bar(self, bar: Optional[dict]) -> None:
+        if not bar:
+            return
+        bars = self._flow_bars.setdefault(bar['key'], [])
+        if bars and orderflow.time_day(bars[-1]['t']) != orderflow.time_day(bar['t']):
+            bars.clear()                        # a new day
+        bars.append(bar)
+        del bars[:-self.FLOW_KEEP]
+        self._flow_new.append(bar)
+
+    def flow_flush(self, now: float = None) -> None:
+        """Close the bars of instruments that went quiet once their minute is over."""
+        now = now or time.time()
+        with self._lock:
+            for book in self._books.values():
+                self._keep_bar(book.flush(now))
+
+    def flow_bars(self, name: str) -> List[dict]:
+        """Today's closed bars of one name, oldest first."""
+        with self._lock:
+            return list(self._flow_bars.get(name) or [])
+
+    def flow_names(self) -> List[str]:
+        with self._lock:
+            return sorted(set(self._flow_names.values()) | set(self._flow_bars))
+
+    def take_flow(self) -> List[dict]:
+        """The bars closed since the last call, each once."""
+        with self._lock:
+            out, self._flow_new = self._flow_new, []
+        return out
 
     def quote(self, sym: str, fresh_s: float = 15) -> Optional[dict]:
         """The latest packet's fields for a feed symbol, if one came in the last `fresh_s` seconds."""

@@ -1648,12 +1648,47 @@ def _open_live_keys() -> list:
     return sorted(keys)
 
 
+ORDERFLOW_STOCKS = 40          # today's intraday zones read for orderflow, at most
+
+
+def orderflow_symbols(now: datetime = None) -> dict:
+    """What orderflow reads in the regular session, {name: feed symbol}: the NIFTY and BANKNIFTY futures (an
+    index has no volume) and every stock with an intraday zone today, watched, tapped or triggered, so the
+    sweep and the trigger before an entry are read (context.py records them at the entry)."""
+    now = now or data.now_ist()
+    out = {}
+    for und in dhan.INDEX_FUTURES:
+        fut = dhan.index_future(und, now.date())
+        if fut:
+            out[f'{und}-FUT'] = f'OPT:NSE_FNO:{fut[0]}'
+    zones = store.intraday_zones(store.INTRADAY_OPEN + ('triggered',), session=now.date().isoformat())
+    for z in zones[:ORDERFLOW_STOCKS]:
+        out.setdefault(z['symbol'], z['symbol'])
+    return out
+
+
+def orderflow_tick(now: datetime) -> bool:
+    """Keep the orderflow instruments on the feed in 'full' mode while the F&O segment trades (the futures
+    trade past the cash close); close quiet bars. Returns whether it is reading."""
+    on = session.fo_open(now) and dhan.available()
+    if on:
+        flow = orderflow_symbols(now)
+        charts.SOURCE.flow_want(flow)
+        charts.FEED.mark(list(flow.values()), mode='full')
+    else:
+        charts.SOURCE.flow_want({})
+    charts.SOURCE.flow_flush()
+    return on
+
+
 def marks_loop() -> None:
     """Keep every open position's instrument on the feed while the market is open, and raise the
-    live notices (near a stop or target, a square-off coming, the feed out)."""
+    live notices (near a stop or target, a square-off coming, the feed out); and the orderflow
+    instruments (orderflow_tick) while the F&O segment trades."""
     time.sleep(15)
     pruned = 0.0
     while True:
+        flowing = False
         try:
             if data.market_open():
                 ok = dhan.available()
@@ -1666,9 +1701,10 @@ def marks_loop() -> None:
             elif time.time() - pruned > 86400:
                 store.prune_notices()
                 pruned = time.time()
+            flowing = orderflow_tick(data.now_ist())
         except Exception:
             logger.exception('Live marks failed')
-        time.sleep(LIVE_EVERY_S if data.market_open() else 60)
+        time.sleep(LIVE_EVERY_S if data.market_open() or flowing else 60)
 
 
 # ---------------------------------------------------------------- in-app notices (the bell)

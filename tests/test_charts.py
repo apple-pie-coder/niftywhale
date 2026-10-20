@@ -45,6 +45,15 @@ class Feed(unittest.TestCase):
         self.assertEqual(len(f.ticks('A')), 2)
         self.assertEqual(f.watched(), ['A', 'OPT:NSE_FNO:1'])
 
+    def test_streamed_volume_makes_candle_volume(self):
+        f = livefeed.Feed(lambda s: {}, lambda: 1)
+        t0 = 1_800_000_000
+        f.add({'A': 10.0}, t0 + 0.2, {'A': 1000})
+        f.add({'A': 10.2}, t0 + 2.0, {'A': 1040})
+        f.add({'A': 10.1}, t0 + 6.0, {'A': 1100})
+        f.add({'A': 10.3}, t0 + 7.0, {'A': 1125})
+        self.assertEqual([b[5] for b in f.bars('A', 5)], [40, 85])
+
     def test_fetch_sends_contracts_to_dhan(self):
         with mock.patch.object(charts.dhan, 'available', return_value=True), \
                 mock.patch.object(charts.dhan, 'ltp', return_value={}) as ltp:

@@ -15,7 +15,9 @@ which only a stream gives: the ticker's indices and an open option chain's contr
 
 With a stream (Dhan's WebSocket feed, charts.DhanSource) the prices are pushed as they trade: each
 round the thread tells the stream what is wanted, and polls only what the stream does not carry
-(nothing, while it is connected). Without one, or while it is down, it polls as before.
+(nothing, while it is connected). Without one, or while it is down, it polls as before. A watched
+instrument is streamed in 'quote' mode, whose packets carry the day's volume: candles from ticks get
+their volume from it (add(vols=...)); polled prices have none, so those candles show 0.
 
 Pure Python around the callables the app gives it:
   fetch(symbols) -> {symbol: price}     one request for all of them
@@ -49,6 +51,7 @@ class Feed:
         self._mark: Dict[str, float] = {}       # latest price only (open positions)
         self._more: Dict[str, tuple] = {}       # symbol -> (time, 'quote' | 'full'): streamed only
         self._ticks: Dict[str, deque] = {}
+        self._cum: Dict[str, deque] = {}        # symbol -> (time, the day's volume so far), with the ticks
         self._px: Dict[str, tuple] = {}         # symbol -> (time, price) of the latest poll
         self._thread: Optional[threading.Thread] = None
         self._wake = threading.Event()
@@ -81,7 +84,7 @@ class Feed:
 
     def modes(self, plain: List[str] = None) -> Dict[str, str]:
         """Every symbol wanted now, with the mode it is wanted in (`plain`: watched(), if read already)."""
-        out = {s: 'ticker' for s in (self.watched() if plain is None else plain)}
+        out = {s: 'quote' for s in (self.watched() if plain is None else plain)}
         with self._lock:
             for s, (_, m) in self._more.items():
                 if RANK[m] > RANK.get(out.get(s), -1):
@@ -101,7 +104,8 @@ class Feed:
             return sorted(set(self._watch) | set(self._mark))
 
     # ------------------------------------------------------------ ticks
-    def add(self, prices: Dict[str, float], at: Optional[float] = None) -> None:
+    def add(self, prices: Dict[str, float], at: Optional[float] = None, vols: Optional[Dict[str, int]] = None) -> None:
+        """Prices at `at`; `vols`: each one's day volume so far, when the source gives it (a stream's quote)."""
         at = at or time.time()
         with self._lock:
             for s, p in prices.items():
@@ -110,6 +114,13 @@ class Feed:
                 self._px[s] = (at, float(p))
                 if (s in self._mark or s in self._more) and s not in self._watch and s not in self._ticks:
                     continue                            # marked only: no tick history
+                v = (vols or {}).get(s)
+                if v is not None:
+                    c = self._cum.setdefault(s, deque(maxlen=MAX_TICKS))
+                    if not c or c[-1][1] != v:
+                        c.append((at, v))
+                    while c and c[0][0] < at - KEEP_S:
+                        c.popleft()
                 q = self._ticks.setdefault(s, deque(maxlen=MAX_TICKS))
                 if q and q[-1][1] == float(p) and at - q[-1][0] < REPEAT_S:
                     continue
@@ -142,7 +153,9 @@ class Feed:
             return q[0][0] if q else None
 
     def bars(self, symbol: str, seconds: int, shift: int = 0) -> List[list]:
-        """Candles of `seconds` from the ticks: [[time + shift, open, high, low, close, 0], ...]."""
+        """Candles of `seconds` from the ticks: [[time + shift, open, high, low, close, volume], ...]. The volume is
+        the rise in the day's volume over the candle (0 without a streamed volume; the first candle counts
+        only from its first packet)."""
         out: List[list] = []
         for at, p in self.ticks(symbol):
             t = int(at // seconds * seconds) + shift
@@ -151,6 +164,18 @@ class Feed:
                 b[2], b[3], b[4] = max(b[2], p), min(b[3], p), p
             else:
                 out.append([t, p, p, p, p, 0])
+        with self._lock:
+            cum = list(self._cum.get(symbol) or ())
+        if cum and out:
+            last = {}
+            for at, v in cum:
+                last[int(at // seconds * seconds) + shift] = v
+            prev = cum[0][1]
+            for b in out:
+                v = last.get(b[0])
+                if v is not None:
+                    b[5] = max(0, v - prev)                 # a new day's counter starting again: 0, not negative
+                    prev = v
         return out
 
     # ------------------------------------------------------------ the thread
