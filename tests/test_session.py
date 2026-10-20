@@ -96,7 +96,8 @@ NSE_HOLIDAYS = {
            {'tradingDate': '20-Oct-2026', 'weekDay': 'Tuesday', 'description': 'Dussehra'},
            {'tradingDate': '08-Nov-2026', 'weekDay': 'Sunday', 'description': 'Diwali Laxmi Pujan*'},
            {'tradingDate': '24-Nov-2026', 'weekDay': 'Tuesday', 'description': 'Prakash Gurpurb Sri Guru Nanak Dev'},
-           {'tradingDate': 'soon', 'description': 'a row that does not parse'}],
+           {'tradingDate': 'soon', 'description': 'a row that does not parse'},
+           {'tradingDate': '02-Mar-2024', 'weekDay': 'Saturday', 'description': 'Special Live Trading'}],
     'FO': [{'tradingDate': '20-Oct-2026', 'weekDay': 'Tuesday', 'description': 'Dussehra'}],
     'CD': [{'tradingDate': '21-Oct-2026', 'weekDay': 'Wednesday', 'description': 'not a stock-market holiday'}],
 }
@@ -137,6 +138,13 @@ class Holidays(unittest.TestCase):
         self.assertEqual(smart.sessions_back(date(2026, 10, 21), 3),
                          [date(2026, 10, 16), date(2026, 10, 19), date(2026, 10, 21)])
         self.assertEqual(demo.monthly_expiries(date(2026, 11, 1), date(2026, 11, 30)), [date(2026, 11, 23)])   # 24th: a holiday
+
+    def test_the_page_names_it(self):
+        self.assertEqual(app.holiday_view(datetime(2026, 10, 20, 11, 0, tzinfo=IST)),
+                         {'day': '2026-10-20', 'name': 'Dussehra', 'next_session': '2026-10-21'})
+        self.assertEqual(app.holiday_view(datetime(2026, 10, 2, 11, 0, tzinfo=IST))['next_session'], '2026-10-05')   # over the weekend
+        self.assertIsNone(app.holiday_view(datetime(2026, 10, 21, 11, 0, tzinfo=IST)))
+        self.assertIsNone(app.holiday_view(datetime(2026, 10, 24, 11, 0, tzinfo=IST)))                   # a Saturday
 
     def test_a_new_list_replaces_its_year_and_keeps_the_rest(self):
         session.save_holidays({'2025-12-25': 'Christmas'})

@@ -1691,6 +1691,22 @@
         .ticker { height: 30px; font-size: 11.5px; } .tk-item { height: 30px; padding: 0 12px; gap: 6px; }
         .tk-rng { width: 32px; }
     }
+    /* Exchange holiday: a tape under the top bar (and the ticker) on every tab, the day NSE is shut. */
+    .hol-tape[hidden] { display: none; }
+    .hol-tape { position: relative; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 7px 24px 7px 30px;
+                background: var(--warn-soft); border-bottom: 1px solid var(--line); color: var(--ink-2); font-size: 13px; line-height: 1.35; }
+    .hol-tape::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 8px;
+                        background: repeating-linear-gradient(-45deg, var(--warn) 0 5px, transparent 5px 10px); }
+    .hol-ico { flex: none; color: var(--warn); }
+    .hol-what { min-width: 0; }
+    .hol-what b { color: var(--ink); font-weight: 700; }
+    .hol-next { margin-left: auto; flex: none; color: var(--ink-3); font-size: 12.5px; white-space: nowrap; }
+    @media (max-width: 640px) {
+        .hol-tape { gap: 8px; min-height: 32px; padding: 6px 12px 6px 18px; font-size: 12px; }
+        .hol-tape::before { width: 6px; }
+        .hol-long { display: none; }
+        .hol-next { font-size: 11.5px; }
+    }
     @media (prefers-reduced-motion: reduce) {
         .tk-track { animation: none; } .tk-viewport { overflow-x: auto; mask-image: none; }
         #tk-play { display: none; }
@@ -1969,6 +1985,8 @@
     .topbar { height: calc(58px + var(--sa-t)); padding-top: var(--sa-t);
               padding-left: max(24px, var(--sa-l)); padding-right: max(24px, var(--sa-r)); }
     .ticker { top: calc(58px + var(--sa-t)); padding-left: var(--sa-l); padding-right: var(--sa-r); }
+    .hol-tape { padding-left: calc(30px + var(--sa-l)); padding-right: max(24px, var(--sa-r)); }
+    @media (max-width: 640px) { .hol-tape { padding-left: calc(18px + var(--sa-l)); padding-right: max(12px, var(--sa-r)); } }
     .layout { padding-left: max(24px, var(--sa-l)); padding-right: max(24px, var(--sa-r)); padding-bottom: calc(40px + var(--sa-b)); }
     .drawer { padding-top: var(--sa-t); padding-right: var(--sa-r); padding-bottom: var(--sa-b); }
     .toasts { bottom: calc(16px + var(--sa-b)); right: calc(16px + var(--sa-r)); }
@@ -2104,6 +2122,13 @@
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
     </div>
+</div>
+<div class="hol-tape" id="hol-tape" role="status" hidden>
+    <svg class="hol-ico" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/>
+        <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3M6 10l4 0"/></svg>
+    <span class="hol-what"><b id="hol-name"></b> <span class="hol-sub">· Market closed<span class="hol-long"> for an NSE holiday</span></span></span>
+    <span class="hol-next" id="hol-next"></span>
 </div>
 
 <div class="layout">
@@ -3538,13 +3563,23 @@ function feedLine(md) {
         ? (md.mode === 'auto' ? 'Auto-login · token until ' + until : 'Token until ' + until + ' · auto-renews')
         : (md.mode === 'off' ? 'Delayed a few minutes' : 'Dhan: ' + md.message);
 }
+function renderHoliday() {
+    const h = S.holiday, tape = $('hol-tape');
+    tape.hidden = !h;
+    if (!h) return;
+    const day = (iso) => new Date(iso + 'T00:00:00+05:30').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+    $('hol-name').textContent = h.name;
+    $('hol-next').textContent = 'Next session ' + day(h.next_session);
+    tape.title = `${h.name}: NSE is closed on ${day(h.day)}. Trading resumes ${day(h.next_session)} at 09:15 IST.`;
+}
 function renderStatus() {
+    renderHoliday();
     const md = mdState(), mp = $('market-pill');
     const trouble = md.mode !== 'off' && !md.live;
     mp.dataset.tone = trouble ? 'bad' : !S.market_open ? '' : md.live ? 'good' : 'warn';
     mp.dataset.pulse = S.market_open && md.live ? '1' : '0';
     $('market-text').textContent = S.market_open && !md.live && !trouble ? 'Delayed' : '';
-    const when = (S.market_open ? 'Market open' : 'Market closed') + ' · '
+    const when = (S.market_open ? 'Market open' : 'Market closed' + (S.holiday ? ` (${S.holiday.name})` : '')) + ' · '
         + new Date(S.now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST · '
         + (md.live ? 'Real-time' : trouble ? 'Disconnected' : 'Delayed');
     mp.setAttribute('aria-label', when);
@@ -3619,7 +3654,7 @@ function openStatus() {
     const tk = tickData && tickData.updated ? `<dt>Ticker</dt><dd>${tickData.live ? 'Real-time' : 'Last session ' + expLabel(tickData.session)}
         <span class="sub">Prices read ${tm(tickData.updated)}</span></dd>` : '';
     openModal('Market status', 'NSE · ' + t + ' IST', `<dl class="mstat">
-        <dt>Market</dt><dd>${S.market_open ? 'Open' : 'Closed'}<span class="sub">NSE trades 09:15–15:30 IST, weekdays</span></dd>
+        <dt>Market</dt><dd>${S.market_open ? 'Open' : 'Closed'}<span class="sub">${S.holiday ? esc(S.holiday.name) + ' · an NSE holiday' : 'NSE trades 09:15–15:30 IST, weekdays, except NSE holidays'}</span></dd>
         <dt>Data feed</dt><dd>${md.live ? 'Dhan · real-time' : 'yfinance · delayed'}<span class="sub"${md.error ? ` title="${esc(md.error)}"` : ''}>${esc(feedLine(md))}</span></dd>
         ${tk}${MOOD.m ? `<dt>Mood</dt><dd>${esc(MOOD.m.label)}<span class="sub">${esc(moodWhy(MOOD.m).replace(/^\S+ \(|\)$/g, ''))}.
             The page's background tint follows it: rose when fearful, blue when calm, green when upbeat, amber as the VIX rises.</span>

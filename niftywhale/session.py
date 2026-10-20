@@ -78,10 +78,15 @@ _held: Dict[str, Any] = {'at': None, 'days': {}}
 
 def parse_holidays(payload: Dict[str, Any]) -> Dict[str, str]:
     """NSE's trading holidays (api/holiday-master?type=trading) as {ISO date: name}, from the cash
-    and F&O lists (the same days today; either one is enough)."""
+    and F&O lists (the same days today; either one is enough). The list also carries the odd extra
+    session ("Special Live Trading", Saturday 2 Mar 2024): a day named for trading is not a holiday.
+    Its morning_session / evening_session fields were empty in every year from 2023 to 2026, the
+    Muhurat days included, so extra sessions are not read from it."""
     out = {}
     for segment in ('CM', 'FO'):
         for h in (payload or {}).get(segment) or []:
+            if 'trading' in (h.get('description') or '').lower():
+                continue
             try:
                 d = datetime.strptime(h['tradingDate'], '%d-%b-%Y').date()
             except (KeyError, TypeError, ValueError):
@@ -130,4 +135,12 @@ def prev_trading_day(day: date) -> date:
     d = day - timedelta(days=1)
     while not trading_day(d):
         d -= timedelta(days=1)
+    return d
+
+
+def next_trading_day(day: date) -> date:
+    """The first trading day after `day`."""
+    d = day + timedelta(days=1)
+    while not trading_day(d):
+        d += timedelta(days=1)
     return d

@@ -1006,6 +1006,13 @@ def holidays_loop() -> None:
         time.sleep(HOLIDAYS_RETRY_S)
 
 
+def holiday_view(now: datetime = None):
+    """Today's exchange holiday for the page's tape, or None on a session or a weekend."""
+    day = (now or data.now_ist()).date()
+    name = session.holiday(day)
+    return {'day': day.isoformat(), 'name': name, 'next_session': session.next_trading_day(day).isoformat()} if name else None
+
+
 def next_holiday(today: date = None) -> str:
     """The next exchange holiday held on a weekday, as 'YYYY-MM-DD name', or ''."""
     today = today or data.now_ist().date()
@@ -3691,6 +3698,7 @@ def api_state():
     return jsonify(safe({
         'now': data.now_ist().isoformat(timespec='seconds'),
         'market_open': data.market_open(),
+        'holiday': holiday_view(),
         'mood': market_mood(),
         'scan_state': STATE['scan'],
         'watch_state': {k: v for k, v in STATE['watch'].items() if not k.startswith('_')},
