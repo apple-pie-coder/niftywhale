@@ -4,7 +4,7 @@ every instrument the app has subscribed, in place of asking the REST quote API o
 
   the app says what it wants          want({(segment, security id): mode})
   the stream keeps one connection     subscribes / unsubscribes the difference, 100 instruments a message
-  each packet goes to on_packet()     {'seg', 'sid', 'ltp', 'oi', 'vol', 'bid', 'ask', 'open', ...}
+  each packet goes to on_packet()     {'seg', 'sid', 'ltp', 'ltq', 'oi', 'vol', 'bid', 'ask', 'open', ...}
 
 Modes: 'ticker' (price and time), 'quote' (+ day open / high / low / volume), 'full' (+ OI and five
 levels of depth). An instrument wanted in two modes is subscribed in the higher one.
@@ -64,16 +64,17 @@ def parse(buf: bytes) -> Iterator[dict]:
             ltp, ltt = struct.unpack_from('<fi', buf, b)
             p.update(ltp=ltp, ltt=_ltt(ltt))
         elif code == 4:                                 # quote
-            ltp, _, ltt, atp, vol, sell, buy, o, c, h, lo = struct.unpack_from('<fhifiiiffff', buf, b)
-            p.update(ltp=ltp, ltt=_ltt(ltt), atp=atp, vol=vol, open=o, close=c, high=h, low=lo)
+            ltp, ltq, ltt, atp, vol, sell, buy, o, c, h, lo = struct.unpack_from('<fhifiiiffff', buf, b)
+            p.update(ltp=ltp, ltq=ltq, ltt=_ltt(ltt), atp=atp, vol=vol, open=o, close=c, high=h, low=lo)
         elif code == 5:                                 # open interest
             p['oi'] = struct.unpack_from('<i', buf, b)[0]
         elif code == 6:                                 # previous close
             p['prev_close'], p['prev_oi'] = struct.unpack_from('<fi', buf, b)
         elif code == 8:                                 # full: quote + OI + depth
-            ltp, _, ltt, atp, vol, sell, buy, oi, _hi, _lo, o, c, h, lo = struct.unpack_from('<fhifiiiiiiffff', buf, b)
+            ltp, ltq, ltt, atp, vol, sell, buy, oi, _hi, _lo, o, c, h, lo = struct.unpack_from('<fhifiiiiiiffff', buf, b)
             bq, aq, _bo, _ao, bid, ask = struct.unpack_from('<iihhff', buf, b + 54)
-            p.update(ltp=ltp, ltt=_ltt(ltt), atp=atp, vol=vol, oi=oi, open=o, close=c, high=h, low=lo, bid=bid, ask=ask)
+            p.update(ltp=ltp, ltq=ltq, ltt=_ltt(ltt), atp=atp, vol=vol, oi=oi, open=o, close=c, high=h, low=lo,
+                     bid=bid, ask=ask, bid_qty=bq, ask_qty=aq)
         elif code == 50:                                # disconnect
             p['reason'] = struct.unpack_from('<h', buf, b)[0]
         yield p

@@ -85,7 +85,9 @@ class Packets(unittest.TestCase):
         self.assertEqual(t['ltt'], 1791573399 - 19800)                  # IST-shifted -> real epoch
         self.assertAlmostEqual(pc['prev_close'], 22231.8, places=1)
         self.assertAlmostEqual(q['high'], 55419.3, places=1)
-        self.assertEqual((f['seg'], f['oi'], f['vol']), ('NSE_FNO', 9000, 777))
+        self.assertEqual((q['ltq'], q['vol']), (5, 1000))
+        self.assertEqual((f['seg'], f['oi'], f['vol'], f['ltq']), ('NSE_FNO', 9000, 777, 5))
+        self.assertEqual((f['bid_qty'], f['ask_qty']), (50, 75))
         self.assertAlmostEqual(f['bid'], 101.4, places=2)
         self.assertAlmostEqual(f['ask'], 101.6, places=2)
         self.assertEqual(o['oi'], 123456)
