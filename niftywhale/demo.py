@@ -29,6 +29,8 @@ import math
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from niftywhale import session
+
 DEFAULTS: Dict[str, Any] = {
     'sizing': 'risk',             # 'risk': risk_pct of the account a trade; 'lots': `lots` lots a trade, whatever the stop
     'lots': 1,                    # fixed lots: options and stock futures in their exchange lots, shares one at a time
@@ -200,11 +202,13 @@ def _day(when: Any) -> Optional[date]:
 
 def monthly_expiries(start: date, end: date) -> List[date]:
     """NSE's monthly stock-futures expiries from `start` to `end`: the last Tuesday of each month
-    (since September 2025). A holiday moves an expiry a day or two earlier; that is not modelled."""
+    (since September 2025), or the trading day before when that is a holiday."""
     out, y, m = [], start.year, start.month
     while (y, m) <= (end.year, end.month):
         last = date(y + m // 12, m % 12 + 1, 1) - timedelta(days=1)
         exp = last - timedelta(days=(last.weekday() - 1) % 7)
+        if not session.trading_day(exp):
+            exp = session.prev_trading_day(exp)
         if start <= exp <= end:
             out.append(exp)
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)

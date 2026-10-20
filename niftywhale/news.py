@@ -344,10 +344,10 @@ def _session_close(day) -> datetime:
 
 
 def _next_session(day, at: dtime, now: datetime) -> datetime:
-    """`at` on the first weekday after `day` that is not long gone by `now` (one that passed
-    without candles was a holiday; exchange holidays are not modelled)."""
+    """`at` on the first trading day after `day` that is not long gone by `now` (one that passed
+    without candles was a holiday missing from NSE's list)."""
     d = day + timedelta(days=1)
-    while d.weekday() >= 5 or datetime.combine(d, at, IST) + LATE < now:
+    while not session.trading_day(d) or datetime.combine(d, at, IST) + LATE < now:
         d += timedelta(days=1)
     return datetime.combine(d, at, IST)
 
@@ -462,7 +462,7 @@ def reaction(published: str, stock15, nifty15, stock_daily=None, nifty_daily=Non
     # No candles from the session it was first tradable in yet (news after hours, or the data
     # not in): look again an hour after that session opens.
     d0 = pub.date()
-    if d0.weekday() < 5 and pub.time() < SESSION_CLOSE:
+    if session.trading_day(d0) and pub.time() < SESSION_CLOSE:
         t1 = min(max(pub, datetime.combine(d0, SESSION_OPEN, IST)) + timedelta(hours=1), _session_close(d0))
         if t1 + LATE < now:
             t1 = _next_session(d0, FIRST_HOUR, now)

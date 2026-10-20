@@ -34,10 +34,10 @@ def now_ist() -> datetime:
 
 
 def market_open(when: Optional[datetime] = None) -> bool:
-    """Weekday session hours. Exchange holidays are not modelled: on one, the
-    watcher simply finds no new candles."""
+    """The cash market's hours on a trading day (session.trading_day: weekends and NSE's holidays
+    closed)."""
     t = when or now_ist()
-    if t.weekday() >= 5:
+    if not session.trading_day(t.date()):
         return False
     minutes = t.hour * 60 + t.minute
     return MARKET_OPEN[0] * 60 + MARKET_OPEN[1] <= minutes < MARKET_CLOSE[0] * 60 + MARKET_CLOSE[1]
@@ -53,12 +53,12 @@ def settle_s() -> int:
 
 
 def last_close(when: Optional[datetime] = None) -> datetime:
-    """The most recent weekday 15:30 IST at or before `when`."""
+    """The most recent trading day's 15:30 IST at or before `when`."""
     t = (when or now_ist()).astimezone(IST)
     close = t.replace(hour=MARKET_CLOSE[0], minute=MARKET_CLOSE[1], second=0, microsecond=0)
     if t < close:
         close -= timedelta(days=1)
-    while close.weekday() >= 5:
+    while not session.trading_day(close.date()):
         close -= timedelta(days=1)
     return close
 

@@ -10,6 +10,8 @@ import math
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from niftywhale import session as nse
+
 # (Dhan IDX_I security id, short label, full name, group). Dhan lists ~190 indices;
 # these are the ones a trader watches: headline, volatility, broad market, sectors, themes.
 INDEXES = [
@@ -56,15 +58,12 @@ OPTION_SYMBOL = {13: 'NIFTY', 25: 'BANKNIFTY', 27: 'FINNIFTY', 442: 'MIDCPNIFTY'
 
 
 def session_date(now: datetime) -> date:
-    """The session the latest quotes belong to: today from 09:00 on a weekday, else the
-    weekday before (exchange holidays are not modelled, as elsewhere)."""
+    """The session the latest quotes belong to: today from 09:00 on a trading day, else the
+    trading day before."""
     d = now.date()
-    if now.weekday() < 5 and (now.hour, now.minute) >= (9, 0):
+    if nse.trading_day(d) and (now.hour, now.minute) >= (9, 0):
         return d
-    d -= timedelta(days=1)
-    while d.weekday() >= 5:
-        d -= timedelta(days=1)
-    return d
+    return nse.prev_trading_day(d)
 
 
 def prev_close(daily: List[tuple], session: date) -> Optional[float]:

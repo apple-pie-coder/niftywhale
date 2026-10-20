@@ -33,6 +33,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
+from niftywhale import session
+
 logger = logging.getLogger(__name__)
 
 UA = ('Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -47,6 +49,7 @@ FLOWS_URL = 'https://www.nseindia.com/api/fiidiiTradeReact'
 FO_URL = 'https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{ymd}_F_0000.csv.zip'
 FO_OLD_URL = ARCHIVES + '/content/historical/DERIVATIVES/{y}/{mon}/fo{d}{mon}{y}bhav.csv.zip'
 EVENTS_URL = 'https://www.nseindia.com/api/event-calendar'
+HOLIDAYS_URL = 'https://www.nseindia.com/api/holiday-master'
 NSE_HOME = 'https://www.nseindia.com/'
 PACE_S = 1.5
 TIMEOUT = 30
@@ -376,10 +379,9 @@ class Fetcher:
                 return parse_fo_bhav(z.read(z.namelist()[0]).decode('utf-8', 'replace'))
         return None
 
-    def events(self, first: date, last: date) -> List[Dict[str, Any]]:
-        """Board meetings (results among them) between two days, from NSE's event calendar. NSE wants its
-        own cookies: when it refuses, its home page is fetched for them and the call retried."""
-        params = {'index': 'equities', 'from_date': first.strftime('%d-%m-%Y'), 'to_date': last.strftime('%d-%m-%Y')}
+    def api(self, url: str, params: Optional[Dict[str, str]] = None) -> Any:
+        """JSON from one of www.nseindia.com's APIs. NSE wants its own cookies: when it refuses, its home
+        page is fetched for them and the call retried."""
         headers = {'Referer': NSE_HOME, 'Accept': 'application/json'}
         for attempt in range(2):
             with self.lock:
@@ -387,13 +389,23 @@ class Fetcher:
                 if gap > 0:
                     time.sleep(gap)
                 self.last = time.time()
-            r = self.session.get(EVENTS_URL, params=params, headers=headers, timeout=TIMEOUT)
+            r = self.session.get(url, params=params, headers=headers, timeout=TIMEOUT)
             if r.status_code in (401, 403) and attempt == 0:
                 self.session.get(NSE_HOME, timeout=TIMEOUT)          # cookies, whatever the status
                 continue
             r.raise_for_status()
-            return parse_events(r.json())
-        return []
+            return r.json()
+        return None
+
+    def events(self, first: date, last: date) -> List[Dict[str, Any]]:
+        """Board meetings (results among them) between two days, from NSE's event calendar."""
+        params = {'index': 'equities', 'from_date': first.strftime('%d-%m-%Y'), 'to_date': last.strftime('%d-%m-%Y')}
+        payload = self.api(EVENTS_URL, params)
+        return parse_events(payload) if payload is not None else []
+
+    def holidays(self) -> Dict[str, Any]:
+        """This year's trading holidays per segment (session.parse_holidays reads them)."""
+        return self.api(HOLIDAYS_URL, {'type': 'trading'}) or {}
 
     def bhav(self, day: date) -> Optional[Dict[str, Dict[str, Any]]]:
         r = self.get(BHAV_URL.format(d=day.strftime('%d%m%Y')))
@@ -410,11 +422,12 @@ def fetcher() -> Fetcher:
     return _FETCHER
 
 
-def weekdays_back(last: date, n: int) -> List[date]:
-    """The last `n` weekdays up to and including `last`, oldest first (holidays are found by a 404)."""
+def sessions_back(last: date, n: int) -> List[date]:
+    """The last `n` trading days up to and including `last`, oldest first (a holiday NSE's list
+    does not hold is found by a 404)."""
     out, d = [], last
     while len(out) < n:
-        if d.weekday() < 5:
+        if session.trading_day(d):
             out.append(d)
         d -= timedelta(days=1)
     return out[::-1]

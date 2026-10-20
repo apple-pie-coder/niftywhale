@@ -911,12 +911,10 @@ SMART_DEAL_DAYS = 30            # deals shown per stock
 
 
 def last_session(now: datetime = None) -> date:
-    """The latest session whose end-of-day files NSE may have out: today from 18:00, else the weekday before."""
+    """The latest session whose end-of-day files NSE may have out: today from 18:00, else the trading day before."""
     now = now or data.now_ist()
     d = now.date() if now.time() >= dtime(18, 0) else now.date() - timedelta(days=1)
-    while d.weekday() >= 5:
-        d -= timedelta(days=1)
-    return d
+    return d if session.trading_day(d) else session.prev_trading_day(d)
 
 
 def smart_pass() -> dict:
@@ -940,7 +938,7 @@ def smart_pass() -> dict:
         absent = set(store.get_json('smart:absent', []) or [])
         written_off = (data.now_ist().date() - timedelta(days=3)).isoformat()
         have = {'sm_delivery': set(store.smart_days('sm_delivery')), 'sm_poi': set(store.smart_days('sm_poi'))}
-        for d in smart.weekdays_back(last_session(), SMART_BACKFILL):
+        for d in smart.sessions_back(last_session(), SMART_BACKFILL):
             day = d.isoformat()
             for table, fetch, save in (('sm_delivery', f.bhav, lambda day, r: store.add_delivery(day, r)),
                                        ('sm_poi', f.participant_oi, lambda day, r: store.set_poi(day, r))):
@@ -972,20 +970,49 @@ def smart_pass() -> dict:
 
 
 def smart_loop() -> None:
-    """Hourly from 17:30 to midnight on weekdays (NSE puts the day's files out between about
+    """Hourly from 17:30 to midnight on trading days (NSE puts the day's files out between about
     17:30 and 20:30), once at 08:00 to catch anything late, and once shortly after a start."""
     time.sleep(120)
     first = True
     while True:
         try:
             now = data.now_ist()
-            evening = now.weekday() < 5 and now.time() >= dtime(17, 30)
+            evening = session.trading_day(now.date()) and now.time() >= dtime(17, 30)
             if first or evening or now.hour == 8:
                 smart_pass()
                 first = False
         except Exception:
             logger.exception('Smart-money pass failed')
         time.sleep(3600)
+
+
+HOLIDAYS_RETRY_S = 3600
+
+
+def holidays_loop() -> None:
+    """NSE's trading holidays (session.py): fetched at the start and once a day after, tried again hourly
+    while NSE refuses. A failed fetch keeps the list held; without any, every weekday is a session."""
+    while True:
+        try:
+            held = store.get_json(session.HOLIDAYS_KEY, {}) or {}
+            if (held.get('fetched') or '')[:10] != data.now_ist().date().isoformat():
+                got = session.parse_holidays(smart.fetcher().holidays())
+                if not got:
+                    raise ValueError('no holidays in the answer')
+                days = session.save_holidays(got)
+                logger.info(f'NSE holidays: {len(got)} fetched, {len(days)} held, next {next_holiday() or "none listed"}')
+        except Exception as e:
+            logger.warning(f'NSE holidays: {str(e)[:160]}')
+        time.sleep(HOLIDAYS_RETRY_S)
+
+
+def next_holiday(today: date = None) -> str:
+    """The next exchange holiday held on a weekday, as 'YYYY-MM-DD name', or ''."""
+    today = today or data.now_ist().date()
+    for d, name in session.holidays().items():
+        if d >= today.isoformat() and date.fromisoformat(d).weekday() < 5:
+            return f'{d} {name}'
+    return ''
 
 
 def smart_stock(symbol: str, until: str = None) -> dict:
@@ -2150,7 +2177,7 @@ def _exec_instrument(t: dict, product: str) -> dict:
 
 def _exec_session_open(t: dict) -> bool:
     now = data.now_ist()
-    if now.weekday() >= 5:
+    if not session.trading_day(now.date()):
         return False
     if t['mode'] == 'options' or (t['mode'] == 'swing' and t.get('side') == 'short'):
         return session.fo_open(now.replace(tzinfo=None))
@@ -2484,11 +2511,11 @@ SCAN_ATTEMPTS = 4               # ... up to this many times a day
 
 
 def scheduled_scan_due(now: datetime, st: dict) -> bool:
-    """Is it time for the evening scan? Once a weekday after `scan_time`. A
+    """Is it time for the evening scan? Once a trading day after `scan_time`. A
     scheduled scan that failed (the network was down, the process died
     mid-scan) does not count: it is retried every SCAN_RETRY_S, so one bad
     minute at 16:15 does not leave tomorrow without zones."""
-    if st['auto_scan'] != '1' or now.weekday() >= 5 or STATE['scan']['running']:
+    if st['auto_scan'] != '1' or not session.trading_day(now.date()) or STATE['scan']['running']:
         return False
     hh, mm = (int(x) for x in st['scan_time'].split(':'))
     if now.hour * 60 + now.minute < hh * 60 + mm:
@@ -2564,6 +2591,8 @@ def intraday_phase(now: datetime = None) -> dict:
     r = irules()
     if now.weekday() >= 5:
         return {'key': 'closed', 'label': 'Weekend'}
+    if session.holiday(now.date()):
+        return {'key': 'closed', 'label': f'Exchange holiday · {session.holiday(now.date())}'}
     if now < _at(now, '09:15'):
         return {'key': 'pre', 'label': f'Pre-open · first scan at {r.start}'}
     if now < _at(now, r.start):
@@ -2871,7 +2900,7 @@ def intraday_loop() -> None:
                 # Wrap up once a day after the close -- whether or not intraday mode is
                 # still on (switching it off mid-session must not leave trades open
                 # forever), and on any day something is left (e.g. after a restart).
-                after_close = phase == 'closed' and (now.weekday() >= 5 or now >= _at(now, '15:30'))
+                after_close = phase == 'closed' and (not session.trading_day(now.date()) or now >= _at(now, '15:30'))
                 if after_close and st.get('_wrapped') != now.date():
                     if store.intraday_zones(store.INTRADAY_OPEN + ('triggered',), limit=1):
                         check_intraday('close')            # settle anything still open
@@ -3304,7 +3333,7 @@ def options_loop() -> None:
                 # Once after each session: every chain's closing numbers (the IV history),
                 # settle anything still open, and prune. Two minutes after the F&O close.
                 end = datetime.combine(now.date(), session.fo_close(now.date()), now.tzinfo)
-                after = now.weekday() < 5 and now >= end + timedelta(minutes=2)
+                after = session.trading_day(now.date()) and now >= end + timedelta(minutes=2)
                 if after and st.get('_closed') != now.date() and dhan.available():
                     run_options_cycle('close', everything=True)
                     settle_ideas(now)
@@ -4667,8 +4696,8 @@ def api_demo_sync():
 # minutes old is not what a square-off would get.
 def _tradable_why(mode: str, symbol: str, now: datetime):
     """Why `symbol` cannot be traded now, or None when it can."""
-    if now.weekday() >= 5:
-        return 'the market is closed'
+    if not session.trading_day(now.date()):
+        return 'the market is closed' + (f' ({session.holiday(now.date())})' if session.holiday(now.date()) else '')
     if now.time() < session.OPEN:
         return 'the market is not open yet'
     end = session.fo_close(now.date()) if mode == 'options' else \
@@ -6267,6 +6296,7 @@ if os.getenv('NIFTYWHALE_SCHEDULER', '1') == '1':      # off for tests and secon
     threading.Thread(target=news_loop, daemon=True, name='news').start()
     threading.Thread(target=reactions_loop, daemon=True, name='news-reactions').start()
     threading.Thread(target=smart_loop, daemon=True, name='smart').start()
+    threading.Thread(target=holidays_loop, daemon=True, name='holidays').start()
     threading.Thread(target=demo_loop, daemon=True, name='demo').start()
     threading.Thread(target=marks_loop, daemon=True, name='marks').start()
     threading.Thread(target=telegram_loop, daemon=True, name='telegram').start()

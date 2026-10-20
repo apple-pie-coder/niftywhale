@@ -20,7 +20,7 @@ assert os.path.realpath(_store.DB_PATH).startswith(os.path.realpath(tempfile.get
     f'tests would write to {_store.DB_PATH}; run them with DB_PATH set to a temporary file'
 
 import app  # noqa: E402
-from niftywhale import config, data, session, store  # noqa: E402
+from niftywhale import config, data, demo, session, smart, store, ticker  # noqa: E402
 
 IST = data.IST
 CLOCK = ('intraday_square_off', 'nse_cts_end_fo', 'nse_closes_final', 'nse_fo_close', 'nse_cas_start')
@@ -88,6 +88,61 @@ class Clock(unittest.TestCase):
         self.assertEqual(r.square_off, '15:20')
         self.assertEqual(r.square_off_at(True, date(2026, 10, 9)).strftime('%H:%M'), '15:15')     # F&O: never after 15:15
         self.assertEqual(app.square_off_for('NOTFO').strftime('%H:%M'), '15:20')
+
+
+# The shape of NSE's api/holiday-master?type=trading (fetched 20 Oct 2026), cut down.
+NSE_HOLIDAYS = {
+    'CM': [{'tradingDate': '02-Oct-2026', 'weekDay': 'Friday', 'description': 'Mahatma Gandhi Jayanti'},
+           {'tradingDate': '20-Oct-2026', 'weekDay': 'Tuesday', 'description': 'Dussehra'},
+           {'tradingDate': '08-Nov-2026', 'weekDay': 'Sunday', 'description': 'Diwali Laxmi Pujan*'},
+           {'tradingDate': '24-Nov-2026', 'weekDay': 'Tuesday', 'description': 'Prakash Gurpurb Sri Guru Nanak Dev'},
+           {'tradingDate': 'soon', 'description': 'a row that does not parse'}],
+    'FO': [{'tradingDate': '20-Oct-2026', 'weekDay': 'Tuesday', 'description': 'Dussehra'}],
+    'CD': [{'tradingDate': '21-Oct-2026', 'weekDay': 'Wednesday', 'description': 'not a stock-market holiday'}],
+}
+
+
+class Holidays(unittest.TestCase):
+    def setUp(self):
+        store.init()
+        session.save_holidays(session.parse_holidays(NSE_HOLIDAYS))
+
+    def tearDown(self):
+        store.set_json(session.HOLIDAYS_KEY, {})            # other tests' days are sessions
+        session._held.update(at=None)
+
+    def test_parsed_from_the_cash_and_fo_lists(self):
+        self.assertEqual(session.parse_holidays(NSE_HOLIDAYS), {
+            '2026-10-02': 'Mahatma Gandhi Jayanti', '2026-10-20': 'Dussehra', '2026-11-08': 'Diwali Laxmi Pujan*',
+            '2026-11-24': 'Prakash Gurpurb Sri Guru Nanak Dev'})
+        self.assertEqual(session.parse_holidays({}), {})
+
+    def test_a_holiday_is_no_session(self):
+        tue = datetime(2026, 10, 20, 11, 0, tzinfo=IST)
+        self.assertFalse(session.trading_day(date(2026, 10, 20)))
+        self.assertTrue(session.trading_day(date(2026, 10, 21)))                                    # CD only: stocks trade
+        self.assertFalse(data.market_open(tue))
+        self.assertFalse(session.fo_open(tue))
+        self.assertEqual(data.last_close(tue).date(), date(2026, 10, 19))
+        self.assertEqual(session.prev_trading_day(date(2026, 10, 5)), date(2026, 10, 1))           # back over Gandhi Jayanti
+        self.assertEqual(app.intraday_phase(tue)['label'], 'Exchange holiday · Dussehra')
+        self.assertEqual(app._tradable_why('swing', 'NOTFO', tue), 'the market is closed (Dussehra)')
+        self.assertFalse(app.scheduled_scan_due(datetime(2026, 10, 20, 17, 0, tzinfo=IST),
+                                                {'auto_scan': '1', 'scan_time': '16:15'}))
+
+    def test_sessions_skip_it(self):
+        self.assertEqual(ticker.session_date(datetime(2026, 10, 20, 11, 0, tzinfo=IST)), date(2026, 10, 19))
+        self.assertEqual(ticker.session_date(datetime(2026, 10, 21, 8, 0, tzinfo=IST)), date(2026, 10, 19))
+        self.assertEqual(app.last_session(datetime(2026, 10, 20, 19, 0, tzinfo=IST)), date(2026, 10, 19))
+        self.assertEqual(smart.sessions_back(date(2026, 10, 21), 3),
+                         [date(2026, 10, 16), date(2026, 10, 19), date(2026, 10, 21)])
+        self.assertEqual(demo.monthly_expiries(date(2026, 11, 1), date(2026, 11, 30)), [date(2026, 11, 23)])   # 24th: a holiday
+
+    def test_a_new_list_replaces_its_year_and_keeps_the_rest(self):
+        session.save_holidays({'2025-12-25': 'Christmas'})
+        days = session.save_holidays({'2026-10-20': 'Dussehra', '2026-12-25': 'Christmas'})
+        self.assertEqual(days, {'2025-12-25': 'Christmas', '2026-10-20': 'Dussehra', '2026-12-25': 'Christmas'})
+        self.assertTrue(session.trading_day(date(2026, 10, 2)))                                    # dropped by NSE
 
 
 if __name__ == '__main__':

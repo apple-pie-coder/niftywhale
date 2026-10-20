@@ -1220,7 +1220,7 @@ STT and stamp duty and no DP charge (nothing leaves the demat account); the brok
 
 A swing short held across a monthly expiry (the last Tuesday of the month) also pays for the roll: closing the expiring
 month and opening the next is one more round trip, costed at the entry price, once per expiry crossed. Option ideas square off
-the same day, so options exercise STT never applies. Not modelled: an expiry moved by a holiday, orders split at NSE's freeze
+the same day, so options exercise STT never applies. An expiry that falls on an exchange holiday moves to the trading day before. Not modelled: orders split at NSE's freeze
 quantity (one order's brokerage is charged per position), Dhan's ₹20 auto square-off fee, and the stock futures' premium. When a
 rate changes, update `RATES` and `SCHEDULE_AS_OF`. Charges can be turned off in Settings.
 
@@ -5187,7 +5187,10 @@ changes for the long; the short follows. Intraday-only logic (target pools, the 
 - **Delayed intraday data without Dhan.** yfinance 15-minute candles lag, and the watcher checks
   once per candle. Connect Dhan (4.10) for real-time prices. Even then the watcher works on
   closed 15-minute candles, by design.
-- **No exchange holiday calendar.** On a holiday the watcher just finds no new candles.
+- **Exchange holidays come from NSE.** The app fetches NSE's trading-holiday list each day and keeps it in the database. On a
+  holiday nothing scans, watches, records option chains or counts it as a session. Until the first fetch works, every
+  weekday counts as a session. A holiday missing from the list is still caught by its missing candles. Muhurat trading
+  is not modelled.
 - **The doc's judgement calls are fixed numbers.** "Massive rally", "minor swing high" and
   similar phrases are the thresholds in section 11. Tune them against charts you trust.
 - **Orders only through Live trading.** NiftyWhale places, modifies or cancels orders at Dhan only from Live trading

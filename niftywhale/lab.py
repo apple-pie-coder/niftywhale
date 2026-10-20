@@ -30,7 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import autopilot, backfill, backtest, config, context, costs, data, demo, dhan, execution, history, intraday, notify, options, perf, smc, store, universe
+from niftywhale import autopilot, backfill, backtest, config, context, costs, data, demo, dhan, execution, history, intraday, notify, options, perf, session, smc, store, universe
 
 logger = logging.getLogger('niftywhale.lab')
 
@@ -112,9 +112,9 @@ def years(mode: str) -> float:
 
 
 def busy_market(now: Optional[datetime] = None) -> bool:
-    """Heavy work waits for the session to end: 09:00-15:45 on weekdays."""
+    """Heavy work waits for the session to end: 09:00-15:45 on trading days."""
     now = now or data.now_ist()
-    return now.weekday() < 5 and dtime(9, 0) <= now.time() < dtime(15, 45)
+    return session.trading_day(now.date()) and dtime(9, 0) <= now.time() < dtime(15, 45)
 
 
 def wait_for_close(job: Optional[Dict[str, Any]] = None) -> None:
@@ -551,7 +551,7 @@ def shadow_and_guards(mode: str, bench: 'Bench') -> List[str]:
         delta = {k: v for k, v in ch['params'].items() if abs(v - (ch.get('base') or current).get(k, v)) > 1e-9}
         new = [t for t in bench.run({**current, **delta}) if t['entry_time'][:10] >= ch['since']]
         old = [t for t in bench.run(current) if t['entry_time'][:10] >= ch['since']]
-        days = len(pd.bdate_range(since, today)) - 1
+        days = sum(session.trading_day(since + timedelta(days=i)) for i in range(1, (today - since).days + 1))
         verdict, why = autopilot.shadow_decision(new, old, days, pol, mode)
         shadow = {'days': days, 'challenger': perf.summary(new), 'current': perf.summary(old), 'verdict': verdict, 'why': why}
         claimed = {}

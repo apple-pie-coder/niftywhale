@@ -21,7 +21,7 @@ from typing import Callable, Dict, List, Optional
 import pandas as pd
 import requests
 
-from niftywhale import data, dhan
+from niftywhale import data, dhan, session
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ def update_market(years: float = 8) -> Optional[pd.DataFrame]:
     m = m[~m.index.duplicated(keep='last')]
     now = data.now_ist()
     day = pd.Timestamp(now.date())
-    if now.weekday() < 5 and now.hour * 60 + now.minute >= 15 * 60 + 30 and (m.empty or m.index[-1] < day):
+    if session.trading_day(now.date()) and now.hour * 60 + now.minute >= 15 * 60 + 30 and (m.empty or m.index[-1] < day):
         today = {}
         for sid, name in ((NIFTY_ID, 'nifty'), (VIX_ID, 'vix')):
             try:
@@ -182,7 +182,7 @@ def update_market(years: float = 8) -> Optional[pd.DataFrame]:
                 logger.warning(f'{name}: today\'s close from minute candles failed: {dhan._redact(e)}')
         if today.get('nifty') is not None:                # no Nifty candles today: a holiday, nothing to add
             m = pd.concat([m, pd.DataFrame([today], index=[day])]).sort_index()
-    if not m.empty and now.weekday() < 5 and now.hour >= 16 and m.index[-1] < day:
+    if not m.empty and session.trading_day(now.date()) and now.hour >= 16 and m.index[-1] < day:
         logger.warning(f"Nifty / VIX daily closes end {m.index[-1].date()}: today's close is not in yet")
     save('market', 'NIFTY_VIX', m)
     return m
