@@ -237,6 +237,11 @@ class DhanSource:
             out, self._flow_new = self._flow_new, []
         return out
 
+    def give_back(self, bars: List[dict]) -> None:
+        """Bars take_flow handed out that could not be saved: handed out again next time."""
+        with self._lock:
+            self._flow_new = bars + self._flow_new
+
     def quote(self, sym: str, fresh_s: float = 15) -> Optional[dict]:
         """The latest packet's fields for a feed symbol, if one came in the last `fresh_s` seconds."""
         k = feed_key(sym)

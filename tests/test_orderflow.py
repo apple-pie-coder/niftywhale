@@ -4,10 +4,18 @@ and the readings over them, on packet sequences whose answer is known.
 
 Run:  python -m unittest discover -s tests
 """
+import os
+import tempfile
 import unittest
 from datetime import datetime
+from unittest import mock
 
-from niftywhale import orderflow as of
+os.environ.setdefault('DB_PATH', os.path.join(tempfile.mkdtemp(), 'test.db'))
+
+from niftywhale import orderflow as of  # noqa: E402
+from niftywhale import store  # noqa: E402
+assert os.path.realpath(store.DB_PATH).startswith(os.path.realpath(tempfile.gettempdir())), \
+    f'tests would write to {store.DB_PATH}; run them with DB_PATH set to a temporary file'
 
 T0 = datetime(2026, 10, 21, 9, 20, tzinfo=of.IST).timestamp()
 
@@ -118,6 +126,32 @@ class Readings(unittest.TestCase):
         self.assertEqual((r['coverage'], r['bars'], r['absorption'], r['delta']), (0.4, 2, 1, -95))
         self.assertEqual(of.reading(quiet + [hit], T0 + 240, T0 + 540, 'short')['absorption'], -1)
         self.assertEqual(of.reading([], T0, T0 + 300, 'long'), {'coverage': 0.0, 'bars': 0})
+
+
+class Stored(unittest.TestCase):
+    def setUp(self):
+        store.init()
+        with store.connect() as c:
+            c.execute('DELETE FROM of_bars')
+
+    def test_saved_read_back_and_pruned(self):
+        b = of.Book('NIFTY-FUT')
+        feed(b, [pkt(0, 25000.0, T0, bid=24999.5, ask=25000.5), pkt(65, 25000.5, T0 + 3)])
+        bar1 = b.flush(T0 + 60)
+        self.assertEqual(store.add_of_bars([bar1, bar1]), 2)                 # the same minute twice: one row
+        got = store.of_bars('NIFTY-FUT', day='2026-10-21')
+        self.assertEqual(len(got), 1)
+        self.assertEqual({k: got[0][k] for k in ('key', 't', 'buy', 'delta', 'poc', 'levels')},
+                         {'key': 'NIFTY-FUT', 't': T0, 'buy': 65, 'delta': 65, 'poc': 25000.0, 'levels': [[25000.0, 0, 65, 0]]})
+        self.assertEqual(store.of_bars('NIFTY-FUT', since=T0 + 60), [])
+        self.assertEqual(store.of_names('2026-10-21'), ['NIFTY-FUT'])
+        old = {**bar1, 't': T0 - 20 * 86400}
+        ancient = {**bar1, 't': T0 - 200 * 86400}
+        store.add_of_bars([old, ancient])
+        with mock.patch.object(store, 'now_local', return_value=datetime(2026, 10, 21, 16, 0)):
+            store.prune_orderflow()
+        rows = {r['t']: r['levels'] for r in store.of_bars('NIFTY-FUT')}
+        self.assertEqual(rows, {T0 - 20 * 86400: [], T0: [[25000.0, 0, 65, 0]]})     # footprint gone, numbers kept
 
 
 if __name__ == '__main__':

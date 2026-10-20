@@ -211,6 +211,13 @@ def init() -> None:
             CREATE TABLE IF NOT EXISTS sm_futoi (day TEXT, symbol TEXT, oi INTEGER, oi_chg INTEGER, close REAL,
                                                  PRIMARY KEY (day, symbol));
             CREATE INDEX IF NOT EXISTS idx_sm_futoi_symbol ON sm_futoi(symbol, day);
+            -- Orderflow (orderflow.py): one row per instrument per minute of the regular session; `levels` (the
+            -- footprint, JSON [[level, sold, bought, unknown], ...]) is dropped after OF_KEEP_LEVELS_DAYS.
+            CREATE TABLE IF NOT EXISTS of_bars (name TEXT, t INTEGER, day TEXT, open REAL, high REAL, low REAL, close REAL,
+                                                buy INTEGER, sell INTEGER, unknown INTEGER, delta INTEGER, cvd INTEGER,
+                                                poc REAL, step REAL, trades INTEGER, merged INTEGER, by_quote INTEGER,
+                                                by_tick INTEGER, levels TEXT, PRIMARY KEY (name, t));
+            CREATE INDEX IF NOT EXISTS idx_of_day ON of_bars(day, name);
             -- Board meetings from NSE's event calendar (backfill.py): results dates, past and coming.
             CREATE TABLE IF NOT EXISTS sm_events (symbol TEXT, day TEXT, purpose TEXT, PRIMARY KEY (symbol, day, purpose));
             -- Demo funds (demo.py): money in and out, and a position for every trade the app takes.
@@ -1319,6 +1326,62 @@ def clear_notices() -> int:
     with connect() as c:
         seq = c.execute('SELECT COALESCE(MAX(seq), 0) + 1 FROM notices').fetchone()[0]
         return c.execute('UPDATE notices SET cleared = 1, read = 1, seq = ? WHERE COALESCE(cleared, 0) = 0', (seq,)).rowcount
+
+
+# ---------------------------------------------------------------- orderflow
+OF_COLS = ('name', 't', 'day', 'open', 'high', 'low', 'close', 'buy', 'sell', 'unknown', 'delta', 'cvd', 'poc', 'step',
+           'trades', 'merged', 'by_quote', 'by_tick', 'levels')
+OF_KEEP_DAYS = 90               # a bar's numbers
+OF_KEEP_LEVELS_DAYS = 10        # its footprint (the bulk): the chart's recent days; entries keep their reading
+
+
+def add_of_bars(bars: List[Dict[str, Any]]) -> int:
+    """Closed orderflow bars (orderflow.Book), each named by its 'key'; one written twice is replaced."""
+    rows = []
+    for b in bars:
+        day = datetime.fromtimestamp(b['t'], IST).date().isoformat()
+        rows.append([b['key'], int(b['t']), day] + [b.get(k) for k in OF_COLS[3:-1]] + [json.dumps(b.get('levels') or [])])
+    if not rows:
+        return 0
+    with connect() as c:
+        c.executemany(f'INSERT OR REPLACE INTO of_bars ({", ".join(OF_COLS)}) VALUES ({", ".join("?" * len(OF_COLS))})', rows)
+    return len(rows)
+
+
+def of_bars(name: str, day: str = None, since: int = None, until: int = None) -> List[Dict[str, Any]]:
+    """One instrument's bars, oldest first: of a day (IST date), or between two epoch seconds."""
+    q, args = 'SELECT * FROM of_bars WHERE name = ?', [name]
+    if day:
+        q += ' AND day = ?'
+        args.append(day)
+    if since is not None:
+        q += ' AND t >= ?'
+        args.append(int(since))
+    if until is not None:
+        q += ' AND t < ?'
+        args.append(int(until))
+    with connect() as c:
+        rows = _rows(c.execute(q + ' ORDER BY t', args))
+    for r in rows:
+        r['key'] = r.pop('name')
+        try:
+            r['levels'] = json.loads(r['levels']) if r['levels'] else []
+        except ValueError:
+            r['levels'] = []
+    return rows
+
+
+def of_names(day: str) -> List[str]:
+    with connect() as c:
+        return [r[0] for r in c.execute('SELECT DISTINCT name FROM of_bars WHERE day = ? ORDER BY name', (day,))]
+
+
+def prune_orderflow() -> None:
+    today = now_local().date()
+    with connect() as c:
+        c.execute('UPDATE of_bars SET levels = NULL WHERE day < ? AND levels IS NOT NULL',
+                  ((today - timedelta(days=OF_KEEP_LEVELS_DAYS)).isoformat(),))
+        c.execute('DELETE FROM of_bars WHERE day < ?', ((today - timedelta(days=OF_KEEP_DAYS)).isoformat(),))
 
 
 def prune_notices() -> None:

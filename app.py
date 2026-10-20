@@ -24,6 +24,7 @@ import re
 from html import escape as _esc
 import math
 import os
+import sqlite3
 import threading
 import requests
 import time
@@ -1678,6 +1679,13 @@ def orderflow_tick(now: datetime) -> bool:
     else:
         charts.SOURCE.flow_want({})
     charts.SOURCE.flow_flush()
+    done = charts.SOURCE.take_flow()
+    if done:
+        try:
+            store.add_of_bars(done)
+        except sqlite3.OperationalError as e:            # the database busy: the bars wait for the next round
+            charts.SOURCE.give_back(done)
+            logger.warning(f'Orderflow: {len(done)} bar(s) not saved yet: {e}')
     return on
 
 
@@ -1700,6 +1708,7 @@ def marks_loop() -> None:
                 feed_watch(ok, data.now_ist())
             elif time.time() - pruned > 86400:
                 store.prune_notices()
+                store.prune_orderflow()
                 pruned = time.time()
             flowing = orderflow_tick(data.now_ist())
         except Exception:

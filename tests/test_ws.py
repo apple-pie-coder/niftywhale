@@ -234,6 +234,20 @@ class OrderflowSource(unittest.TestCase):
         self.assertEqual(src.take_flow(), [])                         # handed out once
         self.assertEqual(src.flow_names(), ['NIFTY-FUT'])             # the unnamed contract made none
 
+    def test_bars_saved_each_round_and_kept_while_the_database_is_busy(self):
+        src = app.charts.DhanSource(lambda: None)
+        bar = {'key': 'NIFTY-FUT', 't': self.T0, 'buy': 1, 'sell': 0, 'levels': []}
+        src._flow_new = [bar]
+        closed = datetime(2026, 10, 24, 12, 0, tzinfo=app.data.IST)                    # a Saturday: nothing read
+        with mock.patch.object(app.charts, 'SOURCE', src), \
+                mock.patch.object(app.store, 'add_of_bars', side_effect=app.sqlite3.OperationalError('database is locked')):
+            self.assertFalse(app.orderflow_tick(closed))
+        self.assertEqual(src.take_flow(), [bar])                                         # handed back
+        src._flow_new = [bar]
+        with mock.patch.object(app.charts, 'SOURCE', src), mock.patch.object(app.store, 'add_of_bars') as add:
+            app.orderflow_tick(closed)
+        add.assert_called_once_with([bar])
+
     def test_what_is_read(self):
         store.init()
         today = '2026-10-21'
