@@ -70,9 +70,12 @@ LIFETIME_NOTE = 'older than the zone lifetime'
 STRUCTURE_FAILED = 'structure failed'     # the tail of an intraday zone's note when its leg origin broke
 
 
+BUSY_TIMEOUT_S = 15.0           # how long a write waits for another connection's to finish (the lab: lab.LAB_BUSY_TIMEOUT_S)
+
+
 def connect() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=15)
+    conn = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT_S)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     return conn
@@ -1834,7 +1837,7 @@ def update_json(key: str, fn: Callable[[Any], Any], default: Any = None) -> Any:
     write the autopilot's state): `fn` gets the current value and returns the new one. SQLite's
     IMMEDIATE transaction holds the write lock from the read to the write, so a change made in
     between cannot be lost. Returns the new value."""
-    c = sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
+    c = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT_S, isolation_level=None)
     try:
         c.execute('BEGIN IMMEDIATE')
         row = c.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()

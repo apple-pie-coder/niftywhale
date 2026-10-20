@@ -118,9 +118,16 @@ def busy_market(now: Optional[datetime] = None) -> bool:
 
 
 def wait_for_close(job: Optional[Dict[str, Any]] = None) -> None:
+    told = False
     while busy_market() and not STOP['flag']:
-        if job:
-            store.update_job(job['id'], progress='waiting for the market to close')
+        if job and not told:
+            # Said once, and progress only: the database busy past its timeout must not fail a job that has
+            # run for hours (as JobLog._save). It did: nightly 19, 9 hours in, at 10:19 on 20 Oct 2026.
+            try:
+                store.update_job(job['id'], progress='waiting for the market to close')
+                told = True
+            except sqlite3.OperationalError as e:
+                logger.warning(f"[{job['kind']}] progress not saved: {e}")
         time.sleep(60)
 
 
@@ -1318,6 +1325,9 @@ def schedule(now: datetime) -> None:
         due(kind, now.weekday() in days and now.time() >= at and (kind != 'report' or report_on))
 
 
+LAB_BUSY_TIMEOUT_S = 60.0       # nothing in the lab is in a hurry: it waits out the app's writes rather than fail
+
+
 def main() -> None:
     logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'), format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
     try:
@@ -1325,6 +1335,7 @@ def main() -> None:
         config.apply_log_level()
     except Exception:
         pass
+    store.BUSY_TIMEOUT_S = LAB_BUSY_TIMEOUT_S
     store.init()
     store.reset_running_jobs()
     signal.signal(signal.SIGTERM, lambda *a: STOP.update(flag=True))

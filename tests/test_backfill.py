@@ -170,6 +170,13 @@ class BusyDatabase(unittest.TestCase):
             log.note('a note')
             log.close(error=True)
 
+    def test_waiting_for_the_close_while_locked_does_not_fail_the_job(self):
+        busy = iter([True, True, False])
+        with mock.patch.object(self.lab.store, 'update_job', side_effect=self.lab.sqlite3.OperationalError('database is locked')) as up, \
+                mock.patch.object(self.lab, 'busy_market', lambda: next(busy)), mock.patch.object(self.lab.time, 'sleep'):
+            self.lab.wait_for_close({'id': self.jid, 'kind': 'nightly'})
+        self.assertEqual(up.call_count, 2)                              # tried again while it was not said
+
     def test_the_outcome_is_written_once_the_lock_clears(self):
         real, calls = store.update_job, []
 
