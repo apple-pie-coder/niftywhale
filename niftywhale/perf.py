@@ -138,6 +138,12 @@ DIMENSIONS: List[Tuple[str, str, Callable[[Dict[str, Any]], Optional[str]]]] = [
     ('fii_futures', 'FII index futures positioning', lambda t: fii_stance(t)),
     ('fii_cash', 'FII cash flow the session before', lambda t: None if (t.get('f') or {}).get('fii_cash_cr') is None
         else 'FII net buyers' if t['f']['fii_cash_cr'] > 0 else 'FII net sellers'),
+    # Orderflow (orderflow.py, context.orderflow_context), from the sweep to the CHoCH candle's close: live intraday
+    # trades only (no history of every trade exists to backtest it). A comparison, never a gate.
+    ('of_absorb', 'Orderflow: absorption, sweep to CHoCH', lambda t: orderflow_bucket(t, 'of_absorb')),
+    ('of_div', 'Orderflow: delta divergence, sweep to CHoCH', lambda t: orderflow_bucket(t, 'of_div')),
+    ('of_stack', 'Orderflow: stacked imbalances, sweep to CHoCH', lambda t: orderflow_bucket(t, 'of_stack')),
+    ('of_trig', "Orderflow: CHoCH candle's delta (trade's way)", lambda t: orderflow_trigger_bucket(t)),
     # Options (context.py, options.candidate): the market's and the underlying's day at the look, the pass, the option.
     ('nifty_gap', 'Nifty gap at the open', lambda t: _band([-1, -0.3, 0.3, 1], '{:+g}%')(t['f'].get('nifty_gap_pct'))),
     ('mkt_back', 'Nifty back off its low / high (against the trade)', lambda t: _band([0.2, 0.5, 1], '{:g}%')(
@@ -186,6 +192,31 @@ def fii_stance(t: Dict[str, Any]) -> Optional[str]:
     if lp is None:
         return None
     return 'FII long-heavy (60 %+ long)' if lp >= 60 else 'FII short-heavy (40 % long or less)' if lp <= 40 else 'FII balanced'
+
+OF_MIN_COVERAGE = 0.5      # less of the sweep-to-CHoCH window read: too little data for a reading
+OF_WAY = {1: 'with the trade', -1: 'against the trade', 0: 'none'}
+
+
+def orderflow_bucket(t: Dict[str, Any], key: str) -> Optional[str]:
+    """An orderflow reading at entry (+1 with the trade, -1 against, 0 none), or 'too little data' when under
+    OF_MIN_COVERAGE of its window was read; None for a trade recorded without orderflow."""
+    f = t.get('f') or {}
+    if 'of_cov' not in f:
+        return None
+    if f['of_cov'] < OF_MIN_COVERAGE or key not in f:
+        return 'too little data'
+    return OF_WAY.get(f[key])
+
+
+def orderflow_trigger_bucket(t: Dict[str, Any]) -> Optional[str]:
+    """The CHoCH candle's delta as a share of its volume, turned to the trade's side."""
+    f = t.get('f') or {}
+    if 'of_cov' not in f:
+        return None
+    if f['of_cov'] < OF_MIN_COVERAGE or f.get('of_trig_delta') is None:
+        return 'too little data'
+    return _band([-0.2, 0, 0.2], '{:+g}')(f['of_trig_delta'] * _side(t))
+
 
 TONE_EDGE = 0.15     # an average FinBERT read inside ±this is neutral news
 

@@ -154,5 +154,33 @@ class Stored(unittest.TestCase):
         self.assertEqual(rows, {T0 - 20 * 86400: [], T0: [[25000.0, 0, 65, 0]]})     # footprint gone, numbers kept
 
 
+class AtEntry(unittest.TestCase):
+    """What an intraday entry records (context.orderflow_context) and how the Performance tab buckets it."""
+
+    def day(self):
+        quiet = [bar([[100, 5, 5], [101, 5, 5]], t=T0 + i * 60) for i in range(5)]
+        hit = bar([[99, 60, 5], [100, 40, 5], [101, 10, 5]], o=100, c=101, t=T0 + 300)     # absorbed at the sweep
+        after = [bar([[101, 2, 30], [102, 2, 20]], t=T0 + 360 + i * 60) for i in range(5)]
+        return quiet + [hit] + after
+
+    def test_recorded_from_the_sweep_to_the_choch_close(self):
+        from niftywhale import context
+        t = {'sweep_time': of.datetime.fromtimestamp(T0 + 300, of.IST).isoformat(),
+             'choch_time': of.datetime.fromtimestamp(T0 + 360, of.IST).isoformat()}       # its 5m candle: 09:26-09:31
+        got = context.orderflow_context(self.day(), t, 'long')
+        self.assertEqual((got['of_cov'], got['of_absorb'], got['of_trig_delta']), (1.0, 1, 0.852))   # 46 of 54 a minute
+        self.assertEqual(context.orderflow_context([], t, 'long'), {'of_cov': 0.0})       # not on the feed
+        self.assertEqual(context.orderflow_context(self.day(), {}, 'long'), {})
+
+    def test_bucketed_for_the_performance_tab(self):
+        from niftywhale import perf
+        t = {'side': 'long', 'f': {'of_cov': 0.9, 'of_absorb': 1, 'of_trig_delta': 0.3}}
+        self.assertEqual(perf.orderflow_bucket(t, 'of_absorb'), 'with the trade')
+        self.assertEqual(perf.orderflow_trigger_bucket(t), '≥ +0.2')
+        self.assertEqual(perf.orderflow_trigger_bucket({**t, 'side': 'short'}), '< -0.2')
+        self.assertEqual(perf.orderflow_bucket({'f': {'of_cov': 0.2}}, 'of_absorb'), 'too little data')
+        self.assertIsNone(perf.orderflow_bucket({'f': {}}, 'of_absorb'))                   # recorded before orderflow
+
+
 if __name__ == '__main__':
     unittest.main()

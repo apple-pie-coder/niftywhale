@@ -1,5 +1,5 @@
 """
-The news and smart-money context of an entry, and the day's context of an option look (a candidate): what
+The news, smart-money and orderflow context of an entry, and the day's context of an option look (a candidate): what
 was known at its time, recorded with it so results can be broken down by it and the autopilot can judge rules
 on it. The app records them live; the lab fills them in for candidates recorded before they existed, from
 the same tables (news kept 45 days, the option snapshots 30).
@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from niftywhale import features, history, options, smart, store, universe
+from niftywhale import features, history, options, orderflow, smart, store, universe
 
 
 def news_context(symbol: str, at) -> dict:
@@ -54,6 +54,33 @@ def smart_context(symbol: str, at) -> dict:
     fut = store.series('sm_futoi', [symbol], 'oi, oi_chg, close', until=day, sessions=features.FUT_DAYS + 1).get(symbol, [])
     out.update(features.futures_context(fut))
     out.update(features.results_context(store.results_dates([symbol]).get(symbol, []), pd.Timestamp(day).date()))
+    return out
+
+
+def _epoch(at) -> float:
+    ts = pd.Timestamp(at)
+    return (ts.tz_localize('Asia/Kolkata') if ts.tzinfo is None else ts).timestamp()
+
+
+def orderflow_context(bars: List[Dict[str, Any]], t: Dict[str, Any], side: str, trigger_s: int = 300) -> Dict[str, Any]:
+    """Orderflow around an intraday entry, from the day's 1-minute bars (orderflow.reading): from the sweep to the
+    CHoCH candle's close, absorption, delta divergence, stacked imbalances and exhaustion with the trade (+1), against
+    it (-1) or neither (0), and the window's delta as a share of its volume; and the CHoCH candle's own delta share.
+    `of_cov`: the share of the window's minutes read (low: the stock was not on the feed, or it was down). Recorded for
+    the Performance tab, never a gate."""
+    try:
+        end = _epoch(t['choch_time']) + trigger_s
+        start = _epoch(t.get('sweep_time') or t['choch_time'])
+    except (KeyError, TypeError, ValueError):
+        return {}
+    w = orderflow.reading(bars, start, end, side)
+    out = {'of_cov': w['coverage']}
+    if w['bars']:
+        out.update(of_delta=w['delta_share'], of_absorb=w['absorption'], of_div=w['divergence'],
+                   of_stack=w['stacked'], of_exhaust=w['exhaustion'])
+        trig = orderflow.reading(bars, end - trigger_s, end, side)
+        if trig['bars']:
+            out['of_trig_delta'] = trig['delta_share']
     return out
 
 

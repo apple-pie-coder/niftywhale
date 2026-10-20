@@ -42,7 +42,7 @@ from flask_sock import Sock  # noqa: E402
 from niftywhale import (auth, autopilot, broker, charts, config, costs, data, demo, dhan, execution, features, glossary,  # noqa: E402
                         history, hub, indicators, intraday, news, notify, options, orderflow, patterns, perf, session, smart, smc,
                         store, studies, telebot, ticker, universe)
-from niftywhale.context import candidate_context, news_context, smart_context  # noqa: E402
+from niftywhale.context import candidate_context, news_context, orderflow_context, smart_context  # noqa: E402
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
                     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
@@ -619,6 +619,20 @@ def _setup_from_scan(symbol: str, mode: str) -> dict:
     return {}
 
 
+def entry_orderflow(symbol: str, t: dict, side: str) -> dict:
+    """An intraday entry's orderflow (context.orderflow_context) from the day's bars, saved and not yet saved; {} when
+    it cannot be read. Never holds up the entry."""
+    try:
+        charts.SOURCE.flow_flush()
+        bars = store.of_bars(symbol, day=pd.Timestamp(t['choch_time']).date().isoformat())
+        last = bars[-1]['t'] if bars else 0
+        bars += [b for b in charts.SOURCE.flow_bars(symbol) if b['t'] > last]
+        return orderflow_context(bars, t, side)
+    except Exception as e:
+        logger.warning(f'orderflow context for {symbol}: {e}')
+        return {}
+
+
 def live_context(z: dict, t: dict, frame, mode: str) -> str:
     """The context of a live entry, as the backtester records it (JSON for zones.ctx).
     Never lets a missing piece hold up an alert."""
@@ -646,7 +660,8 @@ def live_context(z: dict, t: dict, frame, mode: str) -> str:
                                features.relative_context(daily, market_frame(), universe.sectors().get(z['symbol']), day),
                                features.weekly_context(daily, day) if mode == 'swing' else {},
                                features.candle_context(frame, t, side),
-                               news_context(z['symbol'], t['choch_time']), smart_context(z['symbol'], t['choch_time']))
+                               news_context(z['symbol'], t['choch_time']), smart_context(z['symbol'], t['choch_time']),
+                               entry_orderflow(z['symbol'], t, side) if mode == 'intraday' else {})
         return json.dumps(ctx)
     except Exception as e:
         logger.warning(f"context for {z.get('symbol')}: {e}")

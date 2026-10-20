@@ -7190,7 +7190,13 @@ const TR_FEATURES = { rr: ['R:R', (v) => '1:' + v], entry_minute: ['Entry time',
     fii_long_pct: ['FII index futures long', (v) => (+v).toFixed(1) + '%'], fii_cash_cr: ['FII cash', (v) => trCr(v)],
     bias: ['OI bias', (v) => (v >= 0 ? '+' : '') + (+v).toFixed(2)], move_pct: ['Move, 30 min', (v) => (+v).toFixed(2) + '%'],
     iv_pct: ['IV percentile'], atm_iv: ['ATM IV', (v) => (+v).toFixed(1) + '%'], dte: ['Days to expiry'],
-    spread_pct: ['Bid-ask spread', (v) => (+v).toFixed(2) + '%'], market_run: ['Nifty run'] };
+    spread_pct: ['Bid-ask spread', (v) => (+v).toFixed(2) + '%'], market_run: ['Nifty run'],
+    // Orderflow from the sweep to the CHoCH candle's close (intraday, live): what it showed, the trade's way or not.
+    of_cov: ['Orderflow read', (v) => Math.round(v * 100) + '% of the minutes'], of_delta: ['Orderflow delta', (v) => trShare(v)],
+    of_absorb: ['Absorption', (v) => trWay(v)], of_div: ['Delta divergence', (v) => trWay(v)], of_stack: ['Stacked imbalances', (v) => trWay(v)],
+    of_exhaust: ['Exhaustion', (v) => trWay(v)], of_trig_delta: ['CHoCH candle delta', (v) => trShare(v)] };
+const trWay = (v) => v > 0 ? 'with the trade' : v < 0 ? 'against the trade' : 'none';
+const trShare = (v) => (v >= 0 ? '+' : '−') + Math.abs(Math.round(v * 100)) + '% of volume';
 const trCr = (v) => `${v < 0 ? '−' : ''}₹${Math.abs(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })} Cr`;
 
 async function openTrade(ref, fallback) {
