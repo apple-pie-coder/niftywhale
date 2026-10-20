@@ -123,12 +123,28 @@ class Routes(unittest.TestCase):
         self.assertIn({'s': 604800, 'label': '1W'}, d['tfs'])
         self.assertIn('NIFTY 50', [i['label'] for i in d['instruments']])
         bad = [{'symbol': 'idx:25', 'tf': 60}, {'symbol': 'NOPE', 'tf': 60}, {'symbol': 'IDX:13', 'tf': 7},
-               {'symbol': 'IDX:13', 'tf': '3600', 'levels': False}, 'junk'] + [{'symbol': 'IDX:13', 'tf': 1}] * 20
+               {'symbol': 'IDX:13', 'tf': '3600', 'levels': False, 'flow': True}, 'junk'] + [{'symbol': 'IDX:13', 'tf': 1}] * 20
         r = self.c.post('/api/charts/layout', json={'layout': bad}).get_json()
-        self.assertEqual(r['layout'][:2], [{'symbol': 'IDX:25', 'tf': 60, 'levels': True, 'studies': []},
-                                           {'symbol': 'IDX:13', 'tf': 3600, 'levels': False, 'studies': []}])
+        self.assertEqual(r['layout'][:2], [{'symbol': 'IDX:25', 'tf': 60, 'levels': True, 'flow': False, 'studies': []},
+                                           {'symbol': 'IDX:13', 'tf': 3600, 'levels': False, 'flow': True, 'studies': []}])
         self.assertEqual(len(r['layout']), app.CHART_MAX)
         self.assertEqual(self.c.get('/api/charts/config').get_json()['layout'], r['layout'])
+
+    def test_orderflow_pane(self):
+        with store.connect() as c:
+            c.execute('DELETE FROM of_bars')
+        now = int(time.time()) // 60 * 60
+        bars = [{'key': 'NIFTY-FUT', 't': now - 120 + 60 * i, 'open': 1, 'high': 1, 'low': 1, 'close': 1, 'buy': 10 + i, 'sell': 5,
+                 'unknown': 0, 'delta': 5 + i, 'cvd': 5 + i, 'poc': 1, 'step': 5.0, 'trades': 4, 'merged': 1, 'by_quote': 3,
+                 'by_tick': 1, 'levels': [[1, 5, 10 + i, 0]]} for i in range(2)]
+        store.add_of_bars(bars[:1])
+        with mock.patch.object(charts.SOURCE, 'flow_bars', return_value=bars):           # the second not saved yet
+            d = self.c.get('/api/charts/orderflow?symbol=IDX:13&tf=300').get_json()
+        self.assertEqual(d['name'], 'NIFTY-FUT')                                          # the index's future
+        self.assertEqual(d['bars'], [[now - 120 + charts.SHIFT, 5, 5], [now - 60 + charts.SHIFT, 6, 6]])
+        self.assertEqual(self.c.get('/api/charts/orderflow?symbol=IDX:19&tf=300').get_json()['bars'], [])   # no future read
+        self.assertEqual(self.c.get('/api/charts/orderflow?symbol=IDX:13&tf=86400').get_json()['bars'], [])
+        self.assertEqual(self.c.get('/api/charts/orderflow?symbol=NOPE&tf=300').status_code, 400)
 
     def test_indicators_saved_with_the_layout(self):
         d = self.c.get('/api/charts/config').get_json()['studies']

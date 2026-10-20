@@ -40,8 +40,8 @@ from flask import Flask, g, jsonify, redirect, render_template, request, send_fr
 from flask_sock import Sock  # noqa: E402
 
 from niftywhale import (auth, autopilot, broker, charts, config, costs, data, demo, dhan, execution, features, glossary,  # noqa: E402
-                        history, hub, indicators, intraday, news, notify, options, patterns, perf, session, smart, smc, store, studies,
-                        telebot, ticker, universe)
+                        history, hub, indicators, intraday, news, notify, options, orderflow, patterns, perf, session, smart, smc,
+                        store, studies, telebot, ticker, universe)
 from niftywhale.context import candidate_context, news_context, smart_context  # noqa: E402
 
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'),
@@ -5492,7 +5492,7 @@ def _chart_layout(raw) -> list:
             continue
         if charts.known(sym) and tf in charts.TF_SECONDS:
             out.append({'symbol': sym, 'tf': tf, 'levels': c.get('levels', True) is not False,
-                        'studies': studies.clean(c.get('studies'))})
+                        'flow': c.get('flow') is True, 'studies': studies.clean(c.get('studies'))})
     return out[:CHART_MAX]
 
 
@@ -5644,6 +5644,27 @@ def api_charts_candles():
     out = dict(charts.candles(sym, tf))
     out['levels'] = chart_levels(sym)
     return jsonify(safe(out))
+
+
+@app.route('/api/charts/orderflow')
+def api_charts_orderflow():
+    """The Charts tab's orderflow pane: each minute's delta and the day's running delta of the instrument behind a
+    chart (charts.orderflow_name), saved and not yet saved, as [[time (IST-shifted), delta, cvd], ...]; with how far
+    today's calls can be trusted (orderflow.quality). Empty for one never read."""
+    sym = (request.args.get('symbol') or '').upper()
+    tf = request.args.get('tf', type=int)
+    if not charts.known(sym) or tf not in charts.TF_SECONDS:
+        return jsonify({'error': 'unknown instrument or timeframe'}), 400
+    name = charts.orderflow_name(sym)
+    if not name or tf >= 86400:
+        return jsonify({'name': name, 'bars': [], 'quality': None})
+    since = time.time() - charts.ORDERFLOW_DAYS.get(tf, charts.ORDERFLOW_DAYS_MAX) * 86400
+    bars = store.of_bars(name, since=int(since), levels=False)
+    last = bars[-1]['t'] if bars else 0
+    bars += [b for b in charts.SOURCE.flow_bars(name) if b['t'] > last]
+    today = data.now_ist().date().isoformat()
+    return jsonify(safe({'name': name, 'bars': [[int(b['t']) + charts.SHIFT, b['delta'], b['cvd']] for b in bars],
+                         'quality': orderflow.quality([b for b in bars if orderflow.time_day(b['t']) == today])}))
 
 
 def chart_syms(raw) -> list:

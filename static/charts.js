@@ -15,6 +15,9 @@
  * listen(type, fn); NiftyWhale's /ws) the ticks are pushed on its 'ticks' channel instead, as they
  * trade; while it is down the poll takes over.
  * Candles are fetched again now and then to pick up volume and correct the forming candle.
+ * The Orderflow button (stocks, and NIFTY / BANK NIFTY through their futures) adds a pane: each candle's delta
+ * (aggressive buys minus sells, from GET orderflow?symbol=&tf=: per minute, summed onto the candles) and the
+ * day's running delta. Only what the app read is there: the index futures and the day's intraday setups.
  * Drawn with TradingView's Lightweight Charts (static/vendor, Apache 2.0).
  */
 (function () {
@@ -59,7 +62,9 @@
 .ch-empty[hidden]{display:none}
 .ch-empty{border:1px dashed var(--line-strong);border-radius:var(--r-md);padding:40px 16px;text-align:center;color:var(--ink-3)}
 @container (max-width:400px){.ch-chg{display:none}}
-@container (max-width:330px){.ch-ib[data-a="fit"],.ch-ib[data-a="lv"]{display:none}}
+@container (max-width:330px){.ch-ib[data-a="fit"],.ch-ib[data-a="lv"],.ch-ib[data-a="of"]{display:none}}
+.ch-oleg{white-space:normal;font-family:var(--font);font-size:11px;color:var(--ink-3);line-height:1.35}
+.ch-oleg b{font-weight:600;color:var(--ink-2)}
 @media (max-width:700px){.ch-feed{margin-left:0}.ch-add input{width:120px}}
 .ch-tools{display:inline-flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px}
 .ch-tools button{border:0;background:none;color:var(--ink-3);width:30px;height:28px;border-radius:var(--r-pill);display:inline-grid;place-items:center;cursor:pointer}
@@ -120,6 +125,7 @@
         x: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
         max: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>',
         min: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"/></svg>',
+        of: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M1.5 8h13" opacity=".45"/><path d="M3.5 8V3.5M6.5 8V5.5M9.5 8v4.5M12.5 8v2.5"/></svg>',
         lv: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 8h12" stroke-dasharray="2 2"/><path d="M2 12h12"/></svg>',
         fit: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h12M5 5L2 8l3 3M11 5l3 3-3 3"/></svg>',
         cursor: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 2.5l9 5.2-4 1-2 3.8z"/></svg>',
@@ -575,14 +581,15 @@
         clearTimeout(saveT);
         saveT = setTimeout(() => {
             fetch(`${API}/layout`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layout: charts.map((c) => ({ symbol: c.symbol, tf: c.tf, levels: c.levels, studies: studyState(c) })) }) }).catch(() => {});
+                body: JSON.stringify({ layout: charts.map((c) => ({ symbol: c.symbol, tf: c.tf, levels: c.levels, flow: c.flow, studies: studyState(c) })) }) }).catch(() => {});
         }, 400);
     }
 
     // ------------------------------------------------------------ one chart
     function tfOptions(sel) { return cfg.tfs.map((t) => `<option value="${t.s}"${t.s === sel ? ' selected' : ''}>${esc(t.label)}</option>`).join(''); }
     function addChart(spec, persist = true) {
-        const c = { id: ++uid, symbol: spec.symbol, tf: spec.tf, levels: spec.levels !== false, bars: [], lines: [], dp: 2, hasVol: false, last: null,
+        const c = { id: ++uid, symbol: spec.symbol, tf: spec.tf, levels: spec.levels !== false, flow: spec.flow === true, of: null,
+                    bars: [], lines: [], dp: 2, hasVol: false, last: null,
                     studies: [], hover: null };
         const el = document.createElement('div');
         el.className = 'ch-p';
@@ -593,6 +600,7 @@
                 <button type="button" class="ch-ib" data-a="ind" title="Indicators: moving averages, VWAP, Bollinger, RSI, MACD…" aria-label="Indicators"${cfg.studies.kinds.length ? '' : ' hidden'}>${IC.ind}</button>
                 <button type="button" class="ch-ib" data-a="shot" title="Save a picture of this chart as it shows" aria-label="Save a picture of this chart">${IC.camera}</button>
                 <button type="button" class="ch-ib" data-a="fit" title="Back to the latest candles">${IC.fit}</button>
+                <button type="button" class="ch-ib" data-a="of" aria-pressed="${c.flow}" title="Orderflow: each candle's delta (aggressive buys minus sells) and the day's running delta" aria-label="Orderflow">${IC.of}</button>
                 <button type="button" class="ch-ib" data-a="lv" aria-pressed="${c.levels}" title="The app's zones, entries, stops and targets">${IC.lv}</button>
                 <button type="button" class="ch-ib" data-a="max" title="Enlarge (Esc to return)">${IC.max}</button>
                 <button type="button" class="ch-ib" data-a="x" title="Remove this chart">${IC.x}</button></div>
@@ -662,6 +670,7 @@
                 snapshot(c.chart, { title: `${labelOf(c.symbol)} · ${tfLabel(c.tf)}`, sub: leg, name: `${c.symbol}-${tfLabel(c.tf)}` }, b);
             }
             else if (a === 'lv') { c.levels = !c.levels; b.setAttribute('aria-pressed', String(c.levels)); drawLevels(c); save(); }
+            else if (a === 'of') { c.flow = !c.flow; b.setAttribute('aria-pressed', String(c.flow)); if (c.flow) loadFlow(c); else dropFlow(c); save(); }
         });
         (spec.studies || []).forEach((st) => addStudy(c, st, false));
         relayout();
@@ -949,6 +958,12 @@
     }
     function placePaneLegends(c) {
         const panes = c.chart.panes();
+        if (c.of && c.of.leg) {
+            const i = panes.indexOf(c.of.pane);
+            let top = 0;
+            for (let j = 0; j < i; j++) top += panes[j].getHeight() + 1;
+            if (i > 0 && c.of.leg.style.top !== `${top + 4}px`) c.of.leg.style.top = `${top + 4}px`;
+        }
         // The candles' legend stays inside their pane: many rows on a short pane are cut, not laid over the next one.
         // Runs with every crosshair move (a dragged pane divider moves no box), so the styles are written only when they change.
         const set = (el, k, v) => { if (el.style[k] !== v) el.style[k] = v; };
@@ -1078,6 +1093,72 @@
         else if (b.dataset.st === 'cfg') { const pop = c.el.querySelector('.ch-pop'); if (!pop.hidden && pop.dataset.for === st.id) closePop(c); else openSettings(c, st); }
     }
 
+    // ------------------------------------------------------------ orderflow
+    // A pane of its own under the candles (and any indicator panes): the delta as bars, the day's running delta as a
+    // line on its own scale. Minutes are summed onto the chart's candles, so it follows any timeframe from 1m up.
+    function flowPane(c) {
+        if (c.of) return c.of;
+        const T = theme();
+        const pane = c.chart.addPane();
+        pane.setStretchFactor(1);
+        c.chart.panes()[0].setStretchFactor(3);
+        const delta = pane.addSeries(LightweightCharts.HistogramSeries, { priceFormat: BIG_FMT, priceLineVisible: false, lastValueVisible: false });
+        const cvd = pane.addSeries(LightweightCharts.LineSeries, { priceScaleId: 'ofcvd', color: T.accent, lineWidth: 1, priceLineVisible: false,
+            lastValueVisible: false, crosshairMarkerVisible: false });
+        cvd.priceScale().applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
+        const leg = document.createElement('div');
+        leg.className = 'ch-pleg ch-oleg';
+        c.body.appendChild(leg);
+        c.of = { pane, delta, cvd, leg, sig: '' };
+        return c.of;
+    }
+    function dropFlow(c) {
+        if (!c.of) return;
+        [c.of.delta, c.of.cvd].forEach((s) => { try { c.chart.removeSeries(s); } catch (e) { /* gone */ } });
+        const i = c.chart.panes().indexOf(c.of.pane);
+        if (i > 0 && !c.of.pane.getSeries().length) { try { c.chart.removePane(i); } catch (e) { /* removed with its series */ } }
+        c.of.leg.remove();
+        c.of = null;
+    }
+    async function loadFlow(c, fresh) {
+        const want = `${c.symbol}|${c.tf}`;
+        const of = flowPane(c);
+        if (fresh) { of.delta.setData([]); of.cvd.setData([]); }
+        let d;
+        try { d = await getJSON(`${API}/orderflow?symbol=${encodeURIComponent(c.symbol)}&tf=${c.tf}`); } catch (e) { of.leg.textContent = 'Orderflow: could not load (' + e.message + ')'; return; }
+        if (c.want !== want || c.of !== of || !c.flow) return;
+        const name = d.name ? esc(d.name) : esc(labelOf(c.symbol));
+        if (c.tf < 60 || c.tf >= 86400) {
+            of.delta.setData([]); of.cvd.setData([]);
+            of.leg.innerHTML = `<b>Orderflow</b> is per minute: pick a timeframe from 1m to 4h.`;
+            placePaneLegends(c);
+            return;
+        }
+        if (!d.bars.length) {
+            of.delta.setData([]); of.cvd.setData([]);
+            of.leg.innerHTML = `<b>Orderflow</b> · none recorded for ${name}. It is read for the NIFTY and BANKNIFTY futures and the day's intraday setups, in the session.`;
+            placePaneLegends(c);
+            return;
+        }
+        const T = theme(), bars = c.bars, out = new Map();
+        let i = 0;
+        d.bars.forEach(([t, delta, cvd]) => {
+            while (i + 1 < bars.length && bars[i + 1].time <= t) i++;
+            const b = bars[i];
+            if (!b || t < b.time || t >= b.time + c.tf) return;            // a minute no candle holds (the forming one not drawn yet)
+            const o = out.get(b.time) || { time: b.time, delta: 0, cvd: 0 };
+            o.delta += delta; o.cvd = cvd;
+            out.set(b.time, o);
+        });
+        const rows = [...out.values()];
+        of.delta.setData(rows.map((r) => ({ time: r.time, value: r.delta, color: (r.delta >= 0 ? T.up : T.down) + 'aa' })));
+        of.cvd.setData(rows.map((r) => ({ time: r.time, value: r.cvd })));
+        const q = d.quality;
+        const trust = q && q.trades ? ` · today ${q.trades.toLocaleString('en-IN')} trades, ${Math.round((q.by_tick || 0) * 100)}% called by the tick rule, `
+            + `${Math.round((q.merged || 0) * 100)}% of packets several trades` : '';
+        of.leg.innerHTML = `<b>Orderflow</b> ${name} · delta (bars) and the day's running delta (line)${trust}`;
+        placePaneLegends(c);
+    }
     function toBar(r) { return { time: r[0], open: r[1], high: r[2], low: r[3], close: r[4], v: r[5] }; }
     function volBar(b, T) { return { time: b.time, value: b.v || 0, color: (b.close >= b.open ? T.up : T.down) + '55' }; }
 
@@ -1129,6 +1210,7 @@
             computeAll(c, true);
             if (lastP != null && c.last == null) setPrice(c, lastP);
             legend(c, null);
+            if (c.flow) loadFlow(c, fresh);
             const live = cfg.market_open;
             msg.hidden = c.bars.length > 0;
             if (!c.bars.length) {

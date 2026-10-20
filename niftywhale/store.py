@@ -1348,9 +1348,11 @@ def add_of_bars(bars: List[Dict[str, Any]]) -> int:
     return len(rows)
 
 
-def of_bars(name: str, day: str = None, since: int = None, until: int = None) -> List[Dict[str, Any]]:
-    """One instrument's bars, oldest first: of a day (IST date), or between two epoch seconds."""
-    q, args = 'SELECT * FROM of_bars WHERE name = ?', [name]
+def of_bars(name: str, day: str = None, since: int = None, until: int = None, levels: bool = True) -> List[Dict[str, Any]]:
+    """One instrument's bars, oldest first: of a day (IST date), or between two epoch seconds. `levels` False
+    leaves the footprints out (a chart of weeks wants only the numbers)."""
+    cols = '*' if levels else ', '.join(c for c in OF_COLS if c != 'levels')
+    q, args = f'SELECT {cols} FROM of_bars WHERE name = ?', [name]
     if day:
         q += ' AND day = ?'
         args.append(day)
@@ -1365,7 +1367,7 @@ def of_bars(name: str, day: str = None, since: int = None, until: int = None) ->
     for r in rows:
         r['key'] = r.pop('name')
         try:
-            r['levels'] = json.loads(r['levels']) if r['levels'] else []
+            r['levels'] = json.loads(r['levels']) if r.get('levels') else []
         except ValueError:
             r['levels'] = []
     return rows

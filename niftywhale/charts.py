@@ -40,6 +40,11 @@ YF_INDEX = {13: '^NSEI', 25: '^NSEBANK', 51: '^BSESN', 21: '^INDIAVIX', 27: 'NIF
             42: '^CNXENERGY', 30: '^CNXMEDIA', 17: '^CNX100', 19: '^CRSLDX', 38: '^NSMIDCP', 37: '^NSEMDCP50'}
 SHIFT = 19800
 MAX_BARS = 1500
+# The orderflow pane: an index's orderflow is its future's (an index has no volume; app.orderflow_symbols), a
+# stock's its own. Days of minutes sent per timeframe: about what the chart's candles cover.
+ORDERFLOW_OF = {'IDX:13': 'NIFTY-FUT', 'IDX:25': 'BANKNIFTY-FUT'}
+ORDERFLOW_DAYS = {60: 3, 300: 10, 900: 30}
+ORDERFLOW_DAYS_MAX = 60
 _cache: Dict[tuple, tuple] = {}
 _lock = threading.Lock()
 
@@ -68,6 +73,11 @@ def known(sym: str) -> bool:
 
 def _index_id(sym: str) -> Optional[int]:
     return int(sym[4:]) if sym.startswith('IDX:') and sym[4:].isdigit() else None
+
+
+def orderflow_name(sym: str) -> Optional[str]:
+    """The orderflow instrument behind a chart's symbol, or None (an index without a future read)."""
+    return ORDERFLOW_OF.get(sym) or (None if sym.startswith('IDX:') else sym)
 
 
 def ttl(tf: int) -> float:
