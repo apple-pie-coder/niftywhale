@@ -2127,7 +2127,7 @@
     <svg class="hol-ico" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/>
         <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3M6 10l4 0"/></svg>
-    <span class="hol-what"><b id="hol-name"></b> <span class="hol-sub">· Market closed<span class="hol-long"> for an NSE holiday</span></span></span>
+    <span class="hol-what"><b id="hol-name"></b> <span class="hol-sub" id="hol-sub"></span></span>
     <span class="hol-next" id="hol-next"></span>
 </div>
 
@@ -3568,18 +3568,26 @@ function renderHoliday() {
     tape.hidden = !h;
     if (!h) return;
     const day = (iso) => new Date(iso + 'T00:00:00+05:30').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
-    $('hol-name').textContent = h.name;
+    // An extra session (Muhurat, a special live session) is watched only: prices move, nothing scans or trades.
+    const x = h.extra;
+    $('hol-name').textContent = h.name || 'Special session';
+    $('hol-sub').innerHTML = !x ? '· Market closed<span class="hol-long"> for an NSE holiday</span>'
+        : x.live ? `· Special session live since ${esc(x.first)}<span class="hol-long">: prices only, no scans or paper trades</span>`
+        : `· Special session ${esc(x.first)}–${esc(x.last)}<span class="hol-long"> (prices only)</span>`;
     $('hol-next').textContent = 'Next session ' + day(h.next_session);
-    tape.title = `${h.name}: NSE is closed on ${day(h.day)}. Trading resumes ${day(h.next_session)} at 09:15 IST.`;
+    tape.title = (x ? `A special session ${x.live ? 'since ' + x.first : x.first + '–' + x.last}: prices only, no scans, paper trades or orders. `
+        : `${h.name}: NSE is closed on ${day(h.day)}. `) + `The next regular session is ${day(h.next_session)} at 09:15 IST.`;
 }
 function renderStatus() {
     renderHoliday();
     const md = mdState(), mp = $('market-pill');
     const trouble = md.mode !== 'off' && !md.live;
-    mp.dataset.tone = trouble ? 'bad' : !S.market_open ? '' : md.live ? 'good' : 'warn';
-    mp.dataset.pulse = S.market_open && md.live ? '1' : '0';
-    $('market-text').textContent = S.market_open && !md.live && !trouble ? 'Delayed' : '';
-    const when = (S.market_open ? 'Market open' : 'Market closed' + (S.holiday ? ` (${S.holiday.name})` : '')) + ' · '
+    const xs = !S.market_open && S.prices_live;          // an extra session: prices only
+    mp.dataset.tone = trouble ? 'bad' : xs ? 'warn' : !S.market_open ? '' : md.live ? 'good' : 'warn';
+    mp.dataset.pulse = (S.market_open || xs) && md.live ? '1' : '0';
+    $('market-text').textContent = trouble ? '' : xs ? 'Special' : S.market_open && !md.live ? 'Delayed' : '';
+    const when = (S.market_open ? 'Market open' : xs ? 'Special session, prices only'
+        : 'Market closed' + (S.holiday && S.holiday.name ? ` (${S.holiday.name})` : '')) + ' · '
         + new Date(S.now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST · '
         + (md.live ? 'Real-time' : trouble ? 'Disconnected' : 'Delayed');
     mp.setAttribute('aria-label', when);
@@ -3654,7 +3662,8 @@ function openStatus() {
     const tk = tickData && tickData.updated ? `<dt>Ticker</dt><dd>${tickData.live ? 'Real-time' : 'Last session ' + expLabel(tickData.session)}
         <span class="sub">Prices read ${tm(tickData.updated)}</span></dd>` : '';
     openModal('Market status', 'NSE · ' + t + ' IST', `<dl class="mstat">
-        <dt>Market</dt><dd>${S.market_open ? 'Open' : 'Closed'}<span class="sub">${S.holiday ? esc(S.holiday.name) + ' · an NSE holiday' : 'NSE trades 09:15–15:30 IST, weekdays, except NSE holidays'}</span></dd>
+        <dt>Market</dt><dd>${S.market_open ? 'Open' : S.prices_live ? 'Special session' : 'Closed'}<span class="sub">${S.prices_live && !S.market_open ? 'Prices only: no scans, paper trades or orders'
+            : S.holiday && S.holiday.name ? esc(S.holiday.name) + ' · an NSE holiday' : 'NSE trades 09:15–15:30 IST, weekdays, except NSE holidays'}</span></dd>
         <dt>Data feed</dt><dd>${md.live ? 'Dhan · real-time' : 'yfinance · delayed'}<span class="sub"${md.error ? ` title="${esc(md.error)}"` : ''}>${esc(feedLine(md))}</span></dd>
         ${tk}${MOOD.m ? `<dt>Mood</dt><dd>${esc(MOOD.m.label)}<span class="sub">${esc(moodWhy(MOOD.m).replace(/^\S+ \(|\)$/g, ''))}.
             The page's background tint follows it: rose when fearful, blue when calm, green when upbeat, amber as the VIX rises.</span>

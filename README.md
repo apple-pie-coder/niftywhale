@@ -5189,8 +5189,10 @@ changes for the long; the short follows. Intraday-only logic (target pools, the 
   closed 15-minute candles, by design.
 - **Exchange holidays come from NSE.** The app fetches NSE's trading-holiday list each day and keeps it in the database. On a
   holiday nothing scans, watches, records option chains or counts it as a session. Until the first fetch works, every
-  weekday counts as a session. A holiday missing from the list is still caught by its missing candles. Muhurat trading
-  is not modelled.
+  weekday counts as a session. A holiday missing from the list is still caught by its missing candles.
+- **Extra sessions are watched, not traded.** On a weekend or holiday the app looks for Nifty's minute candles (with
+  Dhan, 09:00 to 20:30, every five minutes). When NSE trades anyway (Muhurat, a special live session) prices, the ticker
+  and charts go live and the holiday tape says so, but nothing scans, takes paper trades or places orders.
 - **The doc's judgement calls are fixed numbers.** "Massive rally", "minor swing high" and
   similar phrases are the thresholds in section 11. Tune them against charts you trust.
 - **Orders only through Live trading.** NiftyWhale places, modifies or cancels orders at Dhan only from Live trading

@@ -58,10 +58,10 @@ OPTION_SYMBOL = {13: 'NIFTY', 25: 'BANKNIFTY', 27: 'FINNIFTY', 442: 'MIDCPNIFTY'
 
 
 def session_date(now: datetime) -> date:
-    """The session the latest quotes belong to: today from 09:00 on a trading day, else the
-    trading day before."""
+    """The session the latest quotes belong to: today from 09:00 on a trading day or once an extra
+    session has traded today, else the trading day before."""
     d = now.date()
-    if nse.trading_day(d) and (now.hour, now.minute) >= (9, 0):
+    if nse.trading_day(d) and (now.hour, now.minute) >= (9, 0) or nse.extra(d):
         return d
     return nse.prev_trading_day(d)
 

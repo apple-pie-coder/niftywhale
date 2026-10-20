@@ -43,6 +43,14 @@ def market_open(when: Optional[datetime] = None) -> bool:
     return MARKET_OPEN[0] * 60 + MARKET_OPEN[1] <= minutes < MARKET_CLOSE[0] * 60 + MARKET_CLOSE[1]
 
 
+def prices_live(when: Optional[datetime] = None) -> bool:
+    """Prices are moving: the regular session, or an extra one seen today (session.extra_live: Muhurat, a
+    special live session). For prices only (the feed, the ticker, charts): scans, the watcher, paper
+    trades and orders keep to market_open."""
+    t = when or now_ist()
+    return market_open(t) or session.extra_live(t.date())
+
+
 LIVE_TTL = 600             # during the session today's candle changes: refresh often
 CLOSED_TTL = 3 * 3600      # after it the close is final, but refresh so a late print lands
 def settle_s() -> int:

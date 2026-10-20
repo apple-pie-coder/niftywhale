@@ -1007,10 +1007,54 @@ def holidays_loop() -> None:
 
 
 def holiday_view(now: datetime = None):
-    """Today's exchange holiday for the page's tape, or None on a session or a weekend."""
+    """For the page's tape: today's exchange holiday, or an extra session seen today (it may fall on a holiday or
+    a weekend), or None."""
     day = (now or data.now_ist()).date()
-    name = session.holiday(day)
-    return {'day': day.isoformat(), 'name': name, 'next_session': session.next_trading_day(day).isoformat()} if name else None
+    name, extra = session.holiday(day), session.extra(day)
+    if not (name or extra):
+        return None
+    return {'day': day.isoformat(), 'name': name, 'extra': extra, 'next_session': session.next_trading_day(day).isoformat()}
+
+
+EXTRA_FROM, EXTRA_UNTIL = dtime(9, 0), dtime(20, 30)   # extra sessions so far: 09:15 (backup site) to 19:00 (Muhurat)
+EXTRA_EVERY_S = 300             # a closed day's look for one
+EXTRA_LIVE_EVERY_S = 60         # during one: when it ends
+EXTRA_QUIET = timedelta(minutes=5)     # no new minute candle this long: it is over
+
+
+def extra_session_check(now: datetime = None):
+    """On a day without a regular session, is NSE trading anyway? Nifty's minute candles say so: Dhan had them for
+    every extra session (Muhurat 21 Oct 2025 13:45-14:44 and 1 Nov 2024 18:00-18:59, the backup-site session
+    2 Mar 2024 09:15-12:30) and none on an ordinary Saturday. Prices only follow it (session.py)."""
+    now = now or data.now_ist()
+    day = now.date()
+    if session.trading_day(day) or not EXTRA_FROM <= now.time() < EXTRA_UNTIL or not dhan.available():
+        return session.extra(day)
+    f = dhan.chart_candles(str(ticker.NIFTY), 'IDX_I', 'INDEX', 1, 1)
+    f = f[f.index.date == day] if len(f) else f
+    if not len(f):
+        return None
+    last_end = f.index[-1] + pd.Timedelta(minutes=1)            # a candle is stamped at its minute's start
+    st = {'day': day.isoformat(), 'first': f.index[0].strftime('%H:%M'), 'last': last_end.strftime('%H:%M'),
+          'live': now - last_end.to_pydatetime() <= EXTRA_QUIET}
+    was = session.extra(day) or {}
+    session.set_extra(st)
+    if st['live'] and not was.get('live'):
+        logger.info(f"Extra session today: Nifty trading since {st['first']}. Prices only: no scans, paper trades or orders")
+    elif was.get('live') and not st['live']:
+        logger.info(f"Extra session over: {st['first']}-{st['last']}")
+    return st
+
+
+def extra_session_loop() -> None:
+    time.sleep(60)
+    while True:
+        st = None
+        try:
+            st = extra_session_check()
+        except Exception as e:
+            logger.warning(f'Extra session check failed: {dhan._redact(e)[:160]}')
+        time.sleep(EXTRA_LIVE_EVERY_S if st and st.get('live') else EXTRA_EVERY_S)
 
 
 def next_holiday(today: date = None) -> str:
@@ -1573,7 +1617,7 @@ def live_symbols(raw) -> list:
 
 
 def live_on() -> bool:
-    return data.market_open() and dhan.available()
+    return data.prices_live() and dhan.available()
 
 
 @app.route('/api/live')
@@ -3572,7 +3616,7 @@ def _ticker_stream(session) -> bool:
 
 def ticker_state() -> dict:
     now = data.now_ist()
-    live = data.market_open(now)
+    live = data.prices_live(now)
     session = ticker.session_date(now)
     if not dhan.available():
         return {'rows': [], 'live': False, 'source': None, 'message': 'The index ticker needs Dhan (real-time data)'}
@@ -3698,6 +3742,7 @@ def api_state():
     return jsonify(safe({
         'now': data.now_ist().isoformat(timespec='seconds'),
         'market_open': data.market_open(),
+        'prices_live': data.prices_live(),
         'holiday': holiday_view(),
         'mood': market_mood(),
         'scan_state': STATE['scan'],
@@ -4413,7 +4458,7 @@ def _demo_view() -> dict:
 
 
 def _demo_live_state() -> dict:
-    on = data.market_open() and dhan.available()
+    on = data.prices_live() and dhan.available()
     return {'on': on, 'every_ms': 1000 if on else 0, 'error': charts.FEED.error if on else None}
 
 
@@ -5475,7 +5520,7 @@ def api_charts_config():
     return jsonify(safe({'instruments': charts.instruments(), 'tfs': [{'s': s, 'label': l} for s, l in charts.TFS],
                          'layout': _chart_layout(saved) if saved is not None else CHART_DEFAULT,
                          'max': CHART_MAX, 'price': 'inr', 'tz': 'IST', 'shift': charts.SHIFT, 'day_shift': charts.SHIFT,
-                         'market_open': data.market_open(), 'drawings': store.get_json('charts:drawings', {}) or {},
+                         'market_open': data.prices_live(), 'drawings': store.get_json('charts:drawings', {}) or {},
                          'studies': studies.catalog(), **charts.live()}))
 
 
@@ -5570,7 +5615,7 @@ def api_charts_live():
         since = 0.0
     charts.FEED.watch(syms)
     ticks = {s: [[round(t, 3), p] for t, p in charts.FEED.ticks(s, since)[-600:]] for s in syms}
-    return jsonify(safe({'now': time.time(), 'ticks': ticks, 'market_open': data.market_open(),
+    return jsonify(safe({'now': time.time(), 'ticks': ticks, 'market_open': data.prices_live(),
                          'error': charts.FEED.error, **charts.live()}))
 
 
@@ -5743,7 +5788,7 @@ def ws_ticks(p: dict, mem: dict):
     if not ticks and now - mem['said'] < 5:
         return None
     mem['said'] = now
-    return {'now': now, 'ticks': ticks, 'market_open': data.market_open(), 'error': charts.FEED.error, **charts.live()}
+    return {'now': now, 'ticks': ticks, 'market_open': data.prices_live(), 'error': charts.FEED.error, **charts.live()}
 
 
 def ws_demo(p: dict, mem: dict):
@@ -5770,7 +5815,7 @@ def market_mood():
     except Exception:
         rows = None
     m = ticker.mood(rows or TICKER['rows'] or [])
-    return {**m, 'live': data.market_open(), 'session': TICKER['session'].isoformat() if TICKER['session'] else None} if m else None
+    return {**m, 'live': data.prices_live(), 'session': TICKER['session'].isoformat() if TICKER['session'] else None} if m else None
 
 
 def ws_mood(p: dict, mem: dict):
@@ -5787,7 +5832,7 @@ HUB.channel('mood', ws_mood, every=2.0)
 # In-memory state whose change means a panel should load again (the tables are seen by db_changes).
 _public = lambda d: {k: v for k, v in d.items() if not k.startswith('_')}
 HUB.probe('run', lambda: {k: _public(v) for k, v in STATE.items()})
-HUB.probe('market', lambda: [data.market_open(), dhan.available()])
+HUB.probe('market', lambda: [data.market_open(), data.prices_live(), dhan.available()])
 HUB.probe('news_run', lambda: _public(NEWS_STATE))
 HUB.probe('smart_run', lambda: _public(SMART_STATE))
 
@@ -6305,6 +6350,7 @@ if os.getenv('NIFTYWHALE_SCHEDULER', '1') == '1':      # off for tests and secon
     threading.Thread(target=reactions_loop, daemon=True, name='news-reactions').start()
     threading.Thread(target=smart_loop, daemon=True, name='smart').start()
     threading.Thread(target=holidays_loop, daemon=True, name='holidays').start()
+    threading.Thread(target=extra_session_loop, daemon=True, name='extra-session').start()
     threading.Thread(target=demo_loop, daemon=True, name='demo').start()
     threading.Thread(target=marks_loop, daemon=True, name='marks').start()
     threading.Thread(target=telegram_loop, daemon=True, name='telegram').start()

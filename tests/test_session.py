@@ -10,6 +10,8 @@ import unittest
 from datetime import date, datetime
 from unittest import mock
 
+import pandas as pd
+
 _tmp = tempfile.mkdtemp()
 os.environ['NIFTYWHALE_SCHEDULER'] = '0'
 os.environ.setdefault('DB_PATH', os.path.join(_tmp, 'test.db'))
@@ -141,7 +143,7 @@ class Holidays(unittest.TestCase):
 
     def test_the_page_names_it(self):
         self.assertEqual(app.holiday_view(datetime(2026, 10, 20, 11, 0, tzinfo=IST)),
-                         {'day': '2026-10-20', 'name': 'Dussehra', 'next_session': '2026-10-21'})
+                         {'day': '2026-10-20', 'name': 'Dussehra', 'extra': None, 'next_session': '2026-10-21'})
         self.assertEqual(app.holiday_view(datetime(2026, 10, 2, 11, 0, tzinfo=IST))['next_session'], '2026-10-05')   # over the weekend
         self.assertIsNone(app.holiday_view(datetime(2026, 10, 21, 11, 0, tzinfo=IST)))
         self.assertIsNone(app.holiday_view(datetime(2026, 10, 24, 11, 0, tzinfo=IST)))                   # a Saturday
@@ -151,6 +153,60 @@ class Holidays(unittest.TestCase):
         days = session.save_holidays({'2026-10-20': 'Dussehra', '2026-12-25': 'Christmas'})
         self.assertEqual(days, {'2025-12-25': 'Christmas', '2026-10-20': 'Dussehra', '2026-12-25': 'Christmas'})
         self.assertTrue(session.trading_day(date(2026, 10, 2)))                                    # dropped by NSE
+
+
+def minutes(day: str, start: str, n: int) -> 'pd.DataFrame':
+    """Nifty's 1-minute candles as dhan.chart_candles gives them: `n` from `start` on `day`."""
+    idx = pd.date_range(f'{day} {start}', periods=n, freq='1min', tz='Asia/Kolkata')
+    return pd.DataFrame({'Open': 1.0, 'High': 1.0, 'Low': 1.0, 'Close': 1.0, 'Volume': 0}, index=idx)
+
+
+class ExtraSessions(unittest.TestCase):
+    """Muhurat on Sunday 8 Nov 2026 (in NSE's list as a holiday), 18:00-19:00 as in 2024: prices only."""
+
+    def setUp(self):
+        store.init()
+        session.save_holidays({'2026-11-08': 'Diwali Laxmi Pujan*'})
+        self.addCleanup(session.set_extra, None)
+        mock.patch.object(app.dhan, 'available', return_value=True).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def tearDown(self):
+        store.set_json(session.HOLIDAYS_KEY, {})
+        session._held.update(at=None)
+
+    def check(self, hh, mm, candles):
+        with mock.patch.object(app.dhan, 'chart_candles', return_value=candles) as cc:
+            st = app.extra_session_check(datetime(2026, 11, 8, hh, mm, tzinfo=IST))
+        return st, cc
+
+    def test_seen_in_niftys_candles_and_watched_only(self):
+        st, _ = self.check(18, 20, minutes('2026-11-06', '09:15', 3))              # only Friday's candles: nothing today
+        self.assertIsNone(st)
+        st, _ = self.check(18, 20, minutes('2026-11-08', '18:00', 19))
+        self.assertEqual(st, {'day': '2026-11-08', 'first': '18:00', 'last': '18:19', 'live': True})
+        now = datetime(2026, 11, 8, 18, 20, tzinfo=IST)
+        self.assertTrue(data.prices_live(now))
+        self.assertFalse(data.market_open(now))                                       # nothing scans or trades
+        self.assertFalse(session.fo_open(now))
+        self.assertEqual(app.intraday_phase(now)['key'], 'closed')
+        self.assertFalse(app.scheduled_scan_due(now, {'auto_scan': '1', 'scan_time': '16:15'}))
+        self.assertIn('the market is closed', app._tradable_why('options', 'NIFTY', now))
+        self.assertEqual(ticker.session_date(now), date(2026, 11, 8))               # quotes against Friday's close
+        self.assertEqual(app.holiday_view(now)['extra']['live'], True)
+
+    def test_over_once_the_candles_stop(self):
+        self.check(18, 20, minutes('2026-11-08', '18:00', 19))
+        st, _ = self.check(19, 10, minutes('2026-11-08', '18:00', 60))
+        self.assertEqual((st['first'], st['last'], st['live']), ('18:00', '19:00', False))
+        self.assertFalse(data.prices_live(datetime(2026, 11, 8, 19, 10, tzinfo=IST)))
+        self.assertEqual(app.holiday_view(datetime(2026, 11, 8, 19, 10, tzinfo=IST))['extra']['last'], '19:00')
+
+    def test_not_looked_for_on_a_trading_day_or_at_night(self):
+        for when in (datetime(2026, 11, 9, 18, 20, tzinfo=IST), datetime(2026, 11, 8, 21, 0, tzinfo=IST)):
+            with mock.patch.object(app.dhan, 'chart_candles') as cc:
+                app.extra_session_check(when)
+            cc.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -16,8 +16,8 @@ for every stock.
 
 Exchange holidays come from NSE's own list (api/holiday-master, fetched daily by the app:
 smart.Fetcher.holidays), held in the database so the lab reads the same days. Until a list has
-been fetched every weekday counts as a session, as it always did. Muhurat trading (an hour on a
-Diwali evening) is not modelled: its day stays a holiday.
+been fetched every weekday counts as a session, as it always did. An extra session (Muhurat, a
+special live session) keeps its day a holiday: it is seen, and only its prices followed (below).
 """
 import sqlite3
 import time
@@ -136,6 +136,29 @@ def prev_trading_day(day: date) -> date:
     while not trading_day(d):
         d -= timedelta(days=1)
     return d
+
+
+# ---------------------------------------------------------------- extra sessions
+# A session NSE holds off its calendar (Muhurat on a Diwali evening, a live session from its backup site on a
+# Saturday) is in no list NSE publishes with its times, so the app sees it in Nifty's minute candles
+# (app.extra_session_check). Only prices follow it (data.prices_live): scans, the watcher, paper trades and
+# orders keep to the regular session. Held in the app's memory: the lab has no use for it.
+_extra: Dict[str, Any] = {}
+
+
+def set_extra(state: Optional[Dict[str, Any]]) -> None:
+    _extra.clear()
+    _extra.update(state or {})
+
+
+def extra(day: date) -> Optional[Dict[str, Any]]:
+    """The extra session seen on `day`, {'day', 'first', 'last' (HH:MM), 'live'}, or None."""
+    return dict(_extra) if _extra.get('day') == day.isoformat() else None
+
+
+def extra_live(day: date) -> bool:
+    """Is an extra session trading on `day` now."""
+    return bool((extra(day) or {}).get('live'))
 
 
 def next_trading_day(day: date) -> date:

@@ -223,7 +223,7 @@ class DhanSource:
 
 
 SOURCE = DhanSource(lambda: FEED)
-FEED = livefeed.Feed(fetch_prices, interval, active=lambda: data.market_open(), name='chart-feed', stream=SOURCE)
+FEED = livefeed.Feed(fetch_prices, interval, active=lambda: data.prices_live(), name='chart-feed', stream=SOURCE)
 
 
 def streaming() -> bool:
