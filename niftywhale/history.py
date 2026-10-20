@@ -4,7 +4,10 @@ Candle history for the lab (backtests and the autopilot): years of daily,
 closes for the market context.
 
 Stored as gzipped pickles under LAB_DIR/history/<interval>/<SYMBOL>.pkl.gz and
-topped up incrementally: a refresh only fetches what is missing at the end.
+topped up incrementally: a refresh only fetches what is missing at the end, and writes the file
+only when something changed. gzip's fastest level: a 5m file (a year, ~55k rows) is written in a
+tenth of a second instead of half a second (several times that with the lab's workers busy), for
+about a tenth more disk.
 
 Sources: daily candles from yfinance (what the live scan uses), 15m / 5m from
 Dhan's intraday charts (90 days per request, ~5 years back), index dailies from
@@ -28,7 +31,14 @@ logger = logging.getLogger(__name__)
 LAB_DIR = Path(os.getenv('LAB_DIR', os.path.join(os.path.dirname(os.getenv('DB_PATH', 'var/niftywhale.db')) or '.', 'lab')))
 TZ = 'Asia/Kolkata'
 CHUNK_DAYS = 88                 # Dhan: 90 days of intraday candles per request
-PACE_S = 0.6                    # ~1.6 requests a second: the live app keeps the rest of the 5/s
+PACE_S = 0.6                    # ~1.6 requests a second while prices move: the live app keeps the rest of the 5/s
+PACE_IDLE_S = 0.3               # ~3 a second when they do not (the nightly): the live app asks for little then
+GZIP = {'method': 'gzip', 'compresslevel': 1}
+
+
+def pace() -> float:
+    """The pause before a request to Dhan's chart API."""
+    return PACE_S if data.prices_live() else PACE_IDLE_S
 NIFTY_ID, VIX_ID = 13, 21
 
 
@@ -51,7 +61,7 @@ def save(interval: str, symbol: str, frame: pd.DataFrame) -> None:
     p = path(interval, symbol)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix('.tmp')
-    frame.to_pickle(tmp, compression='gzip')
+    frame.to_pickle(tmp, compression=GZIP)
     tmp.replace(p)
 
 
@@ -69,7 +79,7 @@ def _intraday_chunk(sid: str, interval: int, start: datetime, end: datetime) -> 
     body = {'securityId': sid, 'exchangeSegment': 'NSE_EQ', 'instrument': 'EQUITY', 'interval': str(interval),
             'oi': False, 'fromDate': start.strftime('%Y-%m-%d 09:00:00'), 'toDate': end.strftime('%Y-%m-%d 15:30:00')}
     for attempt in range(3):
-        time.sleep(PACE_S)
+        time.sleep(pace())
         r = requests.post(f'{dhan.API}/charts/intraday', headers=dhan._headers(), json=body, timeout=40)
         if r.status_code == 429:
             time.sleep(5 * (attempt + 1))
@@ -117,6 +127,8 @@ def update_intraday(symbol: str, interval: int, years: float, should_stop: Calla
     # Only completed sessions: today's candles are still forming during the session.
     if data.market_open():
         merged = merged[merged.index.date < today]
+    if old is not None and merged.equals(old):
+        return 0                                  # nothing new (a holiday, a second run): no write
     save(key, symbol, merged)
     return len(merged) - (len(old) if old is not None else 0)
 
@@ -146,8 +158,10 @@ def update_daily(symbols: List[str], years: float) -> int:
                 f = f[['Open', 'High', 'Low', 'Close', 'Volume']].dropna(subset=['Close'])
             except (KeyError, TypeError):
                 continue
-            if len(f):
-                save('1d', sym, merge(load('1d', sym), f))
+            old = load('1d', sym)
+            merged = merge(old, f) if len(f) else None
+            if merged is not None and (old is None or not merged.equals(old)):
+                save('1d', sym, merged)
                 changed += 1
         time.sleep(1)
     return changed
@@ -160,7 +174,7 @@ def update_market(years: float = 8) -> Optional[pd.DataFrame]:
     Without that, every trade the next day would read the market as of two sessions back."""
     frames = {}
     for sid, name in ((NIFTY_ID, 'nifty'), (VIX_ID, 'vix')):
-        time.sleep(PACE_S)
+        time.sleep(pace())
         r = requests.post(f'{dhan.API}/charts/historical', headers=dhan._headers(), timeout=40, json={
             'securityId': str(sid), 'exchangeSegment': 'IDX_I', 'instrument': 'INDEX', 'expiryCode': 0, 'oi': False,
             'fromDate': (data.now_ist().date() - timedelta(days=int(365 * years))).isoformat(),

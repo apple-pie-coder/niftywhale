@@ -159,6 +159,38 @@ class MarketCloses(unittest.TestCase):
         self.assertEqual(got['syms'], ['OLDSTOCK', 'SBIN', 'TCS'])          # breadth keeps its population
 
 
+class IntradayHistory(unittest.TestCase):
+    """The nightly's candle top-up: a file written only when something changed, at gzip's fastest level, and
+    Dhan asked faster once prices stop moving."""
+
+    def setUp(self):
+        self.lab = tempfile.mkdtemp()
+        self.calls = []
+        idx = pd.date_range('2026-10-19 09:15', periods=3, freq='15min', tz=IST)
+        self.frame = pd.DataFrame({'Open': 1.0, 'High': 1.0, 'Low': 1.0, 'Close': 1.0, 'Volume': 10}, index=idx)
+        for p in (mock.patch.object(history, 'LAB_DIR', history.Path(self.lab)),
+                  mock.patch.object(history.dhan, 'security_id', lambda s: '1'),
+                  mock.patch.object(history, '_intraday_chunk', lambda *a: self.calls.append(a) or self.frame),
+                  mock.patch.object(history.data, 'market_open', lambda when=None: False)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_written_only_when_changed(self):
+        self.assertEqual(history.update_intraday('X', 15, 0.01), 3)
+        p = history.path('15m', 'X')
+        first = p.stat().st_mtime_ns
+        with mock.patch.object(history, 'save', side_effect=AssertionError('no write expected')):
+            self.assertEqual(history.update_intraday('X', 15, 0.01), 0)            # the same candles again
+        self.assertEqual(p.stat().st_mtime_ns, first)
+        self.assertTrue(history.load('15m', 'X').equals(self.frame))
+
+    def test_paced_faster_when_prices_do_not_move(self):
+        with mock.patch.object(history.data, 'prices_live', return_value=False):
+            self.assertEqual(history.pace(), history.PACE_IDLE_S)
+        with mock.patch.object(history.data, 'prices_live', return_value=True):
+            self.assertEqual(history.pace(), history.PACE_S)
+
+
 class Features(unittest.TestCase):
     def test_relative_strength_against_nifty_and_sector(self):
         stock = daily(np.r_[np.full(80, 100.0), np.linspace(100, 110, 21)])           # +10 % over 20 days
