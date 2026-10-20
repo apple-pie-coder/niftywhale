@@ -1,9 +1,12 @@
-"""Dhan helpers that need no network: TOTP, token parsing, plan status."""
+"""Dhan helpers that need no network: TOTP, token parsing, plan status, the futures map."""
 import base64
 import json
 import os
 import tempfile
 import unittest
+from datetime import date
+from pathlib import Path
+from unittest import mock
 
 os.environ.setdefault('DB_PATH', os.path.join(tempfile.mkdtemp(), 'test.db'))
 
@@ -66,3 +69,37 @@ class Plan(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def scrip(instrument, symbol, sid, expiry, exch='NSE'):
+    """A row of Dhan's instrument master as csv.DictReader gives it (the columns _fut_row reads)."""
+    return {'SEM_INSTRUMENT_NAME': instrument, 'SEM_TRADING_SYMBOL': symbol, 'SEM_SMST_SECURITY_ID': sid,
+            'SEM_EXPIRY_DATE': expiry + ' 14:30:00', 'SEM_EXM_EXCH_ID': exch}
+
+
+class Futures(unittest.TestCase):
+    def setUp(self):
+        futs = {}
+        # The rows of 20 Oct 2026: November's expiry is Monday the 23rd (Tuesday the 24th is a holiday).
+        for row in (scrip('FUTIDX', 'NIFTY-Oct2026-FUT', '48704', '2026-10-27'),
+                    scrip('FUTIDX', 'NIFTY-Nov2026-FUT', '61471', '2026-11-23'),
+                    scrip('FUTIDX', 'BANKNIFTY-Oct2026-FUT', '48699', '2026-10-27'),
+                    scrip('FUTSTK', 'BAJAJ-AUTO-Oct2026-FUT', '52001', '2026-10-27'),
+                    scrip('FUTIDX', 'SENSEX-Oct2026-FUT', '9', '2026-10-29', exch='BSE')):
+            dhan._fut_row(row, futs)
+        self.futs = futs
+        path = Path(tempfile.mkdtemp()) / 'dhan_futures.json'
+        path.write_text(json.dumps(futs))
+        for p in (mock.patch.object(dhan, 'FUTS_PATH', path), mock.patch.object(dhan, '_load_ids', return_value={})):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_index_and_stock_futures_mapped(self):
+        self.assertEqual(self.futs, {'NIFTY': {'2026-10-27': '48704', '2026-11-23': '61471'},
+                                     'BANKNIFTY': {'2026-10-27': '48699'}, 'BAJAJ-AUTO': {'2026-10-27': '52001'}})
+
+    def test_an_index_future_rolls_on_its_expiry_day(self):
+        self.assertEqual(dhan.index_future('NIFTY', date(2026, 10, 26)), ('48704', '2026-10-27'))
+        self.assertEqual(dhan.index_future('NIFTY', date(2026, 10, 27)), ('61471', '2026-11-23'))
+        self.assertEqual(dhan.future_id('NIFTY', date(2026, 10, 26)), ('61471', '2026-11-23'))       # a position: 3 days
+        self.assertIsNone(dhan.index_future('BANKNIFTY', date(2026, 10, 27)))                      # November not listed here

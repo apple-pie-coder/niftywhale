@@ -53,7 +53,9 @@ SCRIP_URL = 'https://images.dhan.co/api-data/api-scrip-master.csv'
 IDS_PATH = Path(os.getenv('DHAN_IDS_PATH', os.path.join(os.path.dirname(store.DB_PATH) or '.', 'dhan_ids.json')))
 LOTS_PATH = IDS_PATH.with_name('dhan_lots.json')     # option lot sizes, from the same download
 OPTS_PATH = IDS_PATH.with_name('dhan_opts.json')     # option contract -> security ID, same download
-FUTS_PATH = IDS_PATH.with_name('dhan_futs.json')     # stock futures: symbol -> {expiry: security ID}, same download
+# Stock and index futures: symbol -> {expiry: security ID}, same download. Index futures (orderflow) joined in
+# October 2026 under a new name, so the first start after it downloads the list again instead of waiting a week.
+FUTS_PATH = IDS_PATH.with_name('dhan_futures.json')
 IDS_MAX_AGE = 7 * 86400          # new listings appear; refresh the map weekly
 RENEW_BEFORE = 2 * 3600          # renew a token this long before it expires
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -356,7 +358,7 @@ def _load_ids() -> Dict[str, str]:
                         _lot_row(row, lots)
                         _opt_row(row, opts)
                         continue
-                    if row.get('SEM_INSTRUMENT_NAME') == 'FUTSTK':
+                    if row.get('SEM_INSTRUMENT_NAME') in ('FUTSTK', 'FUTIDX'):
                         _fut_row(row, futs)
                         continue
                     if row.get('SEM_EXM_EXCH_ID') != 'NSE' or row.get('SEM_SEGMENT') != 'E':
@@ -430,8 +432,9 @@ def _opt_row(row: Dict[str, str], opts: Dict[str, str]) -> None:
 
 
 def _fut_row(row: Dict[str, str], futs: Dict[str, Dict[str, str]]) -> None:
-    """One NSE stock future's security ID: futs['RELIANCE']['2026-10-27'] = '52175'. Trading symbols
-    look like RELIANCE-Oct2026-FUT, so the stock is everything before the last two parts."""
+    """One NSE future's security ID: futs['RELIANCE']['2026-10-27'] = '52175', and an index's the same way
+    (futs['NIFTY']['2026-10-27'] = '48704'). Trading symbols look like RELIANCE-Oct2026-FUT or
+    NIFTY-Oct2026-FUT, so the underlying is everything before the last two parts."""
     parts = (row.get('SEM_TRADING_SYMBOL') or '').rsplit('-', 2)
     sid, exp = (row.get('SEM_SMST_SECURITY_ID') or '').strip(), (row.get('SEM_EXPIRY_DATE') or '')[:10]
     if row.get('SEM_EXM_EXCH_ID') != 'NSE' or len(parts) != 3 or parts[2] != 'FUT' or not sid or not exp:
@@ -440,8 +443,9 @@ def _fut_row(row: Dict[str, str], futs: Dict[str, Dict[str, str]]) -> None:
 
 
 def future_id(symbol: str, on: Any = None, roll_days: int = 3) -> Optional[tuple]:
-    """(security id, expiry) of a stock's near-month future as of `on` (a date, default today): the first
-    expiry more than `roll_days` days away, so a new position is never opened into its expiry week's last days."""
+    """(security id, expiry) of a stock's or an index's near-month future as of `on` (a date, default today): the
+    first expiry more than `roll_days` days away, so a new position is never opened into its expiry week's last
+    days. INDEX_FUTURE_ROLL_DAYS for a contract that is only read (orderflow)."""
     _load_ids()
     try:
         futs = json.loads(FUTS_PATH.read_text()).get(symbol.upper().replace('.NS', ''), {})
@@ -455,6 +459,15 @@ def future_id(symbol: str, on: Any = None, roll_days: int = 3) -> Optional[tuple
         except ValueError:
             continue
     return None
+
+
+INDEX_FUTURES = ('NIFTY', 'BANKNIFTY')     # read for orderflow: an index has no volume, its future does
+INDEX_FUTURE_ROLL_DAYS = 0                 # the near month until its expiry day, the next one from that day
+
+
+def index_future(und: str, on: Any = None) -> Optional[tuple]:
+    """(security id, expiry) of an index's future whose trades are read (orderflow.py)."""
+    return future_id(und, on, roll_days=INDEX_FUTURE_ROLL_DAYS)
 
 
 def option_ids(und: str, expiry: str, contracts: List[tuple]) -> Dict[tuple, tuple]:
