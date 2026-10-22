@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 970 356" width="970" height="356" role="img" aria-labelledby="t d">
+<title id="t">An intraday zone&#x27;s life cycle</title>
+<desc id="d">A watched intraday zone becomes tapped when price trades into it. A 5-minute sweep and CHoCH then either open a trade (R:R of at least 1:2: an alert is sent), which ends at its target (won, plus R:R), at its stop (lost, minus 1R) or squared off at 15:10 for whatever it was worth, or reject it (R:R under 1:2, or after 14:30). A watched zone expires when it is no longer a 15m setup, breaks past its leg origin, or has no CHoCH by 14:30, and is dismissed by you.</desc>
+<style>
+  .bg { fill: #f8fafc; stroke: #cdd7e1; }
+  .box { fill: #ffffff; stroke: #9fb0c2; stroke-width: 1.2; }
+  .act { fill: #e2f1f5; stroke: #0b6e8a; stroke-width: 1.5; }
+  .good { fill: #e3f4ea; stroke: #1a7f4b; stroke-width: 1.2; }
+  .bad { fill: #fbe4e2; stroke: #b42318; stroke-width: 1.2; }
+  .end { fill: #eef2f6; stroke: #9fb0c2; stroke-width: 1.2; stroke-dasharray: 4 3; }
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif; fill: #0f1d2b; }
+  .t { font-size: 15px; font-weight: 600; }
+  .s { font-size: 12px; fill: #3a4a5a; }
+  .lab { font-size: 12px; fill: #3a4a5a; }
+  .k { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; fill: #6b7b8c; }
+  .ln { stroke: #6b7b8c; stroke-width: 1.5; fill: none; }
+  .arw { fill: #6b7b8c; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #13202e; stroke: #2a3a4b; }
+    .box { fill: #0f1a26; stroke: #4a5f74; }
+    .act { fill: #11313d; stroke: #3fb5d4; }
+    .good { fill: #10301f; stroke: #4cc38a; }
+    .bad { fill: #3a1714; stroke: #f0857a; }
+    .end { fill: #16232f; stroke: #4a5f74; }
+    text { fill: #e6edf3; }
+    .s, .lab { fill: #b6c3cf; }
+    .k { fill: #7d8e9e; }
+    .ln { stroke: #7d8e9e; }
+    .arw { fill: #7d8e9e; }
+  }
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arw" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="bg" x="0.5" y="0.5" width="969" height="355" rx="10"/>
+<g transform="translate(0 12)">
+<rect class="box" x="20" y="60" width="120" height="44" rx="7"/>
+<text class="t" x="80.0" y="86.0" text-anchor="middle">watching</text>
+<path class="ln" d="M140 82 H296" marker-end="url(#a)"/>
+<text class="lab" x="218" y="58" text-anchor="middle">price trades</text>
+<text class="lab" x="218" y="73" text-anchor="middle">into the zone</text>
+<rect class="box" x="300" y="60" width="120" height="44" rx="7"/>
+<text class="t" x="360.0" y="86.0" text-anchor="middle">tapped</text>
+<path class="ln" d="M420 82 H556" marker-end="url(#a)"/>
+<text class="lab" x="470" y="58" text-anchor="middle">5m sweep</text>
+<text class="lab" x="470" y="73" text-anchor="middle">+ CHoCH</text>
+<rect class="act" x="560" y="56" width="200" height="52" rx="7"/>
+<text class="t" x="660.0" y="78.5" text-anchor="middle">open trade</text>
+<text class="s" x="660.0" y="96.5" text-anchor="middle">R:R ≥ 1:2: alert sent</text>
+<path class="ln" d="M760 82 H780 V28 H796" marker-end="url(#a)"/>
+<path class="ln" d="M760 82 H796" marker-end="url(#a)"/>
+<path class="ln" d="M780 82 V142 H796" marker-end="url(#a)"/>
+<rect class="good" x="800" y="5" width="150" height="46" rx="7"/>
+<text class="t" x="875.0" y="24.5" text-anchor="middle">target</text>
+<text class="s" x="875.0" y="42.5" text-anchor="middle">won: +R:R</text>
+<rect class="bad" x="800" y="59" width="150" height="46" rx="7"/>
+<text class="t" x="875.0" y="78.5" text-anchor="middle">stop</text>
+<text class="s" x="875.0" y="96.5" text-anchor="middle">lost: −1R</text>
+<rect class="end" x="800" y="113" width="150" height="58" rx="7"/>
+<text class="t" x="875.0" y="131.0" text-anchor="middle">squared off</text>
+<text class="s" x="875.0" y="149.0" text-anchor="middle">at 15:10, for whatever</text>
+<text class="s" x="875.0" y="164.0" text-anchor="middle">it was worth</text>
+<path class="ln" d="M500 82 V214"/>
+<path class="ln" d="M500 214 H556" marker-end="url(#a)"/>
+<rect class="end" x="560" y="190" width="200" height="48" rx="7"/>
+<text class="t" x="660.0" y="210.5" text-anchor="middle">rejected</text>
+<text class="s" x="660.0" y="228.5" text-anchor="middle">R:R &lt; 1:2, or after 14:30</text>
+<path class="ln" d="M80 104 V300"/>
+<path class="ln" d="M80 214 H226" marker-end="url(#a)"/>
+<path class="ln" d="M80 300 H226" marker-end="url(#a)"/>
+<rect class="end" x="230" y="174" width="250" height="80" rx="7"/>
+<text class="t" x="355.0" y="195.5" text-anchor="middle">expired</text>
+<text class="s" x="355.0" y="213.5" text-anchor="middle">no longer a 15m setup,</text>
+<text class="s" x="355.0" y="228.5" text-anchor="middle">broke past the leg origin,</text>
+<text class="s" x="355.0" y="243.5" text-anchor="middle">or no CHoCH by 14:30</text>
+<rect class="end" x="230" y="276" width="250" height="48" rx="7"/>
+<text class="t" x="355.0" y="296.5" text-anchor="middle">dismissed</text>
+<text class="s" x="355.0" y="314.5" text-anchor="middle">by you</text>
+</g></svg>

@@ -116,17 +116,7 @@ block are read on 15-minute candles, and the sweep and CHoCH on 5-minute candles
 
 ### 3.1 The two jobs
 
-```
- EVENING (16:15 IST, weekdays)                MARKET HOURS (09:15–15:30 IST)
- ┌─────────────────────────────┐              ┌──────────────────────────────────┐
- │ SCAN  — daily candles       │   zones      │ WATCH — 15-minute candles        │
- │  Steps 1–8 + provisional R:R├────────────► │  Steps 9–12, after every candle  │
- │  over the whole universe    │              │  for the watched zones only      │
- └─────────────────────────────┘              └───────────────┬──────────────────┘
-                                                              │ CHoCH with R:R ≥ 1:3
-                                                              ▼
-                                                   Alert (dashboard + Telegram)
-```
+![The two jobs: in the evening (16:15 IST, weekdays) the scan reads daily candles, runs Steps 1–8 and the provisional R:R over the whole universe, and what passes becomes zones; in market hours (09:15–15:30 IST) the watcher reads 15-minute candles for the watched zones only and runs Steps 9–12 after every candle; a CHoCH with R:R ≥ 1:3 raises an alert on the dashboard and Telegram](docs/diagrams/two-jobs.svg)
 
 Both jobs run inside the one container, driven by a scheduler thread that wakes every 20 seconds.
 Intraday mode (section 5) has its own scheduler thread: a 15-minute scan and a 5-minute check
@@ -168,15 +158,7 @@ order block (15%) and volatility (10%).
 
 When a scan finishes, every setup becomes a **watched zone**:
 
-```
- watching ──(price trades into the zone)──► tapped ──(sweep + CHoCH)──┬─► triggered ──┬─► won   (paper trade hit its target)
-     │                                                                │  (R:R ≥ 1:3,  └─► lost  (paper trade hit its stop)
-     │                                                                │   alert sent: an open paper trade)
-     │                                                                └─► rejected   (R:R < 1:3, or found too late; no alert)
-     ├──(next scan no longer passes it)──► expired
-     ├──(10 days old)───────────────────► expired
-     └──(you press Dismiss)─────────────► dismissed
-```
+![A swing zone's life cycle: watching becomes tapped when price trades into the zone; a sweep and CHoCH then trigger it (R:R ≥ 1:3: an alert is sent and a paper trade opens, won at its target or lost at its stop) or reject it (R:R < 1:3, or found too late: no alert); a watched zone expires when the next scan no longer passes it or it is 10 days old, and is dismissed when you press Dismiss](docs/diagrams/swing-zone-life-cycle.svg)
 
 - A later scan **refreshes** a scan zone's levels if the stock still passes, and **expires** it
   if not. Only completed scans do this; a scan you stop partway leaves zones alone, and so
@@ -1521,14 +1503,7 @@ the sweep high.
 
 ### 5.5 Zones and trades
 
-```
- watching ──► tapped ──► open trade ──┬─► target   (won:  +R:R)
-    │            │                    ├─► stop     (lost: −1R)
-    │            │                    └─► squared off at 15:10 (whatever it was worth)
-    │            └──► rejected  (R:R < 1:2, or after 14:30)
-    ├──► expired  (no longer a 15m setup · broke below the leg origin · no CHoCH by 14:30)
-    └──► dismissed (by you)
-```
+![An intraday zone's life cycle: watching becomes tapped when price trades into the zone; a 5-minute sweep and CHoCH then open a trade (R:R ≥ 1:2: an alert is sent), which ends at its target (won, +R:R), at its stop (lost, −1R) or squared off at 15:10 for whatever it was worth, or reject it (R:R < 1:2, or after 14:30); a watched zone expires when it is no longer a 15m setup, breaks past its leg origin or has no CHoCH by 14:30, and you can dismiss it](docs/diagrams/intraday-zone-life-cycle.svg)
 
 - **One trade per stock per day.** Once a stock has triggered, later scans don't open a
   second zone for it.
@@ -2337,10 +2312,7 @@ table but is not one of these settings: it is never sent to the browser (`/api/s
 
 ### 10.3 Where the rules come from
 
-```
-built-in defaults (smc.Rules)  →  SMC_* in .env  →  values saved from the rule tuner
-                                                     (highest priority)
-```
+![Where the rules come from: the built-in defaults (smc.Rules), replaced by SMC_* values in .env, replaced in turn by values saved from the rule tuner, which have the highest priority](docs/diagrams/rules-precedence.svg)
 
 The tuner can change the eight thresholds in its sliders and the twelve context gates in its chips (§11). The rest
 (volume days, ATR length, OB search window, stop buffers, 15-minute swing size, intraday sessions) are `.env`-only. Out-of-range or
@@ -5324,6 +5296,10 @@ docker rm -f nw-shots
 
 Look at every picture before copying it into `docs/screenshots/`: none should show a balance, P&L, capital or your
 Dhan details (the stock panel is cut above its Trade planner). The rendered guide (`/docs`) serves the folder too.
+
+`docs/diagrams/` holds the four diagrams in sections 3, 5 and 10: SVGs in the app's palette, light or dark as the reader's
+device is set, drawn by `scripts/readme-diagrams.py`. Change the boxes there and run it again when the text they draw
+changes (`python3 scripts/readme-diagrams.py`); `/docs` serves this folder too.
 
 ### Rebuilding the universe by hand
 

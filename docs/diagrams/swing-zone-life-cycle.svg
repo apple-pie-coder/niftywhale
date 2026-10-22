@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 356" width="950" height="356" role="img" aria-labelledby="t d">
+<title id="t">A swing zone&#x27;s life cycle</title>
+<desc id="d">A watched zone becomes tapped when price trades into it. A sweep and CHoCH then either trigger it (R:R of at least 1:3: an alert is sent and a paper trade opens, which is won at its target or lost at its stop) or reject it (R:R under 1:3, or found too late; no alert). A watched zone expires when the next scan no longer passes it or it is 10 days old, and is dismissed when you press Dismiss.</desc>
+<style>
+  .bg { fill: #f8fafc; stroke: #cdd7e1; }
+  .box { fill: #ffffff; stroke: #9fb0c2; stroke-width: 1.2; }
+  .act { fill: #e2f1f5; stroke: #0b6e8a; stroke-width: 1.5; }
+  .good { fill: #e3f4ea; stroke: #1a7f4b; stroke-width: 1.2; }
+  .bad { fill: #fbe4e2; stroke: #b42318; stroke-width: 1.2; }
+  .end { fill: #eef2f6; stroke: #9fb0c2; stroke-width: 1.2; stroke-dasharray: 4 3; }
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif; fill: #0f1d2b; }
+  .t { font-size: 15px; font-weight: 600; }
+  .s { font-size: 12px; fill: #3a4a5a; }
+  .lab { font-size: 12px; fill: #3a4a5a; }
+  .k { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; fill: #6b7b8c; }
+  .ln { stroke: #6b7b8c; stroke-width: 1.5; fill: none; }
+  .arw { fill: #6b7b8c; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #13202e; stroke: #2a3a4b; }
+    .box { fill: #0f1a26; stroke: #4a5f74; }
+    .act { fill: #11313d; stroke: #3fb5d4; }
+    .good { fill: #10301f; stroke: #4cc38a; }
+    .bad { fill: #3a1714; stroke: #f0857a; }
+    .end { fill: #16232f; stroke: #4a5f74; }
+    text { fill: #e6edf3; }
+    .s, .lab { fill: #b6c3cf; }
+    .k { fill: #7d8e9e; }
+    .ln { stroke: #7d8e9e; }
+    .arw { fill: #7d8e9e; }
+  }
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arw" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="bg" x="0.5" y="0.5" width="949" height="355" rx="10"/>
+<g transform="translate(0 12)">
+<rect class="box" x="20" y="60" width="120" height="44" rx="7"/>
+<text class="t" x="80.0" y="86.0" text-anchor="middle">watching</text>
+<path class="ln" d="M140 82 H296" marker-end="url(#a)"/>
+<text class="lab" x="218" y="58" text-anchor="middle">price trades</text>
+<text class="lab" x="218" y="73" text-anchor="middle">into the zone</text>
+<rect class="box" x="300" y="60" width="120" height="44" rx="7"/>
+<text class="t" x="360.0" y="86.0" text-anchor="middle">tapped</text>
+<path class="ln" d="M420 82 H556" marker-end="url(#a)"/>
+<text class="lab" x="470" y="73" text-anchor="middle">sweep + CHoCH</text>
+<rect class="act" x="560" y="50" width="200" height="64" rx="7"/>
+<text class="t" x="660.0" y="71.0" text-anchor="middle">triggered</text>
+<text class="s" x="660.0" y="89.0" text-anchor="middle">R:R ≥ 1:3: alert sent,</text>
+<text class="s" x="660.0" y="104.0" text-anchor="middle">paper trade open</text>
+<path class="ln" d="M760 82 H780 V38 H796" marker-end="url(#a)"/>
+<path class="ln" d="M780 82 V126 H796" marker-end="url(#a)"/>
+<rect class="good" x="800" y="14" width="130" height="48" rx="7"/>
+<text class="t" x="865.0" y="34.5" text-anchor="middle">won</text>
+<text class="s" x="865.0" y="52.5" text-anchor="middle">hit its target</text>
+<rect class="bad" x="800" y="102" width="130" height="48" rx="7"/>
+<text class="t" x="865.0" y="122.5" text-anchor="middle">lost</text>
+<text class="s" x="865.0" y="140.5" text-anchor="middle">hit its stop</text>
+<path class="ln" d="M500 82 V214"/>
+<path class="ln" d="M500 214 H556" marker-end="url(#a)"/>
+<rect class="end" x="560" y="190" width="200" height="48" rx="7"/>
+<text class="t" x="660.0" y="210.5" text-anchor="middle">rejected</text>
+<text class="s" x="660.0" y="228.5" text-anchor="middle">R:R &lt; 1:3 or too late; no alert</text>
+<path class="ln" d="M80 104 V300"/>
+<path class="ln" d="M80 214 H226" marker-end="url(#a)"/>
+<path class="ln" d="M80 300 H226" marker-end="url(#a)"/>
+<rect class="end" x="230" y="182" width="240" height="64" rx="7"/>
+<text class="t" x="350.0" y="203.0" text-anchor="middle">expired</text>
+<text class="s" x="350.0" y="221.0" text-anchor="middle">the next scan no longer passes it,</text>
+<text class="s" x="350.0" y="236.0" text-anchor="middle">or it is 10 days old</text>
+<rect class="end" x="230" y="276" width="240" height="48" rx="7"/>
+<text class="t" x="350.0" y="296.5" text-anchor="middle">dismissed</text>
+<text class="s" x="350.0" y="314.5" text-anchor="middle">you pressed Dismiss</text>
+</g></svg>

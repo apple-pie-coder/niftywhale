@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 292" width="860" height="292" role="img" aria-labelledby="t d">
+<title id="t">The two jobs</title>
+<desc id="d">In the evening, at 16:15 IST on weekdays, the scan reads daily candles and runs Steps 1 to 8 plus the provisional R:R over the whole universe; what passes becomes zones. In market hours, 09:15 to 15:30 IST, the watcher reads 15-minute candles for the watched zones only and runs Steps 9 to 12 after every candle. A CHoCH with R:R of at least 1:3 raises an alert on the dashboard and Telegram.</desc>
+<style>
+  .bg { fill: #f8fafc; stroke: #cdd7e1; }
+  .box { fill: #ffffff; stroke: #9fb0c2; stroke-width: 1.2; }
+  .act { fill: #e2f1f5; stroke: #0b6e8a; stroke-width: 1.5; }
+  .good { fill: #e3f4ea; stroke: #1a7f4b; stroke-width: 1.2; }
+  .bad { fill: #fbe4e2; stroke: #b42318; stroke-width: 1.2; }
+  .end { fill: #eef2f6; stroke: #9fb0c2; stroke-width: 1.2; stroke-dasharray: 4 3; }
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif; fill: #0f1d2b; }
+  .t { font-size: 15px; font-weight: 600; }
+  .s { font-size: 12px; fill: #3a4a5a; }
+  .lab { font-size: 12px; fill: #3a4a5a; }
+  .k { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; fill: #6b7b8c; }
+  .ln { stroke: #6b7b8c; stroke-width: 1.5; fill: none; }
+  .arw { fill: #6b7b8c; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #13202e; stroke: #2a3a4b; }
+    .box { fill: #0f1a26; stroke: #4a5f74; }
+    .act { fill: #11313d; stroke: #3fb5d4; }
+    .good { fill: #10301f; stroke: #4cc38a; }
+    .bad { fill: #3a1714; stroke: #f0857a; }
+    .end { fill: #16232f; stroke: #4a5f74; }
+    text { fill: #e6edf3; }
+    .s, .lab { fill: #b6c3cf; }
+    .k { fill: #7d8e9e; }
+    .ln { stroke: #7d8e9e; }
+    .arw { fill: #7d8e9e; }
+  }
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arw" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="bg" x="0.5" y="0.5" width="859" height="291" rx="10"/>
+<text class="k" x="30" y="36" text-anchor="start">EVENING · 16:15 IST, WEEKDAYS</text>
+<text class="k" x="480" y="36" text-anchor="start">MARKET HOURS · 09:15–15:30 IST</text>
+<rect class="box" x="20" y="50" width="340" height="96" rx="7"/>
+<text class="t" x="190.0" y="87.0" text-anchor="middle">Scan · daily candles</text>
+<text class="s" x="190.0" y="105.0" text-anchor="middle">Steps 1–8 + provisional R:R</text>
+<text class="s" x="190.0" y="120.0" text-anchor="middle">over the whole universe</text>
+<rect class="box" x="480" y="50" width="360" height="96" rx="7"/>
+<text class="t" x="660.0" y="87.0" text-anchor="middle">Watch · 15-minute candles</text>
+<text class="s" x="660.0" y="105.0" text-anchor="middle">Steps 9–12, after every candle</text>
+<text class="s" x="660.0" y="120.0" text-anchor="middle">for the watched zones only</text>
+<path class="ln" d="M360 98 H476" marker-end="url(#a)"/>
+<text class="lab" x="418" y="90" text-anchor="middle">zones</text>
+<path class="ln" d="M660 146 V218" marker-end="url(#a)"/>
+<text class="lab" x="672" y="188" text-anchor="start">CHoCH with R:R ≥ 1:3</text>
+<rect class="act" x="530" y="222" width="260" height="50" rx="7"/>
+<text class="t" x="660.0" y="243.5" text-anchor="middle">Alert</text>
+<text class="s" x="660.0" y="261.5" text-anchor="middle">on the dashboard and Telegram</text></svg>

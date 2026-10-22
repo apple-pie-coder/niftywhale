@@ -97,6 +97,10 @@ class Gate(Base):
         r = self.get('/docs/screenshots/funnel.png')
         self.assertEqual((r.status_code, r.mimetype), (200, 'image/png'))
         self.assertEqual(self.get('/docs/screenshots/../README.md').status_code, 404)        # nothing outside the folder
+        r = self.get('/docs/diagrams/two-jobs.svg')
+        self.assertEqual((r.status_code, r.mimetype), (200, 'image/svg+xml'))
+        self.assertEqual(self.get('/docs/diagrams/../../README.md').status_code, 404)
+        self.assertEqual(self.get('/docs/templates/docs.html').status_code, 404)             # only those two folders
 
     def test_setup_needs_the_code_and_happens_once(self):
         r = self.post('/api/auth/setup/begin', {'setup_code': 'WRONG-CODE-XXXX', 'username': 'owner', 'password': PW})

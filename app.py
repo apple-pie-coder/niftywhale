@@ -3752,10 +3752,10 @@ def docs():
     return render_template('docs.html', body=body, toc=md.toc)
 
 
-@app.route('/docs/screenshots/<path:name>')
-def docs_screenshot(name):
-    """The README's pictures, at the path it links them by, so the rendered guide shows them as GitHub does."""
-    return send_from_directory(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs', 'screenshots'), name)
+@app.route('/docs/<any(screenshots, diagrams):folder>/<path:name>')
+def docs_screenshot(folder, name):
+    """The README's pictures and diagrams, at the path it links them by, so the rendered guide shows them as GitHub does."""
+    return send_from_directory(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs', folder), name)
 
 
 @app.route('/favicon.ico')
