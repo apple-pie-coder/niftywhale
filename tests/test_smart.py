@@ -77,7 +77,9 @@ class Parsing(unittest.TestCase):
         parts = pos['series'][0]['parts']
         self.assertEqual(sorted(parts), ['Client', 'DII', 'FII', 'Pro'])            # every participant, for the chart
         self.assertEqual(parts['FII'], {'long_pct': 9.2, 'fut_net': -298285, 'calls_net': -400079, 'puts_net': 574665})
-        self.assertEqual(smart.stance(9.2), 'short-heavy')
+        self.assertIsNone(pos['change5'])                                            # one session: no change yet
+        self.assertEqual([smart.stance(c) for c in (None, 1.0, 1.1, -1.0, -1.1)],
+                         [None, 'flat', 'turning long', 'flat', 'turning short'])
         b = smart.parse_bhav(BHAV)
         self.assertEqual(sorted(b), ['PCBL', 'VEDL'])                              # EQ only
         self.assertEqual((b['VEDL']['deliv_pct'], b['VEDL']['qty']), (51.73, 10190251))
@@ -158,7 +160,12 @@ class Pass(unittest.TestCase):
         dims = {k: fn for k, _, fn in perf.DIMENSIONS}
         self.assertEqual(dims['inst_deals']({'side': 'long', 'f': ctx}), 'with the trade')
         self.assertEqual(dims['inst_deals']({'side': 'short', 'f': ctx}), 'against the trade')
-        self.assertEqual(dims['fii_futures']({'side': 'long', 'f': ctx}), 'FII short-heavy (40 % long or less)')
+        self.assertEqual(ctx['fii_long_chg5'], 0.0)                                 # the same file every day
+        self.assertEqual(dims['fii_futures']({'side': 'long', 'f': ctx}), 'FII flat')
+        self.assertEqual(dims['fii_futures']({'side': 'long', 'f': {'fii_long_chg5': 2.5}}), 'FII turning long: with the trade')
+        self.assertEqual(dims['fii_futures']({'side': 'short', 'f': {'fii_long_chg5': 2.5}}), 'FII turning long: against the trade')
+        self.assertEqual(dims['fii_futures']({'side': 'short', 'f': {'fii_long_chg5': -1.5}}), 'FII turning short: with the trade')
+        self.assertIsNone(dims['fii_futures']({'side': 'long', 'f': {'fii_long_pct': 9.5}}))   # recorded before the change was
         self.assertEqual(dims['fii_cash']({'side': 'long', 'f': ctx}), 'FII net sellers')
         self.assertEqual(dims['delivery']({'side': 'long', 'f': ctx}), 'normal')
         self.assertIsNone(dims['inst_deals']({'side': 'long', 'f': {}}))          # trades from before smart money
@@ -169,7 +176,7 @@ class Pass(unittest.TestCase):
                 mock.patch.object(app.data, 'now_ist', return_value=datetime(2026, 10, 8, 11, 0, tzinfo=data.IST)):
             d = self.client.get('/api/smart').get_json()
         self.assertEqual(d['flows']['latest']['FII']['net'], -6121.37)
-        self.assertEqual(d['positioning']['stance'], 'short-heavy')
+        self.assertEqual((d['positioning']['change5'], d['positioning']['stance']), (0.0, 'flat'))
         vedl = next(s for s in d['stocks'] if s['symbol'] == 'VEDL')
         self.assertEqual(vedl['why'], 'tapped')
         self.assertEqual(vedl['deals']['inst_net_cr'], 26.14)

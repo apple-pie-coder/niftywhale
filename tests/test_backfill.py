@@ -75,13 +75,15 @@ class History(unittest.TestCase):
             store.add_delivery(d.isoformat(), {'ABC': {'close': 101.0 if last else 100.0, 'prev_close': 100.0,
                                                         'qty': 300_000 if last else 100_000, 'deliv_qty': 1, 'deliv_pct': 60.0 if last else 30.0}})
             store.add_futoi(d.isoformat(), {'ABC': {'oi': 1000 + (k >= 20) * 200, 'oi_chg': 0, 'close': 100.0 + (k >= 20) * 3}})
-        store.set_poi(days[-1].isoformat(), {'FII': {'Future Index Long': 70, 'Future Index Short': 30}})
+        for k, d in enumerate(days[-6:]):                                # FIIs 50 % long, then 70 % for 5 sessions
+            store.set_poi(d.isoformat(), {'FII': {'fut_idx_long': 70 if k else 50, 'fut_idx_short': 30 if k else 50}})
         store.add_events([{'symbol': 'ABC', 'day': '2026-10-05', 'purpose': 'Financial Results'}])
         h = backfill.NseHistory(['ABC'])
         ctx = h.context('ABC', days[-1] + timedelta(days=1))
         self.assertEqual(ctx['deliv_read'], 'accumulation')
         self.assertEqual(ctx['fut_buildup'], 'long buildup')
         self.assertEqual(ctx['days_to_results'], 9)
+        self.assertEqual((ctx['fii_long_pct'], ctx['fii_long_chg5']), (70.0, 20.0))
         self.assertNotIn('sm', ctx)                                      # the live set's flag stays live
         before = h.context('ABC', days[10])                              # as of the day: nothing from later
         self.assertNotEqual(before.get('deliv_read'), 'accumulation')

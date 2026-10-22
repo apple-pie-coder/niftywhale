@@ -1132,8 +1132,9 @@ close, context for the next session.
 - **Institutional cash flows:** a card each for FII/FPI and DII (the latest day's net, bought against sold, the 5- and
   20-session totals) beside a two-lane chart of daily nets (buying up in green, selling down in red, the last 20 session
   slots; hover a session for its figures). NSE publishes only the latest day, so the history fills in one evening at a time.
-- **Positioning in index derivatives:** the share of FIIs' index-futures positions that are long (*long-heavy* at 60 % or more,
-  *short-heavy* at 40 % or less), their net futures contracts and the day's change, their net index calls and puts (bought minus
+- **Positioning in index derivatives:** the share of FIIs' index-futures positions that are long, and its change over 5
+  sessions (*turning long* when it rose more than 1 point: longs added or shorts covered; *turning short* when it fell as far;
+  else *flat*), their net futures contracts and the day's change, their net index calls and puts (bought minus
   written); a chart of every participant's long share by session (FII, DII, Pro, retail; chips switch lines on and off; hover
   for everyone's numbers and the change), and a table of the same with a sparkline and long/short bar each.
 - **Your stocks:** every stock the news desk follows (4.14), with the last session's **delivery read** and its institutional
@@ -1169,9 +1170,11 @@ for a holiday and not asked for again.
 
 **In Performance:** every swing and intraday trade, and every option idea on a stock, records what NSE had published before the
 entry's day: the stock's delivery read, its institutions' net bulk / block deals of the week before, FII index-futures positioning
-and the FII cash flow of the session before. Four breakdowns use them: **Institutional deals in the week before** (*with the
-trade* when institutions were buying a long or selling a short), **Delivery the session before**, **FII index futures positioning**
-and **FII cash flow the session before**. Live trades only: the backtester has no history of these.
+and its 5-session change, and the FII cash flow of the session before. Four breakdowns use them: **Institutional deals in the
+week before** (*with the trade* when institutions were buying a long or selling a short), **Delivery the session before**,
+**FII index futures, 5 sessions** (FIIs *turning long* or *turning short*, with or against the trade, or *flat*: the change,
+not the level, since FIIs can sit short-heavy for months) and **FII cash flow the session before**. Deals and cash flows are
+live trades only (NSE keeps no archive of them); the backtester has the delivery and positioning history (backfill).
 
 ### 4.16 Demo funds
 

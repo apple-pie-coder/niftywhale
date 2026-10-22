@@ -5997,10 +5997,12 @@ function renderSmart() {
     $('sm-flow-stats').innerHTML = SM_FLOW.map((q) => flowCard(q, L, f)).join('');
     $('sm-flow-chart').innerHTML = flowBars(f.days || []);
 
-    const P = d.positioning || {}, fii = (P.latest || {}).FII, ch = P.change;
+    const P = d.positioning || {}, fii = (P.latest || {}).FII, ch = P.change, c5 = P.change5;
+    const pts = (v) => `${v >= 0 ? '+' : ''}${v} pts`;
     $('sm-pos-stats').innerHTML = fii
-        ? box('FII index futures', `${fii.long_pct}% long`, `${d.positioning.stance}${ch ? ` · ${ch.long_pct >= 0 ? '+' : ''}${ch.long_pct} pts on the day` : ''}`,
-              fii.long_pct >= 60 ? 'good' : fii.long_pct <= 40 ? 'bad' : '')
+        ? box('FII index futures', `${fii.long_pct}% long`,
+              [c5 != null ? `${P.stance} · ${pts(c5)} in 5 sessions` : '', ch ? `${pts(ch.long_pct)} on the day` : ''].filter(Boolean).join(' · '),
+              P.stance === 'turning long' ? 'good' : P.stance === 'turning short' ? 'bad' : '')
           + box('FII futures, net contracts', contracts(fii.fut_net), ch ? `${contracts(ch.fut_net)} on the day` : '', fii.fut_net >= 0 ? 'good' : 'bad')
           + box('FII index calls, net', contracts(fii.calls_net), 'bought − written')
           + box('FII index puts, net', contracts(fii.puts_net), 'bought − written')

@@ -4972,7 +4972,7 @@ def api_smart():
         'flows': {'days': [{'day': d, **{c: by_day[d].get(c) for c in ('FII', 'DII')}} for d in days],
                   'latest': by_day[days[-1]] if days else None,
                   'sum5': {c: total(c, 5) for c in ('FII', 'DII')}, 'sum20': {c: total(c, 20) for c in ('FII', 'DII')}},
-        'positioning': {**pos, 'stance': smart.stance(((pos.get('latest') or {}).get('FII') or {}).get('long_pct'))},
+        'positioning': {**pos, 'stance': smart.stance(pos.get('change5'))},
         'stocks': stocks,
         'deals': [{**d, 'followed': d['symbol'] in followed} for d in recent],
         'held': {k: len(store.smart_days(t)) for k, t in (('delivery', 'sm_delivery'), ('positioning', 'sm_poi'),

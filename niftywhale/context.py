@@ -30,7 +30,7 @@ def news_context(symbol: str, at) -> dict:
 def smart_context(symbol: str, at) -> dict:
     """What NSE had published before an entry's day, for the trade's context: the stock's
     delivery read and its institutional deals of the week before, FII index-futures
-    positioning and FII cash flow of the session before."""
+    positioning (and its change over smart.FII_SESSIONS sessions) and FII cash flow of the session before."""
     try:
         day = pd.Timestamp(at).date().isoformat()
     except (TypeError, ValueError):
@@ -43,10 +43,12 @@ def smart_context(symbol: str, at) -> dict:
     week = store.deals([symbol], since=(pd.Timestamp(day) - pd.Timedelta(days=8)).date().isoformat(), until=day)
     sm = smart.deal_summary(week).get(symbol)
     out['inst_deals_cr'] = sm['inst_net_cr'] if sm else 0.0
-    pos = smart.positioning(store.poi(2, until=day))
+    pos = smart.positioning(store.poi(smart.FII_SESSIONS + 1, until=day))
     fii = ((pos.get('latest') or {}).get('FII') or {})
     if fii.get('long_pct') is not None:
         out['fii_long_pct'] = fii['long_pct']
+    if pos.get('change5') is not None:
+        out['fii_long_chg5'] = pos['change5']
     fl = [r for r in store.flows(10) if r['day'] < day and r['category'] == 'FII']
     if fl:
         out['fii_cash_cr'] = fl[-1]['net']

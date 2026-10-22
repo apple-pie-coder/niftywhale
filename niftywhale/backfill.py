@@ -139,9 +139,12 @@ class NseHistory:
                 out.update(deliv_read=rd['read'], deliv_ratio=rd['ratio'], deliv_vol_ratio=rd['vol_ratio'])
         i = bisect.bisect_left(self.poi_days, iso)
         if i:
-            fii = (smart.positioning(self.poi[max(0, i - 2):i]).get('latest') or {}).get('FII') or {}
+            pos = smart.positioning(self.poi[max(0, i - smart.FII_SESSIONS - 1):i])
+            fii = (pos.get('latest') or {}).get('FII') or {}
             if fii.get('long_pct') is not None:
                 out['fii_long_pct'] = fii['long_pct']
+            if pos.get('change5') is not None:
+                out['fii_long_chg5'] = pos['change5']
         rows = self.fut.get(symbol)
         if rows:
             i = bisect.bisect_left(self.fut_days[symbol], iso)

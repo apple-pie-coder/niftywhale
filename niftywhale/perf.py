@@ -13,6 +13,8 @@ import re
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from niftywhale import smart
+
 MIN_BUCKET = 15
 
 
@@ -135,7 +137,7 @@ DIMENSIONS: List[Tuple[str, str, Callable[[Dict[str, Any]], Optional[str]]]] = [
     # Futures and results (backfill.py): the backtester has their history too.
     ('futures', 'Stock futures, 5 sessions (vs the trade)', lambda t: futures_bucket(t)),
     ('results', 'Days to the next results', lambda t: _band([3, 7, 14, 30], '{:g}')(t['f'].get('days_to_results'))),
-    ('fii_futures', 'FII index futures positioning', lambda t: fii_stance(t)),
+    ('fii_futures', "FII index futures, 5 sessions (trade's way)", lambda t: fii_stance(t)),
     ('fii_cash', 'FII cash flow the session before', lambda t: None if (t.get('f') or {}).get('fii_cash_cr') is None
         else 'FII net buyers' if t['f']['fii_cash_cr'] > 0 else 'FII net sellers'),
     # Orderflow (orderflow.py, context.orderflow_context), from the sweep to the CHoCH candle's close: live intraday
@@ -187,11 +189,14 @@ def futures_bucket(t: Dict[str, Any]) -> Optional[str]:
 
 
 def fii_stance(t: Dict[str, Any]) -> Optional[str]:
-    f = t.get('f') or {}
-    lp = f.get('fii_long_pct')
-    if lp is None:
+    """FIIs' index-futures long share over the 5 sessions before entry (smart.stance), turned to the trade's side:
+    turning long agrees with a long, turning short with a short. Trades recorded before the change was: none."""
+    k = smart.stance((t.get('f') or {}).get('fii_long_chg5'))
+    if not k:
         return None
-    return 'FII long-heavy (60 %+ long)' if lp >= 60 else 'FII short-heavy (40 % long or less)' if lp <= 40 else 'FII balanced'
+    if k == 'flat':
+        return 'FII flat'
+    return f"FII {k}: {'with' if (k == 'turning long') == (_side(t) > 0) else 'against'} the trade"
 
 OF_MIN_COVERAGE = 0.5      # less of the sweep-to-CHoCH window read: too little data for a reading
 OF_WAY = {1: 'with the trade', -1: 'against the trade', 0: 'none'}

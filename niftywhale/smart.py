@@ -61,6 +61,11 @@ HIGH_VOLUME = 1.5        # volume at least this many times its average...
 HIGH_DELIVERY = 1.3      # ...with delivery % this many times its average: positions taken home
 LOW_DELIVERY = 0.7       # ...or this far under it: traded and squared off the same day
 
+# FII positioning reads: the change in FIIs' index-futures long share over FII_SESSIONS sessions, not its level
+# (FIIs have sat short-heavy for months on end, so a level reads the same for every trade).
+FII_SESSIONS = 5
+FII_FLAT = 1.0           # a change within this many points either way: flat
+
 
 # ---------------------------------------------------------------- helpers
 def _num(x) -> Optional[float]:
@@ -292,7 +297,12 @@ def positioning(days: List[Dict[str, Any]]) -> Dict[str, Any]:
     if prev and prev.get('FII') and fii:
         change = {'fut_net': fii['fut_net'] - prev['FII']['fut_net'],
                   'long_pct': round((fii['long_pct'] or 0) - (prev['FII']['long_pct'] or 0), 1)}
-    return {'latest': latest, 'change': change,
+    change5 = None
+    if len(series) > FII_SESSIONS and fii.get('long_pct') is not None:
+        base = (series[-1 - FII_SESSIONS].get('FII') or {}).get('long_pct')
+        if base is not None:
+            change5 = round(fii['long_pct'] - base, 1)
+    return {'latest': latest, 'change': change, 'change5': change5,
             'series': [{'day': s['day'], 'long_pct': (s.get('FII') or {}).get('long_pct'),
                         'fut_net': (s.get('FII') or {}).get('fut_net'),
                         # every participant, for the chart's other lines and its hover
@@ -300,11 +310,12 @@ def positioning(days: List[Dict[str, Any]]) -> Dict[str, Any]:
                                   for k in PARTICIPANTS if s.get(k)}} for s in series]}
 
 
-def stance(long_pct: Optional[float]) -> Optional[str]:
-    """FII index futures: long-heavy over 60 % long, short-heavy under 40 %."""
-    if long_pct is None:
+def stance(change5: Optional[float]) -> Optional[str]:
+    """FII index futures over FII_SESSIONS sessions (positioning's change5): turning long when their long share rose
+    more than FII_FLAT points (longs added or shorts covered), turning short when it fell as far, else flat."""
+    if change5 is None:
         return None
-    return 'long-heavy' if long_pct >= 60 else 'short-heavy' if long_pct <= 40 else 'balanced'
+    return 'turning long' if change5 > FII_FLAT else 'turning short' if change5 < -FII_FLAT else 'flat'
 
 
 def deal_summary(deals: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
