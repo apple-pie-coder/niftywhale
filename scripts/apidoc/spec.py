@@ -68,6 +68,13 @@ E = [
      'The funnel, setups and per-step drop lists under those rules, from the last scan\'s data. Saves nothing.'),
     ('swing', 'POST', '/api/rules', '/api/rules', {'rules': {'min_rr': 3}}, '`rules` (`{}` resets)',
      'Saves rule-tuner overrides (they replace `SMC_*` in .env); returns the rules now in force.'),
+    ('swing', 'POST', '/api/rules/lock', '/api/rules/lock', {'locked': True}, '`locked`; to unlock, `password` (or a passkey confirmed first)',
+     'Locks or unlocks the tuner rules and the autopilot policy (4.7). `{"locked": true}` locks them at once (and ends an '
+     'unlock). `{"locked": false}` unlocks them for 15 minutes: a signed-in browser only, with the password in the body or a '
+     'passkey confirmed for this request, every time, however recent the sign-in. While they are locked, `POST /api/rules`, '
+     '`/api/intraday/rules`, `/api/options/rules`, `/api/autopilot/policy` and an autopilot approve or undo answer `423` with '
+     '`rules_locked`. Returns the lock: `locked`, `open` (whether the rules may change now), `until` (when an unlock ends, '
+     'epoch seconds, else null) and `unlock_s`.'),
     ('swing', 'POST', '/api/zones', '/api/zones', {'symbol': 'PAYTM', 'zone_low': 1619, 'zone_high': 1628.1, 'target': 1855.5},
      '`symbol`, `zone_low`, `zone_high`, `target`',
      'Watches (or updates) a zone you set: a target above the zone is a long, below it a short.'),

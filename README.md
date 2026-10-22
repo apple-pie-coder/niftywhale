@@ -254,6 +254,21 @@ stop (3.7).
 | `static/studies.js` | The Charts tab's indicator maths, worked out in the page as candles tick (tested under Node: `tests/js/`). |
 | `niftywhale/indicators.py` | Chart indicators as pure functions: estimated delta (close-location split, from 1-minute candles where available), cumulative delta, session VWAP, the opening range and its breakout, Bollinger Bands. |
 | `niftywhale/notify.py` | Telegram. |
+| `niftywhale/telebot.py` | Telegram commands: what you send the bot, answered by the app (9.1). |
+| `niftywhale/session.py` | NSE's session clock in one place: holidays, extra sessions, the closing auction's times (5.9). |
+| `niftywhale/config.py` | App settings that once lived only in `.env`: each read from the database, then the environment, then its default. |
+| `niftywhale/auth.py` | Signing in: the one account, passwords, authenticator, passkeys, sessions, API tokens, and the gate every request passes (10.4). |
+| `niftywhale/charts.py` | The Charts tab's candles for any stock or index and timeframe, and the live price behind them. |
+| `niftywhale/orderflow.py` | Orderflow: 1-minute footprints from Dhan's packets, and the readings an intraday entry records (4.19). |
+| `niftywhale/context.py` | The news, smart-money and orderflow context recorded with an entry, and an option look's day. |
+| `niftywhale/backfill.py` | Years of NSE's dated files (delivery, participant OI, futures OI, results dates) for the backtester (7.3). |
+| `niftywhale/costs.py` | What a trade costs in R: Dhan's charges and slippage, for backtests (7.3). |
+| `niftywhale/demo.py` | Demo funds: sizing, fills, charges and the account's ledger (4.16). |
+| `niftywhale/execution.py` | Live trading's decisions as pure functions: levels, sizing, limits, the evidence gates (4.18). |
+| `niftywhale/broker.py` | Dhan's order APIs, for live trading (`execution.py` decides, this sends). |
+| `niftywhale/glossary.py` | Every abbreviation, code and symbol the dashboard shows (section 17 is made from it). |
+| `static/charts.js` | The Charts tab in the page: the charts, their layout, live candles, drawings. |
+| `static/theme.js`, `static/theme.css` | The theme engine (Light, Dark or System; Glass or Classic) and the palettes, shared by every page. |
 | `templates/index.html` | The whole dashboard (HTML, CSS and JS in one file). |
 | `var/` (mounted as `/data`) | `niftywhale.db` and `universe.json`: everything that persists. |
 
@@ -338,7 +353,8 @@ Alerts from before paper trading started (6 Oct 2026) stay as they were: trigger
   is, explained (4.2). On a computer it folds to a slim rail of section icons (the **‹** at its top, or **Controls**);
   a rail icon opens it again at that section, and the choice is remembered. On a tablet or phone it is a panel that slides in
   from the left over the page (**Controls**), closed by its **×**, a tap outside it, or **Esc**.
-- **Mode switch** (top of the main column): **Swing**, **Intraday**, **Options**, **News**, **Smart money**, **Demo funds** or **Performance**.
+- **Mode switch** (top of the main column): **Swing**, **Intraday**, **Options**, **Charts** (4.9: indicators and drawing),
+  **News**, **Smart money**, **Demo funds**, **Trading** (4.18) or **Performance**.
   A filled pill slides to the tab you pick; your choice is remembered in this browser. Small count chips: Swing and Intraday,
   open trades (or, with none, watched zones; Intraday also "live"); Options, open ideas; News, today's NSE filings on the stocks
   you follow (4.14); Demo funds, open positions; Performance, a pause mark or a dot when the autopilot is paused or waiting.
@@ -406,18 +422,23 @@ Settings at its section, and so does the command palette.
 
 | Section | Settings |
 |---|---|
-| **Swing scan** | **Auto-scan** and its time (every weekday, IST; 16:15 lets the closing candle settle; a failed run is tried again every 15 minutes, up to four times), **Short setups** (bearish F&O stocks, 3.6; on by default), **Zone watcher** (on or off), and its **Rules**: the summary (*Protocol defaults*, or how many you changed, in amber) and the rule tuner itself, in the section (4.7). |
-| **Intraday** | **Intraday mode**, its **Stocks** (Nifty 50 by default), **Short setups** (any stock; on by default), and its **Rules**: the rule tuner itself, in the section (5.8). |
-| **Options** | **Option chain scanner** (needs Dhan), **Stocks** (6), and the **idea rules** as controls (6.5). |
+| **Swing scan** | **Auto-scan** and its time (every weekday, IST; 16:15 lets the closing candle settle; a failed run is tried again every 15 minutes, up to four times), **Short setups** (bearish F&O stocks, 3.6; on by default), **Zone watcher** (on or off), and its **Rules**: the summary (*Protocol defaults*, or how many you changed, in amber), the rules lock (4.7) and the rule tuner itself, in the section (4.7). |
+| **Intraday** | **Intraday mode**, its **Stocks** (Nifty 50 by default), **Short setups** (any stock; on by default), and its **Rules**: the rules lock and the rule tuner itself, in the section (5.8). |
+| **Options** | **Option chain scanner** (needs Dhan), **Stocks** (6), and the **idea rules** as controls, with the rules lock (6.5). |
 | **News desk** | The desk on or off (4.14). |
-| **Alerts** | Telegram: **Entry alerts** (swing and intraday, and the evening summary), **Pattern alerts** (4.9; off by default), **Filing alerts** (4.14; on by default), **Option idea alerts**, **Option level alerts** (off by default). Until the bot is set up (section 9), a line says so with a link to set it up, and the switches are disabled. |
-| **Demo funds**, **Live trading**, **Lab**, **Autopilot**, **Charts**, **Index ticker** | Those forms (4.16, 8, 7, 4.6), with the same fields as before. |
-| **Connections & data** | The Telegram bot, the Dhan login, the price data source, the session times (time pickers) and logging (section 10). |
+| **Alerts** | Telegram: **Entry alerts** (swing and intraday, and the evening summary), **Pattern alerts** (4.9; off by default), **Filing alerts** (4.14; on by default), **Option idea alerts**, **Option level alerts** (off by default), **Answer commands** (the bot answers what you send it, 9.1; on by default). Until the bot is set up (section 9), a line says so with a link to set it up, and the switches are disabled. |
+| **Demo funds**, **Live trading**, **Lab**, **Autopilot**, **Charts**, **Index ticker** | Those forms: Demo funds 4.16, Live trading 4.18, Lab 7.3 and 7.6, Autopilot 7.6 (with the rules lock, 4.7), Charts 4.11, Index ticker 4.13. |
+| **Connections & data** | The Telegram bot and the **Watchdog ping address** (below), the Dhan login, the price data source, the session times (time pickers, 5.9) and logging (section 10). |
 | **Account & security** | Password, authenticator, passkeys, devices, API tokens. |
 | **Appearance** | Light, System or Dark; Glass or Classic; the theme manager. |
 
 A count is set with **−** and **+** (you can still type it), an on/off setting with a switch, a time with a time picker, and
 a choice from a few values with chips. Prices and rupee amounts stay typed boxes.
+
+**Watchdog** (Connections & data → Telegram → **Watchdog ping address**, or `HEARTBEAT_URL` in `.env`; optional): an
+`https://` address the app requests every minute. A service off the Pi (healthchecks.io, free) alerts you when the pings
+stop, as after a power or network cut, when the Pi's own Telegram alerts go quiet with it. Kept encrypted like the other
+secrets (10.4).
 
 **Universes.** The dropdown is grouped:
 
@@ -645,6 +666,21 @@ seconds for Nifty 500 on the Pi) and never changes the saved scan.
 
 Saved values are stored in the database and sit on top of any `SMC_*` values in `.env` (10.3).
 Saving the protocol defaults clears the overrides.
+
+**Rules lock.** A lock button sits beside every place the rules change: the swing and intraday tuners and their **Rules**
+blocks, the options idea rules, the autopilot's settings and its current rules on the Performance tab. **Lock the rules**
+freezes the three tuners' rules and the autopilot policy:
+
+- Saving them is refused, from the page (it offers to unlock), the API (`423`) and Telegram (`/apply` says why);
+  so are applying and undoing an autopilot change.
+- The autopilot still tunes and shadows, but a proposal that passes waits for you, as with *wait for my approval*, and
+  nothing is rolled back.
+- **Unlock** asks for your password or a passkey every time, however recent the sign-in, and lasts 15 minutes; the rules
+  then lock again by themselves (**Lock the rules** locks them sooner). The button says *Rules locked* or *Unlocked until
+  HH:MM*.
+
+Locking needs no confirmation. Each lock and unlock is in the Change log (7.4). The state is `rules_lock` in
+`/api/state`; `POST /api/rules/lock` sets it (12.2).
 
 ### 4.8 Search and the command palette
 
@@ -1324,7 +1360,10 @@ mode (swing, intraday, options) has its own level:
   - the latest backtest ran on the rules in force (after a change, backtest again);
   - it has enough trades, and is positive after costs **at your size** a trade and on its last 3 months;
   - at least 30 paper trades closed **since the rules were last changed** (by you or the autopilot), positive after
-    costs at your size.
+    costs at your size;
+  - intraday and options also: at least 40 paper sessions on the rules in force, and an average paper day clearly above
+    zero (its t-statistic, the mean day over its standard error, at least 2). A day mode's trades of one session ride
+    the same market, so a dozen of them are one observation, not twelve.
 
   *Your size* is what live trading would trade (Trading settings): a fixed number of lots, or the risk % of the set
   capital or of the day's capital at Dhan. Charges have flat parts (₹20 brokerage an order, the DP charge), so the same
@@ -1566,6 +1605,13 @@ one (4.7), with nine sliders:
 - nearest pool distance;
 - provisional and final R:R.
 
+and seven context gates as chips, each off by default and checked at the 5m entry (they never change the screen or the
+zones; see 7.3): **Min market breadth** (off, 30, 40, 50, 60 %), **Min strength vs Nifty (20 days)** (off, −5, −2, 0, +2,
++5 pts), **Min CHoCH candle volume** (off, 1, 1.25, 1.5, 2× its time slot's usual), **Min CHoCH candle close** (off, 0.5,
+0.6, 0.75 of its range the trade's way), **Futures OI must agree** (off; 1 not against the trade; 2 with it), **Delivery
+must agree** (off or on) and **Min stop distance** (off, 0.4, 0.5, 0.6, 0.7, 0.8, 1 %: skip a trade whose stop is nearer
+the entry than this, where charges and slippage take most of R).
+
 It re-screens the **15m candles of the last intraday scan** in about a second (run **Scan now**
 first if there hasn't been one since the app started). The status line says what time those
 candles are from. Click a what-if setup to open its chart under those rules. **Save as my
@@ -1591,6 +1637,13 @@ Every threshold can also be set in `.env` as `INTRADAY_<NAME>`:
 | `INTRADAY_TRIGGER_SWING_LEN` | 2 | Candles each side of a 5m swing point. |
 | `INTRADAY_STOP_BUFFER_PCT` | 0.05 | The stop sits this % under the 5m sweep low. |
 | `INTRADAY_MIN_RR` | 2.0 | Final R:R for an entry alert. |
+| `INTRADAY_MIN_BREADTH` | 0 (off) | Gate: % of stocks above their 50-day average, the trade's way. |
+| `INTRADAY_MIN_RS_NIFTY` | -20 (off) | Gate: the stock's 20-day return against Nifty's, the trade's way, in points. |
+| `INTRADAY_MIN_CHOCH_RVOL` | 0 (off) | Gate: the CHoCH candle's volume against its time slot's usual. |
+| `INTRADAY_MIN_CLOSE_LOC` | 0 (off) | Gate: where the CHoCH candle closed in its range, the trade's way (0 to 1). |
+| `INTRADAY_OI_ALIGN` | 0 (off) | Gate: stock futures OI over 5 sessions; 1 skips against the trade, 2 needs it with the trade. |
+| `INTRADAY_DELIV_ALIGN` | 0 (off) | Gate: 1 skips a long after distribution, a short after accumulation. |
+| `INTRADAY_MIN_STOP_PCT` | 0 (off) | Gate: the stop at least this % from the entry. |
 | `INTRADAY_START` | 09:30 | First scan (after the opening range). |
 | `INTRADAY_NO_ENTRY_AFTER` | 14:30 | Entry cutoff. |
 | `INTRADAY_SQUARE_OFF` | 15:10 | Square-off time (F&O stocks: never after 15:15, see 5.2). Also in App settings → Market session, which wins. |
@@ -1813,9 +1866,16 @@ Every live entry (swing, intraday and options) is saved with its context:
 - the stock's gap that day;
 - the R:R and the stop distance;
 - the setup's pullback depth, daily ATR % and score;
-- how long the zone waited (swing) or which liquidity pool is the target (intraday).
+- how long the zone waited (swing) or which liquidity pool is the target (intraday);
+- market breadth, the stock's strength against Nifty and its sector over 20 days, the weekly trend (swing), and the
+  CHoCH candle's volume against its time slot and where it closed (7.3, *Context*);
+- the news of the 24 hours before and its tone (4.14), and smart money as NSE published it before the entry's day: the
+  delivery read, institutions' bulk / block deals, the stock's futures buildup, FII index-futures positioning and its
+  5-session change, FII cash, days to results (4.15);
+- intraday, the orderflow from the sweep to the CHoCH candle (4.19).
 
-The backtester records the same fields for every replayed trade, so live and backtest results are compared on the same terms.
+The backtester records the same fields for every replayed trade, so live and backtest results are compared on the same
+terms, except the news, the deals, FII cash and orderflow, which have no history (live trades only).
 
 Options mode also keeps every **candidate**: each read of a chain that came close to an idea, with its numbers. Each night the lab works
 out what each candidate would have done for a grid of stops and targets, using that day's later option prices.
@@ -1856,8 +1916,9 @@ The tab then shows:
   - That's a rough t-test, but it stops a handful of lucky trades from looking like a pattern.
 - **Breakdowns:** every condition a trade was taken in (direction, entry time, weekday, Nifty trend, breadth, VIX, gap,
   R:R, pullback depth, ATR, score, stop distance, zone age, target pool, stock trend, strength against Nifty and against its sector,
-  the weekly trend, the CHoCH candle's volume and close, news, deals, delivery, futures buildup, FII positioning and cash,
-  days to results; for options also Nifty's gap at the open, Nifty back off its low or high against the trade, same-way
+  the weekly trend, the CHoCH candle's volume and close, news and its tone, deals, delivery, futures buildup, FII
+  positioning (its 5-session change, the trade's way) and cash, days to results, the four orderflow readings (intraday);
+  for options also Nifty's gap at the open, Nifty back off its low or high against the trade, same-way
   looks in the pass, the underlying's move since its open and against Nifty, the premium's move that day before the
   entry and a lot's cost), bucket by bucket.
   - Measure: **Avg R a trade**, **Total R**, **Win rate** or **Trades**.
@@ -1922,12 +1983,15 @@ Backtests run in a second container, `niftywhale-lab`, built from the same image
 
 **NSE history** (`niftywhale/backfill.py`; the lab's nightly and first start, or **Backfill NSE history** in the Lab panel):
 
-| What | NSE file | Back to |
-|---|---|---|
-| Delivery % (the lab's stocks) | `sec_bhavdata_full` | 2021 |
-| Participant OI (FII / DII / Pro / Client) | `fao_participant_oi` | 2021 |
-| Stock futures OI, a day | F&O bhavcopy (both of its formats) | 2021 |
-| Results dates | the event calendar | 2021 |
+| What | NSE file |
+|---|---|
+| Delivery % (the lab's stocks) | `sec_bhavdata_full` |
+| Participant OI (FII / DII / Pro / Client) | `fao_participant_oi` |
+| Stock futures OI, a day | F&O bhavcopy (both of its formats) |
+| Results dates | the event calendar |
+
+Each goes back as far as the lab's longest history plus about two months (`lab_years_swing` or `lab_years_intraday`,
+whichever is longer: 3.2 years with the defaults).
 
 The first fill reads one file of each a day, an hour or two at NSE's pace; after that a night adds one day, and it stops
 after 10 days NSE refuses in a row, carrying on the next night. FII / DII cash flows have no dated archive (NSE's API
@@ -1980,8 +2044,8 @@ what may change it:
 
 | Mode | Thresholds it may move |
 |---|---|
-| Swing | Min volume, min ATR %, discount ≤, provisional R:R, final R:R, and the three context gates: max Nifty 20-day run, min zone age, max R:R (§11) |
-| Intraday | The same five |
+| Swing | Min volume, min ATR %, discount ≤, provisional R:R, final R:R, and the twelve context gates: max Nifty 20-day run, min zone age, max R:R, min breadth, weekly trend agrees, min strength vs Nifty and vs sector, min CHoCH volume and close, futures OI agrees, days clear of results, delivery agrees (§11) |
+| Intraday | The same five, and its seven gates: min breadth, min strength vs Nifty, min CHoCH volume and close, futures OI agrees, delivery agrees, min stop distance (5.8) |
 | Options | Min OI bias, min 30-minute move, max IV percentile, max spread %, stop %, target %, trail after the target, Nifty band, Nifty off its low / high, last entry hour, one direction a day, ideas open each way, pass order |
 
 For options, the autopilot judges the trades the account would have taken, not every idea. When live trading takes
@@ -2007,7 +2071,7 @@ idea counts.
        than the current ones on more days than they made less, and they were not worse in at least half the test months.
    - The proposal is tuned on all the history, and each threshold moves at most 2 tuner steps. The gates move along
      fixed ladders, off first (Nifty run: off, 6, 4, 3, 2, 1, 0, −1, −2 %; zone age: off, 2–6 days; max R:R: off, 15,
-     12, 10, 8, 6), so a first change takes a gate at most two rungs in.
+     12, 10, 8, 6; the others in §11 and 5.8), so a first change takes a gate at most two rungs in.
 2. **Shadow.**
    - The proposal is replayed nightly on new data next to the current rules for 20 sessions (up to 60 if trades are scarce).
    - Only the trades the two disagree on count as evidence: those one takes and the other skips, or the same entry with
@@ -2030,6 +2094,9 @@ drops (date, underlying, direction, R). The proposal card, the tuning's result a
 tuning saw that history, so this says what the change does; the checks above are the evidence that it works.
 
 Every proposal, promotion, drop, rollback, pause and resume is announced on Telegram and listed in the **Change log**. **Undo this change** puts the previous rules back.
+
+**While the rules are locked** (4.7) the autopilot changes nothing: a proposal that passes its shadow run waits for you,
+**Apply now**, **Undo this change** and Telegram's `/apply` are refused until you unlock, and nothing is rolled back.
 
 The **Change log** is the whole tuning history: the autopilot's changes and yours, marked *(you)*. A save with a **Tune…**
 button (swing, intraday, options) and a change in **App settings** are logged too. Each entry lists the values that moved,
@@ -2074,12 +2141,15 @@ Saturday at 09:00, Telegram gets one message per mode:
 final tuning. A proposal is then checked once on them: if it made less in total there than the current rules, it is not
 proposed ("from 2026-08-01 on, which tuning never saw, ..."). The holdout starts on the first of a month, so with
 3 months it is the two months before the current one and as much of this one as there is. The tuner tries hundreds of rule
-sets, and the best of them is partly luck; months it never saw are the check that luck cannot pass. When neither rule set
-made 10 trades there the check cannot judge, and passes; a proposal that skips nearly every trade there is judged on what
-it gave up. Options have weeks of history, not years: no holdout there yet.
+sets, and the best of them is partly luck; months it never saw are the check that luck cannot pass. It is judged when
+either rule set made 20 trades there, and the proposal must also do better on at least as many days as it does worse, so
+one lucky day cannot carry it; a proposal that skips nearly every trade there is judged on what it gave up. With fewer than
+20 trades there the check cannot judge, and there is no proposal: a change needs evidence. Options have weeks of history, not years: no holdout there yet.
 
 Every policy value is kept inside a range, so a saved value can never switch a safeguard off or stall the lab: most
-steps per change 1-6, tuner search 1-12 steps either side, shadow run 5-120 sessions, days between changes 1-90, out-of-sample
+steps per change 1-6, tuner search 1-12 steps either side (`search_steps`, 4), fold length 1-12 months (`fold_months`, 3),
+folds of training before the first test 1-8 (`min_train_folds`, 2), shadow run 5-120 sessions (at most 5-250,
+`shadow_max_days`, 60), closed trades the pause looks back on 5-200 (`pause_window`, 30), days between changes 1-90, out-of-sample
 R a trade a change must add 0-1, trades needed out of sample 20-2,000 (in training 20-5,000), trading days those come from
 0-500 (`min_oos_days`: options 15, the others 0, off), days the shadow's differing trades fall on 0-120 (`shadow_min_days`:
 options 5, the others 0), roll back and pause after losing 1-50 R. Outside, a value is clamped; anything but a number keeps the default. The policy is saved only here
@@ -2103,6 +2173,9 @@ the weekly report switch. The same settings can also be sent to `POST /api/setti
 | `lab_intraday_universe` | empty: the live intraday universe |
 | `lab_years_swing` | `3` |
 | `lab_years_intraday` | `1` (intraday replays are the slow ones: about 0.5 s per stock and session) |
+| `lab_costs` | on: **Count costs**, Dhan's charges and slippage on every backtested trade (7.3) |
+| `lab_slippage_bps` | `5`: **Slippage**, basis points of the price on the entry and on a stop or square-off |
+| `lab_alerts` | on: **Job alerts** on Telegram (7.3) |
 | `weekly_report` | on |
 
 ---
@@ -2236,6 +2309,8 @@ so, and you send it again.
 | `NIFTYWHALE_AUTH` | `1` | `0` switches sign-in off. **Tests only**: the app logs a warning, and anyone who can reach it can use it. |
 | `NIFTYWHALE_PROXIES` | (none) | The proxy whose `X-Forwarded-*` headers are believed (container names or addresses, comma-separated); from anywhere else they are dropped. `pi-observatory` in `docker-compose.yml`. Unset: every client is believed. |
 | `NIFTYWHALE_KEY_FILE` | `/run/secrets/niftywhale_key` | The key the secrets in the database are encrypted with (10.4, Secrets at rest). |
+| `HEARTBEAT_URL` | empty | The Watchdog's ping address (4.2), requested every minute. Also in App settings, which wins. |
+| `LAB_WORKERS` | `3` | Processes the lab replays with (`niftywhale-lab` only; set in `docker-compose.yml`). |
 
 Most of these can also be set in the app (**Settings → Connections & data**): a value saved there wins over `.env`.
 
@@ -2249,11 +2324,13 @@ These are set by `docker-compose.yml` and rarely need changing: `PORT=5058` (pub
 | Swing | `universe`, `auto_scan`, `scan_time`, `watcher`, `shorts`, `rules` | sidebar (universe); Settings → Swing scan |
 | Intraday | `intraday`, `intraday_universe`, `intraday_shorts`, `intraday_rules` | Settings → Intraday |
 | Options | `options`, `options_stocks`, `options_alerts`, `options_level_alerts`, `options_rules` | Settings → Options, Alerts |
-| Telegram | `telegram`, `pattern_alerts`, `news_alerts`, `weekly_report` | Settings → Alerts; Settings → Lab (weekly report) |
+| Telegram | `telegram`, `pattern_alerts`, `news_alerts`, `telegram_commands`, `telegram_mute_until`, `weekly_report`, `lab_alerts` | Settings → Alerts; `/mute` (9.1); Settings → Lab (weekly report, job alerts) |
 | News | `news` | Settings → News desk |
 | Charts | `indicators` (settings and colours) | the chart's **Indicators** button (4.11) |
 | Demo funds | `demo` (sizing, limits, modes, charges), `demo_since` | the Demo funds tab (4.16) |
-| Lab and autopilot | `autopilot_policy`, `paused_swing`, `paused_intraday`, `paused_options`, `lab_swing_universe`, `lab_intraday_universe`, `lab_years_swing`, `lab_years_intraday` | Performance (7.6) |
+| Live trading | `exec` (each mode's level, sizing, limits), `exec_since`, `exec_send` (real sending), `exec_halt` (why everything was halted) | the Trading tab and Settings → Live trading (4.18) |
+| Lab and autopilot | `autopilot_policy`, `paused_swing`, `paused_intraday`, `paused_options`, `lab_swing_universe`, `lab_intraday_universe`, `lab_years_swing`, `lab_years_intraday`, `lab_costs`, `lab_slippage_bps` | Performance (7.6) |
+| Rules lock | `rules_lock` (locked, and when an unlock ends) | the lock buttons (4.7) |
 
 All are kept across restarts. The Dhan login (`dhan_client_id`, `secret:dhan_token`, `dhan_token_expiry`) is stored in the same
 table but is not one of these settings: it is never sent to the browser (`/api/state` leaves it out).
@@ -2265,8 +2342,8 @@ built-in defaults (smc.Rules)  →  SMC_* in .env  →  values saved from the ru
                                                      (highest priority)
 ```
 
-The tuner can change the eight thresholds in its sliders. The rest (ATR length, OB search window,
-stop buffers, 15-minute swing size, intraday sessions) are `.env`-only. Out-of-range or
+The tuner can change the eight thresholds in its sliders and the twelve context gates in its chips (§11). The rest
+(volume days, ATR length, OB search window, stop buffers, 15-minute swing size, intraday sessions) are `.env`-only. Out-of-range or
 unparsable values are clamped or ignored rather than breaking a scan: a tuner value is clamped
 to its slider's range, and a `.env` value that is not a number, infinite, negative, or a window
 of zero candles (say `SMC_ATR_LEN=0`) is ignored in favour of the default.
@@ -2373,8 +2450,17 @@ docker exec niftywhale python -m niftywhale.auth status
 | `MAX_MARKET_RUN` | 10 (off) | −3 – 10 | gate | Skip a swing CHoCH when Nifty has moved more than this % the trade's way over 20 days. |
 | `MIN_ZONE_AGE` | 0 (off) | 0 – 8 | gate | Skip a swing CHoCH that comes sooner than this many days after its zone was set. |
 | `MAX_RR` | 30 (off) | 4 – 30 | gate | Skip a swing CHoCH whose 15-minute R:R is above this. |
+| `MIN_BREADTH` | 0 (off) | off, 30, 40, 50, 60 | gate | Skip when fewer than this % of stocks are above their 50-day average (a short: more than 100 minus it). |
+| `WEEKLY_ALIGN` | 0 (off) | off, on | gate | Skip a long in a weekly downtrend, a short in a weekly uptrend. |
+| `MIN_RS_NIFTY` | -20 (off) | off, −5, −2, 0, +2, +5 | gate | Skip when the stock's 20-day return against Nifty's, the trade's way, is under this many points. |
+| `MIN_RS_SECTOR` | -20 (off) | off, −5, −2, 0, +2, +5 | gate | The same against its sector. |
+| `MIN_CHOCH_RVOL` | 0 (off) | off, 1, 1.25, 1.5, 2 | gate | Skip a CHoCH whose candle traded less than this many times its time slot's usual volume. |
+| `MIN_CLOSE_LOC` | 0 (off) | off, 0.5, 0.6, 0.75 | gate | Skip a CHoCH whose candle closed less than this far through its range, the trade's way. |
+| `OI_ALIGN` | 0 (off) | off, 1, 2 | gate | Stock futures over 5 sessions (F&O stocks): 1 skips a long in a short buildup or long unwinding (a short: the mirror); 2 takes a long only in a long buildup or short covering. |
+| `RESULTS_GAP` | 0 (off) | off, 3, 7, 14 | gate | Skip an entry this many days or fewer before the stock's results board meeting. |
+| `DELIV_ALIGN` | 0 (off) | off, on | gate | Skip a long the session after distribution (heavy volume, high delivery, a down day), a short after accumulation. |
 
-The last three are **context gates**, checked when a swing CHoCH fires: they never change the screen, the zones or
+The last twelve are **context gates**, checked when a swing CHoCH fires: they never change the screen, the zones or
 the backtest records. A gated CHoCH is logged as *rejected* with the reason ("CHoCH, but skipped: …"), spends its
 setup like an R:R rejection, and never becomes a paper trade. Zones you add yourself are never gated. Each is off at
 its default; the autopilot turns them on only when walk-forward and a shadow run say so (§7.4), and you can set them
@@ -2964,6 +3050,26 @@ curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/
     "swing_len": 3
   }
 }
+```
+
+#### `POST /api/rules/lock`
+
+Locks or unlocks the tuner rules and the autopilot policy (4.7). `{"locked": true}` locks them at once (and ends an
+unlock). `{"locked": false}` unlocks them for 15 minutes: a signed-in browser only, with the password in the body or a
+passkey confirmed for this request, every time, however recent the sign-in. While they are locked, `POST /api/rules`,
+`/api/intraday/rules`, `/api/options/rules`, `/api/autopilot/policy` and an autopilot approve or undo answer `423` with
+`rules_locked`. Returns the lock: `locked`, `open` (whether the rules may change now), `until` (when an unlock ends, epoch
+seconds, else null) and `unlock_s`.
+
+**Body:** `{"locked": true}`, or `{"locked": false, "password": "…"}`
+
+```sh
+curl -X POST -H "Authorization: Bearer $NW_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"locked": true}' http://127.0.0.1:5058/api/rules/lock
+```
+
+```json
+{"locked": true, "open": false, "unlock_s": 900, "until": null}
 ```
 
 #### `POST /api/zones`
